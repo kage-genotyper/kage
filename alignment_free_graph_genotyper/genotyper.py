@@ -6,6 +6,8 @@ from collections import defaultdict
 from .count_genotyper import CountGenotyper
 import math
 import numpy as np
+from Bio.Seq import Seq
+import itertools
 
 CHAR_VALUES = {"a": 0, "g": 1, "c": 2, "t": 3, "n": 0, "A": 0, "G": 1, "C": 2, "T": 3, "N": 0}
 
@@ -19,8 +21,12 @@ class ReadKmers:
 
         power_vector = np.power(4, np.arange(0, k))
         f = open(fasta_file_name)
-        kmers = (ReadKmers.get_kmers_from_read_dynamic(line.strip(), power_vector)
-                for line in f if not line.startswith(">"))
+        kmers = itertools.chain(
+            (ReadKmers.get_kmers_from_read_dynamic(line.strip(), power_vector)
+                    for line in f if not line.startswith(">")),
+            (ReadKmers.get_kmers_from_read_dynamic(str(Seq(line.strip()).reverse_complement()), power_vector)
+                    for line in f if not line.startswith(">"))
+        )
 
         return cls(kmers)
 
@@ -110,13 +116,13 @@ class IndependentKmerGenotyper(BaseGenotyper):
 
 
 class BestChainGenotyper(BaseGenotyper):
-    def __init__(self, graph, sequence_graph, linear_path, read_kmers, kmer_index, vcf_file_name, k):
+    def __init__(self, graph, sequence_graph, linear_path, read_kmers, kmer_index, vcf_file_name, k, truth_alignments=None):
         super().__init__(graph, sequence_graph, linear_path, read_kmers, kmer_index, vcf_file_name, k)
 
         self._node_counts = defaultdict(float)
 
     @staticmethod
-    def get_nodes_in_best_chain(nodes, ref_offsets, expected_read_length=150):
+    def get_nodes_in_best_chain(nodes, ref_offsets, expected_read_length=150, min_chaining_score=2):
         # Returns nodes in best chain. Ref-offsets may be non-unique (since there are multiple nodes for each kmer.
         # Each node comes with one ref offset)
         sorting = np.argsort(ref_offsets)
@@ -130,19 +136,42 @@ class BestChainGenotyper(BaseGenotyper):
         for chain_end in chain_end_indexes:
             offsets = ref_offsets[current_chain_start_index:chain_end]
             score = len(np.unique(offsets))
-            print("Checking chain start/end: %d/%d. Offsets: %s. Score: %d" % (current_chain_start_index, chain_end, offsets, score))
+            #print("Checking chain start/end: %d/%d. Offsets: %s. Score: %d" % (current_chain_start_index, chain_end, offsets, score))
             if score > best_chain_score:
-                print("  New best")
+                #print("  New best")
                 best_start = current_chain_start_index
                 best_end = chain_end
                 best_chain_score = score
             current_chain_start_index = chain_end
 
-        return nodes[best_start:best_end]
+        if best_chain_score < min_chaining_score:
+            return []
+        else:
+            return nodes[best_start:best_end]
 
     def _find_best_chains(self):
         for i, read_kmers in enumerate(self._read_kmers):
-            nodes, ref_offsets = self._kmer_index.get_nodes_and_ref_offsets(read_kmers)
+            if i % 1000 == 0:
+                logging.info("%d reads processed (best chain genotyper" % i)
+            all_nodes = []
+            all_ref_offsets = []
+            for hash in read_kmers:
+                nodes, ref_offsets = self._kmer_index.get_nodes_and_ref_offsets(hash)
+                if nodes is None:
+                    continue
+                all_nodes.append(nodes)
+                all_ref_offsets.append(ref_offsets)
+
+            if len(all_nodes) == 0:
+                continue
+
+            all_nodes = np.concatenate(all_nodes)
+            all_ref_offsets = np.concatenate(all_ref_offsets)
+
+            best_chain_nodes = BestChainGenotyper.get_nodes_in_best_chain(all_nodes, all_ref_offsets)
+
+            for node in best_chain_nodes:
+                self._node_counts[node] += 1
 
     def genotype(self):
         self._find_best_chains()
@@ -151,10 +180,6 @@ class BestChainGenotyper(BaseGenotyper):
 
     def get_node_count(self, node):
         return math.ceil(self._node_counts[node])
-
-
-
-
 
 
 

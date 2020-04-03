@@ -4,7 +4,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 from offsetbasedgraph import Graph, SequenceGraph, NumpyIndexedInterval
 from graph_kmer_index.kmer_index import KmerIndex
-from .genotyper import IndependentKmerGenotyper, ReadKmers
+from .genotyper import IndependentKmerGenotyper, ReadKmers, BestChainGenotyper
 
 def main():
     run_argument_parser(sys.argv[1:])
@@ -20,7 +20,16 @@ def genotype(args):
 
     read_kmers = ReadKmers.from_fasta_file(args.reads, k)
     logging.info("Starting genotyper")
-    genotyper = IndependentKmerGenotyper(graph, sequence_graph, linear_path, read_kmers, kmer_index, args.vcf, k)
+
+    logging.info("Method chosen: %s" % args.method)
+    if args.method == "all_kmers":
+        genotyper = IndependentKmerGenotyper(graph, sequence_graph, linear_path, read_kmers, kmer_index, args.vcf, k)
+    elif args.method == "best_chain":
+        genotyper = BestChainGenotyper(graph, sequence_graph, linear_path, read_kmers, kmer_index, args.vcf, k)
+    else:
+        logging.error("Invalid method chosen.")
+        return
+
     genotyper.genotype()
 
 
@@ -39,6 +48,7 @@ def run_argument_parser(args):
     subparser.add_argument("-r", "--reads", required=True)
     subparser.add_argument("-v", "--vcf", required=True, help="Vcf to genotype")
     subparser.add_argument("-k", "--kmer_size", required=False, type=int, default=32)
+    subparser.add_argument("-m", "--method", required=False, default='all_kmers')
     subparser.set_defaults(func=genotype)
 
     if len(args) == 0:
