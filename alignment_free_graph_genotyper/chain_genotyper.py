@@ -3,6 +3,7 @@ from pyfaidx import Fasta
 from .genotyper import NodeCounts, ReadKmers
 import pyximport; pyximport.install(language_level=3)
 from graph_kmer_index.cython_kmer_index import get_nodes_and_ref_offsets_from_multiple_kmers as cython_index_lookup
+from .chaining import chain
 import numpy as np
 from Bio.Seq import Seq
 #from graph_kmer_index import letter_sequence_to_numeric
@@ -84,14 +85,13 @@ class ChainGenotyper:
             #logging.info("----- CHAIN %d" % chain[0])
             #logging.info("Ref kmers: %s" % reference_kmers)
             #logging.info("Short kmers: %s" % short_kmers)
-            score = len(set(short_kmers).intersection(set(reference_kmers))) / len(set(short_kmers))
+            score = len(short_kmers.intersection(set(reference_kmers))) / len(set(short_kmers))
             chain[2] = score
 
     def _get_read_chains_only_one_direction(self, read):
         kmers = read_kmers(read, self._power_array)
         short_kmers = read_kmers(read, self._power_array_short)
-        nodes, ref_offsets, read_offsets = self._kmer_index.get_nodes_and_ref_offsets_from_multiple_kmers(kmers)
-        """
+        #nodes, ref_offsets, read_offsets = self._kmer_index.get_nodes_and_ref_offsets_from_multiple_kmers(kmers)
         nodes, ref_offsets, read_offsets = cython_index_lookup(
             kmers,
             self._kmer_index._hasher._hashes,
@@ -100,12 +100,12 @@ class ChainGenotyper:
             self._kmer_index._nodes,
             self._kmer_index._ref_offsets
         )
-        """
 
         if len(nodes) == 0:
             return []
-        chains = ChainGenotyper.find_chains(ref_offsets, read_offsets, nodes)
-        self._score_chains(chains, short_kmers)
+        #chains = ChainGenotyper.find_chains(ref_offsets, read_offsets, nodes)
+        chains = chain(ref_offsets, read_offsets, nodes)
+        self._score_chains(chains, set(short_kmers))
         return chains
 
     def _get_read_chains(self, read):
