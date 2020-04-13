@@ -40,6 +40,7 @@ def test_simple():
 
 
 def test_simple_chaining():
+    """
     nodes = np.array([1, 2, 3, 4, 10, 11, 12, 13, 14])
     offsets = np.array([4, 4, 5, 6, 10, 10, 10, 11, 11])
     assert list(BestChainGenotyper.get_nodes_in_best_chain(nodes, offsets, expected_read_length=3)) == [1, 2, 3, 4]
@@ -55,7 +56,12 @@ def test_simple_chaining():
     nodes = np.array([1, 2, 3, 4, 10, 11, 12, 14, 13, 50, 51, 52, 53, 53, 100, 101])
     offsets = np.array([4, 4, 4, 6, 10, 10, 10, 12, 11, 60, 61, 62, 63, 64, 100, 101])
     assert list(BestChainGenotyper.get_nodes_in_best_chain(nodes, offsets, expected_read_length=2)) == [50, 51, 52, 53, 53]
+    """
 
+
+    nodes = np.array([62, 61])
+    offsets = np.array([10, 10])
+    assert list(BestChainGenotyper.get_nodes_in_best_chain(nodes, offsets, expected_read_length=3)) == [62, 61]
 
 if __name__ == "__main__":
     #test_simple()

@@ -33,11 +33,10 @@ class CountGenotyper:
     def _store_processed_variant(self, line, edge):
         pass
 
-    def _genotype_biallelic_snp(self, reference_node, variant_node, allele_frequency):
-        logging.info("Genotyping biallelic SNP with nodes %d/%d and allele frequency %.5f" % (reference_node, variant_node, allele_frequency))
+    def _genotype_biallelic_snp(self, reference_node, variant_node, allele_frequency, debug=False, variant_line=""):
+        #logging.info("Genotyping biallelic SNP with nodes %d/%d and allele frequency %.5f" % (reference_node, variant_node, allele_frequency))
         apriori_haplotype_probabilities = [1-allele_frequency, allele_frequency]
         allele_counts = [self.genotyper.get_node_count(reference_node), self.genotyper.get_node_count(variant_node)]
-        logging.info("Alle counts: %s" % allele_counts)
 
         tot_counts = sum(allele_counts)
         e = self.expected_read_error_rate
@@ -47,25 +46,36 @@ class CountGenotyper:
         #p_counts_given_heterozygous = 1 - p_counts_given_homozygous_alt - p_counts_given_homozygous_ref
         p_counts_given_heterozygous = 1 * comb(tot_counts, allele_counts[0]) * ((1-e)/2)**allele_counts[0] * ((1-e)/2)**allele_counts[1]
 
-        logging.info("Prob counts given 00, 11, 01: %.5f, %.5f, %.10f" % (p_counts_given_homozygous_ref, p_counts_given_homozygous_alt, p_counts_given_heterozygous))
 
-        a_priori_homozygous_ref = (1-allele_frequency)**2
-        a_priori_homozygous_alt = allele_frequency**2
+
+        #a_priori_homozygous_ref = (1-allele_frequency)**2
+        #a_priori_homozygous_alt = allele_frequency**2
+        #a_priori_homozygous_ref = (1-allele_frequency) * 0.9
+        #a_priori_homozygous_alt = allele_frequency * 0.9
+        #a_priori_heterozygous = 1 - a_priori_homozygous_alt - a_priori_homozygous_ref
+
+        a_priori_homozygous_ref = float(variant_line.split("AF_HOMO_REF=")[1].split(";")[0]) + 0.001
+        a_priori_homozygous_alt = float(variant_line.split("AF_HOMO_ALT=")[1].split(";")[0]) + 0.001
         a_priori_heterozygous = 1 - a_priori_homozygous_alt - a_priori_homozygous_ref
-        logging.info("A priori probs: 00, 11, 01: %.3f, %.3f, %.3f" % (a_priori_homozygous_ref, a_priori_homozygous_alt, a_priori_heterozygous))
 
         # Denominator in bayes formula
         prob_counts = a_priori_homozygous_ref * p_counts_given_homozygous_ref + \
                         a_priori_homozygous_alt * p_counts_given_homozygous_alt + \
                         a_priori_heterozygous * p_counts_given_heterozygous
 
-        logging.info("Prob of counts: %.3f" % prob_counts)
 
         prob_posteriori_heterozygous = a_priori_heterozygous * p_counts_given_heterozygous / prob_counts
         prob_posteriori_homozygous_alt = a_priori_homozygous_alt * p_counts_given_homozygous_alt / prob_counts
         prob_posteriori_homozygous_ref = a_priori_homozygous_ref * p_counts_given_homozygous_ref / prob_counts
 
-        logging.info("Posteriori probs for 00, 11, 01: %.4f, %.4f, %.4f" % (prob_posteriori_homozygous_ref, prob_posteriori_homozygous_alt, prob_posteriori_heterozygous))
+
+        if debug:
+            logging.info("==== Nodes: %d / %d" % (reference_node, variant_node))
+            logging.info("Alle counts: %s" % allele_counts)
+            logging.info("Prob counts given 00, 11, 01: %.5f, %.5f, %.10f" % (p_counts_given_homozygous_ref, p_counts_given_homozygous_alt, p_counts_given_heterozygous))
+            logging.info("A priori probs: 00, 11, 01: %.3f, %.3f, %.3f" % (a_priori_homozygous_ref, a_priori_homozygous_alt, a_priori_heterozygous))
+            logging.info("Prob of counts: %.3f" % prob_counts)
+            logging.info("Posteriori probs for 00, 11, 01: %.4f, %.4f, %.4f" % (prob_posteriori_homozygous_ref, prob_posteriori_homozygous_alt, prob_posteriori_heterozygous))
 
         if prob_posteriori_homozygous_ref > prob_posteriori_homozygous_alt and prob_posteriori_homozygous_ref > prob_posteriori_heterozygous:
             return "0/0"
@@ -77,7 +87,7 @@ class CountGenotyper:
     def genotype(self):
 
         for i, line in enumerate(open(self.vcf_file_name)):
-            if i % 1000 == 0:
+            if i % 20000 == 0:
                 logging.info("%d lines processed" % i)
 
             if line.startswith("#"):
@@ -99,9 +109,16 @@ class CountGenotyper:
 
             allele_frequency = float(line.split("AF=")[1].split(";")[0])
 
+            # Never accept allele freq 1.0, there is a chance this sample is different
+            if allele_frequency == 1.0:
+                allele_frequency = 0.99
+
             if variant_type == "SNP":
+                debug = False
+                if ref_offset == 1016354-1:
+                    debug = True
                 reference_node, variant_node = self._process_substitution(ref_offset, variant_allele)
-                predicted_genotype = self._genotype_biallelic_snp(reference_node, variant_node, allele_frequency)
+                predicted_genotype = self._genotype_biallelic_snp(reference_node, variant_node, allele_frequency, debug, line)
             elif variant_type == "DELETION":
                 continue
                 #edge = self._process_deletion(ref_offset+1, len(variant_allele)-1)
