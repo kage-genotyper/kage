@@ -55,20 +55,25 @@ cdef np.ndarray[np.int64_t] get_kmers(np.ndarray[np.int64_t] numeric_read, np.nd
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def run(reads_file_name,
-          np.ndarray[np.int64_t] hashes,
-          np.ndarray[np.int64_t] hashes_to_index,
-          np.ndarray[np.int64_t] n_kmers,
-          np.ndarray[np.uint32_t] nodes,
-          np.ndarray[np.uint32_t] ref_offsets,
+          long[:] hashes,
+          long[:] hashes_to_index,
+          long[:] n_kmers,
+          np.uint32_t[:] nodes,
+          np.uint32_t[:] ref_offsets,
           np.ndarray[np.int64_t] reference_kmers,
+          int max_node_id
           ):
 
+    cdef np.ndarray[np.int64_t] node_counts = np.zeros(max_node_id+1, dtype=np.int64)
     cdef int k = 31
     cdef int k_short = 16
     cdef np.ndarray[np.int64_t] power_array = np.power(4, np.arange(0, k))
     cdef np.ndarray[np.int64_t] power_array_short = np.power(4, np.arange(0, k_short))
 
-    file = open(reads_file_name)
+    if type(reads_file_name) == list:
+        file = reads_file_name
+    else:
+        file = open(reads_file_name)
     cdef list chains = []
     cdef np.ndarray[np.int64_t, ndim=1] numeric_read, reverse_read
     cdef np.ndarray[np.int64_t, ndim=1] kmers, short_kmers, kmer_hashes
@@ -88,17 +93,22 @@ def run(reads_file_name,
     cdef float chain_score
     cdef int ref_start, ref_end
     cdef int approx_read_length = 150
-    cdef np.ndarray[np.int64_t] local_reference_kmers
+    #cdef np.ndarray[np.int64_t] local_reference_kmers
+    cdef long[:] local_reference_kmers
     cdef set short_kmers_set
     cdef float best_score = 0
     cdef list best_chain
     cdef read_number = -1
-    cdef np.ndarray[np.int64_t] chain_positions = np.zeros(100000, dtype=np.int64)
+    cdef np.ndarray[np.int64_t] chain_positions = np.zeros(100000000, dtype=np.int64)
 
     for line in file:
         if line.startswith(">"):
             continue
+        if read_number % 1000 == 0:
+            logging.info("%d reads processed" % read_number)
+
         read_number += 1
+
 
         numeric_read = letter_sequence_to_numeric(np.array(list(line.strip()), dtype="|S1").view(np.int8))
         reverse_read = numeric_read[::-1]
@@ -159,8 +169,8 @@ def run(reads_file_name,
             for c in range(len(chains)):
                 ref_start = chains[c][0]
                 ref_end = ref_start + approx_read_length
-                local_reference_kmers = reference_kmers[ref_start:ref_end-k_short]
-                chain_score = len(short_kmers_set.intersection(local_reference_kmers)) / len(short_kmers_set)
+                #local_reference_kmers = reference_kmers[ref_start:ref_end-k_short]
+                chain_score = len(short_kmers_set.intersection(reference_kmers[ref_start:ref_end-k_short])) / len(short_kmers_set)
                 chains[c][2] = chain_score
 
             forward_and_reverse_chains.extend(chains)
@@ -175,9 +185,12 @@ def run(reads_file_name,
 
         chain_positions[read_number] = best_chain[0]
 
+        for c in range(best_chain[1].shape[0]):
+            node_counts[best_chain[1][c]] += 1
+
         #print("%d\t%d\t%s" % (read_number, best_chain[0], best_chain))
 
-    return chain_positions
+    return chain_positions, node_counts
 
 
 

@@ -1,4 +1,6 @@
 import logging
+import time
+
 from pyfaidx import Fasta
 from .genotyper import NodeCounts, ReadKmers
 import pyximport; pyximport.install(language_level=3)
@@ -10,16 +12,32 @@ from Bio.Seq import Seq
 from .letter_sequence_to_numeric import letter_sequence_to_numeric
 from .count_genotyper import CountGenotyper
 import math
+from alignment_free_graph_genotyper import cython_chain_genotyper
 
 def read_kmers(read, power_array):
     numeric = letter_sequence_to_numeric(read)
     return np.convolve(numeric, power_array, mode='valid')  # % 452930477
 
+
+class NumpyNodeCounts:
+    def __init__(self, node_counts):
+        self.node_counts = node_counts
+
+    def to_file(self, file_name):
+        np.save(file_name, self.node_counts)
+
+    @classmethod
+    def from_file(cls, file_name):
+        data = np.load(file_name + ".npy")
+        return cls(data)
+
+
 class ChainGenotyper:
     def __init__(self, graph, sequence_graph, linear_path, reads, kmer_index, vcf_file_name, k,
                  truth_alignments=None, write_alignments_to_file=None, reference_k=7,
-                 weight_chains_by_probabilities=False):
+                 weight_chains_by_probabilities=False, max_node_id=None):
 
+        self._max_node_id = max_node_id
         self._reads = reads
         self._graph = graph
         self._sequence_graph = sequence_graph
@@ -166,3 +184,29 @@ class ChainGenotyper:
     def get_node_count(self, node):
         return math.floor(self._node_counts[node])
 
+
+class CythonChainGenotyper(ChainGenotyper):
+    def get_counts(self):
+        start_time = time.time()
+        index = self._kmer_index
+        fasta_file_name = self._reads
+        chain_positions, node_counts = cython_chain_genotyper.run(fasta_file_name,
+                    index._hasher._hashes,
+                    index._hashes_to_index,
+                    index._n_kmers,
+                    index._nodes,
+                    index._ref_offsets,
+                    self._reference_kmers,
+                    self._max_node_id
+        )
+        self._node_counts = NumpyNodeCounts(node_counts)
+
+        end_time = time.time()
+        logging.info("Time spent on getting node counts: %.5f" % (end_time - start_time))
+
+    def genotype(self):
+        count_genotyper = CountGenotyper(self, self._graph, self._sequence_graph, self._vcf_file_name, self._linear_path)
+        count_genotyper.genotype()
+
+    def get_node_count(self, node):
+        return self._node_counts.node_counts[node]

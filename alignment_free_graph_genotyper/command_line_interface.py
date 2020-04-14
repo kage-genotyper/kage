@@ -1,6 +1,8 @@
 import sys
 import argparse
 import logging
+import time
+
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
 from offsetbasedgraph import Graph, SequenceGraph, NumpyIndexedInterval
 from graph_kmer_index.kmer_index import KmerIndex
@@ -8,7 +10,7 @@ from .genotyper import IndependentKmerGenotyper, ReadKmers, BestChainGenotyper, 
 from numpy_alignments import NumpyAlignments
 from graph_kmer_index import ReverseKmerIndex
 from .reads import Reads
-from .chain_genotyper import ChainGenotyper
+from .chain_genotyper import ChainGenotyper, CythonChainGenotyper, NumpyNodeCounts
 
 
 def main():
@@ -71,6 +73,7 @@ def genotype(args):
 
     genotyper.genotype()
 
+
 def genotypev2(args):
     logging.info("Reading graphs")
     graph = Graph.from_file(args.graph_file_name)
@@ -89,12 +92,20 @@ def genotypev2(args):
     if args.use_node_counts is not None:
         args.write_alignments_to_file = None
 
-    genotyper = ChainGenotyper(graph, sequence_graph, linear_path, reads, kmer_index, args.vcf, k,
+    genotyper_class = ChainGenotyper
+    node_counts_class = NodeCounts
+    if args.use_cython:
+        node_counts_class = NumpyNodeCounts
+        reads = args.reads
+        genotyper_class = CythonChainGenotyper
+        logging.info("Will use the cython genotyper")
+
+    genotyper = genotyper_class(graph, sequence_graph, linear_path, reads, kmer_index, args.vcf, k,
                                        truth_alignments, args.write_alignments_to_file, reference_k=args.small_k)
 
     if args.use_node_counts is not None:
         logging.info("Using node counts from file. Not getting counts.")
-        genotyper._node_counts = NodeCounts.from_file(args.use_node_counts)
+        genotyper._node_counts = node_counts_class.from_file(args.use_node_counts)
     else:
         genotyper.get_counts()
         if args.node_counts_out_file_name:
@@ -102,6 +113,75 @@ def genotypev2(args):
             genotyper._node_counts.to_file(args.node_counts_out_file_name)
 
     genotyper.genotype()
+
+
+# Global numpy arrays used in multithreading, must be defined her to be global
+hasher_hashes = None
+hashes_to_index = None
+n_kmers = None
+nodes = None
+ref_offsets = None
+
+import numpy as np
+from pathos.multiprocessing import Pool
+from pathos.pools import ProcessPool
+from graph_kmer_index.logn_hash_map import ModuloHashMap
+test_array = np.zeros(400000000, dtype=np.int64) + 1
+
+def count_single_thread(reads):
+    logging.info("Startin thread")
+    hasher = ModuloHashMap(hasher_hashes)
+    k = 31
+    small_k = 16
+    max_node_id = 4000000
+    kmer_index = KmerIndex(hasher, hashes_to_index, n_kmers, nodes, ref_offsets)
+    logging.info("Got %d lines" % len(reads))
+    genotyper = CythonChainGenotyper(None, None, None, reads, kmer_index, None, k, None, None, reference_k=small_k, max_node_id=max_node_id)
+    genotyper.get_counts()
+    return genotyper._node_counts
+
+
+
+def read_chunks(fasta_file_name, chunk_size=10):
+    # yields chunks of reads
+    file = open(fasta_file_name)
+    out = []
+    i = 0
+    for line in file:
+        out.append(line)
+        i += 1
+        if i >= chunk_size:
+            yield out
+            out = []
+            i = 0
+
+
+
+def count(args):
+    global hasher_hashes
+    global hashes_to_index
+    global n_kmers
+    global nodes
+    global ref_offsets
+
+    logging.info("Reading from file")
+    kmer_index = KmerIndex.from_file(args.kmer_index)
+    hasher_hashes = kmer_index._hasher._hashes
+    hashes_to_index = kmer_index._hashes_to_index
+    n_kmers = kmer_index._n_kmers
+    nodes = kmer_index._nodes
+    ref_offsets = kmer_index._ref_offsets
+    reads = read_chunks(args.reads, chunk_size=4000)
+    max_node_id = 4000000
+
+    pool = Pool(args.n_threads)
+    node_counts = np.zeros(max_node_id+1, dtype=np.int64)
+    for result in pool.imap_unordered(count_single_thread, reads):
+        print("Got result. Length of counts: %d" % len(result.node_counts))
+        node_counts += result.node_counts
+
+    NumpyNodeCounts(node_counts).to_file(args.node_counts_out_file_name)
+
 
 
 
@@ -144,7 +224,20 @@ def run_argument_parser(args):
     subparser.add_argument("-w", "--small-k", required=False, type=int, default=16)
     subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
     subparser.add_argument("-u", "--use_node_counts", required=False)
+    subparser.add_argument("-c", "--use_cython", required=False, type=bool, default=False)
     subparser.set_defaults(func=genotypev2)
+
+
+    subparser = subparsers.add_parser("count")
+    subparser.add_argument("-i", "--kmer_index", required=True)
+    subparser.add_argument("-r", "--reads", required=True)
+    subparser.add_argument("-k", "--kmer_size", required=False, type=int, default=32)
+    subparser.add_argument("-w", "--small-k", required=False, type=int, default=16)
+    subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
+    subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
+    subparser.set_defaults(func=count)
+
+
     if len(args) == 0:
         parser.print_help()
         sys.exit(1)
