@@ -75,13 +75,18 @@ class ChainGenotyper:
         ref_offsets = ref_offsets[sorting]
         nodes = nodes[sorting]
         potential_chain_start_positions = potential_chain_start_positions[sorting]
+        read_offsets = read_offsets[sorting]
 
         # Find all potential chain starts (by grouping reference start positions that are close)
         chain_start_and_end_indexes = np.where(np.ediff1d(potential_chain_start_positions, to_begin=1000, to_end=1000)
                                                >= chain_position_threshold)[0]
         chains = []
         for start, end in zip(chain_start_and_end_indexes[0:-1], chain_start_and_end_indexes[1:]):
-            chains.append([potential_chain_start_positions[start], nodes[start:end], 0])
+            # Score depends on number of unique read offsets that matches kmers that gives this start
+            score = len(np.unique(read_offsets[start:end]))
+            #logging.info("Score: %d" % score)
+
+            chains.append([potential_chain_start_positions[start], nodes[start:end], score])
 
         return chains
 
@@ -109,7 +114,8 @@ class ChainGenotyper:
     def _get_read_chains_only_one_direction(self, read):
         kmers = read_kmers(read, self._power_array)
         short_kmers = read_kmers(read, self._power_array_short)
-        #nodes, ref_offsets, read_offsets = self._kmer_index.get_nodes_and_ref_offsets_from_multiple_kmers(kmers)
+        nodes, ref_offsets, read_offsets = self._kmer_index.get_nodes_and_ref_offsets_from_multiple_kmers(kmers)
+        """
         nodes, ref_offsets, read_offsets = cython_index_lookup(
             kmers,
             self._kmer_index._hasher._hashes,
@@ -118,11 +124,12 @@ class ChainGenotyper:
             self._kmer_index._nodes,
             self._kmer_index._ref_offsets
         )
+        """
 
         if len(nodes) == 0:
             return []
-        #chains = ChainGenotyper.find_chains(ref_offsets, read_offsets, nodes)
-        chains = chain(ref_offsets, read_offsets, nodes)
+        chains = ChainGenotyper.find_chains(ref_offsets, read_offsets, nodes)
+        #chains = chain(ref_offsets, read_offsets, nodes)
         self._score_chains(chains, set(short_kmers))
         #chains = chain_with_score(ref_offsets, read_offsets, nodes, self._reference_kmers, short_kmers)
         return chains

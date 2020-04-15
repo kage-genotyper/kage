@@ -139,8 +139,8 @@ def run(reads_file_name,
                 for j in range(n_local_hits):
                     # Check that this entry actually matches the kmer, sometimes it will not due to collision
                     #logging.info("Checking index position %d. index_kmers len: %d" % (index_position + j, len(index_kmers)))
-                    #if index_kmers[index_position+j] != kmers[i]:
-                    #    continue
+                    if index_kmers[index_position+j] != kmers[i]:
+                        continue
                     n_total_hits += 1
 
             found_nodes = np.zeros(n_total_hits, dtype=np.int)
@@ -162,8 +162,8 @@ def run(reads_file_name,
                     continue
 
                 for j in range(n_local_hits):
-                    #if index_kmers[index_position+j] != kmers[i]:
-                    #    continue
+                    if index_kmers[index_position+j] != kmers[i]:
+                        continue
                     found_nodes[counter] = nodes[index_position+j]
                     found_ref_offsets[counter] = ref_offsets[index_position+j]
                     found_read_offsets[counter] = i

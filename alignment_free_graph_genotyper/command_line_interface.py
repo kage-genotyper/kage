@@ -8,7 +8,7 @@ from offsetbasedgraph import Graph, SequenceGraph, NumpyIndexedInterval
 from graph_kmer_index.kmer_index import KmerIndex
 from .genotyper import IndependentKmerGenotyper, ReadKmers, BestChainGenotyper, NodeCounts
 from numpy_alignments import NumpyAlignments
-from graph_kmer_index import ReverseKmerIndex
+from graph_kmer_index import ReverseKmerIndex, CollisionFreeKmerIndex
 from .reads import Reads
 from .chain_genotyper import ChainGenotyper, CythonChainGenotyper, NumpyNodeCounts
 
@@ -78,7 +78,8 @@ def genotypev2(args):
     logging.info("Reading graphs")
     graph = Graph.from_file(args.graph_file_name)
     sequence_graph = SequenceGraph.from_file(args.graph_file_name + ".sequences")
-    kmer_index = KmerIndex.from_file(args.kmer_index)
+    #kmer_index = KmerIndex.from_file(args.kmer_index)
+    kmer_index = CollisionFreeKmerIndex.from_file(args.kmer_index)
     linear_path = NumpyIndexedInterval.from_file(args.linear_path_file_name)
     k = args.kmer_size
 
@@ -131,6 +132,9 @@ test_array = np.zeros(400000000, dtype=np.int64) + 1
 
 def count_single_thread(reads):
     logging.info("Startin thread")
+    if len(reads) == 0:
+        logging.info("Skipping thread, no more reads")
+        return None
     hasher = ModuloHashMap(hasher_hashes)
     k = 31
     small_k = 16
@@ -180,8 +184,9 @@ def count(args):
     pool = Pool(args.n_threads)
     node_counts = np.zeros(max_node_id+1, dtype=np.int64)
     for result in pool.imap_unordered(count_single_thread, reads):
-        print("Got result. Length of counts: %d" % len(result.node_counts))
-        node_counts += result.node_counts
+        if result is not None:
+            print("Got result. Length of counts: %d" % len(result.node_counts))
+            node_counts += result.node_counts
 
     NumpyNodeCounts(node_counts).to_file(args.node_counts_out_file_name)
 
