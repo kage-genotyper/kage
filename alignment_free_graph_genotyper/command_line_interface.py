@@ -101,7 +101,7 @@ def genotypev2(args):
         logging.info("Will use the cython genotyper")
 
     genotyper = genotyper_class(graph, sequence_graph, linear_path, reads, kmer_index, args.vcf, k,
-                                       truth_alignments, args.write_alignments_to_file, reference_k=args.small_k)
+                                       truth_alignments, args.write_alignments_to_file, reference_k=args.small_k, max_node_id=4000000)
 
     if args.use_node_counts is not None:
         logging.info("Using node counts from file. Not getting counts.")
@@ -133,7 +133,7 @@ def count_single_thread(reads):
     hasher = ModuloHashMap(hasher_hashes)
     k = 31
     small_k = 16
-    max_node_id = 4000000
+    max_node_id = 13000000
     kmer_index = KmerIndex(hasher, hashes_to_index, n_kmers, nodes, ref_offsets)
     logging.info("Got %d lines" % len(reads))
     genotyper = CythonChainGenotyper(None, None, None, reads, kmer_index, None, k, None, None, reference_k=small_k, max_node_id=max_node_id)
@@ -171,8 +171,8 @@ def count(args):
     n_kmers = kmer_index._n_kmers
     nodes = kmer_index._nodes
     ref_offsets = kmer_index._ref_offsets
-    reads = read_chunks(args.reads, chunk_size=4000)
-    max_node_id = 4000000
+    reads = read_chunks(args.reads, chunk_size=args.chunk_size)
+    max_node_id = 13000000
 
     pool = Pool(args.n_threads)
     node_counts = np.zeros(max_node_id+1, dtype=np.int64)
@@ -183,8 +183,17 @@ def count(args):
     NumpyNodeCounts(node_counts).to_file(args.node_counts_out_file_name)
 
 
+def genotype_from_counts(args):
+    counts = NumpyNodeCounts.from_file(args.counts)
+    graph = Graph.from_file(args.graph_file_name)
+    sequence_graph = SequenceGraph.from_file(args.graph_file_name + ".sequences")
+    linear_path = NumpyIndexedInterval.from_file(args.linear_path_file_name)
 
+    genotyper = CythonChainGenotyper(graph, sequence_graph, linear_path, None, None, args.vcf, None,
+                                       None)
 
+    genotyper._node_counts = counts
+    genotyper.genotype()
 
 
 def run_argument_parser(args):
@@ -235,7 +244,15 @@ def run_argument_parser(args):
     subparser.add_argument("-w", "--small-k", required=False, type=int, default=16)
     subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
     subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
+    subparser.add_argument("-c", "--chunk-size", type=int, default=10000, required=False, help="Number of reads to process in the same chunk")
     subparser.set_defaults(func=count)
+
+    subparser = subparsers.add_parser("genotype_from_counts")
+    subparser.add_argument("-c", "--counts", required=True)
+    subparser.add_argument("-g", "--graph_file_name", required=True)
+    subparser.add_argument("-l", "--linear_path_file_name", required=True)
+    subparser.add_argument("-v", "--vcf", required=True, help="Vcf to genotype")
+    subparser.set_defaults(func=genotype_from_counts)
 
 
     if len(args) == 0:
