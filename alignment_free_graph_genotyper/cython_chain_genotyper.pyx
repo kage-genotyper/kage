@@ -52,14 +52,15 @@ cdef np.ndarray[np.int64_t] get_kmers(np.ndarray[np.int64_t] numeric_read, np.nd
     return np.convolve(numeric_read, power_array, mode='valid')
 
 
-@cython.boundscheck(False)
-@cython.wraparound(False)
+#@cython.boundscheck(False)
+#@cython.wraparound(False)
 def run(reads_file_name,
           long[:] hashes,
           long[:] hashes_to_index,
           long[:] n_kmers,
           np.uint32_t[:] nodes,
           np.uint32_t[:] ref_offsets,
+          np.uint64_t[:] index_kmers,
           np.ndarray[np.int64_t] reference_kmers,
           int max_node_id
           ):
@@ -133,7 +134,14 @@ def run(reads_file_name,
                 hash = hashes[kmer_hashes[i]]
                 if hash == 0:
                     continue
-                n_total_hits += n_kmers[hash]
+                n_local_hits = n_kmers[hash]
+                index_position = hashes_to_index[hash]
+                for j in range(n_local_hits):
+                    # Check that this entry actually matches the kmer, sometimes it will not due to collision
+                    #logging.info("Checking index position %d. index_kmers len: %d" % (index_position + j, len(index_kmers)))
+                    #if index_kmers[index_position+j] != kmers[i]:
+                    #    continue
+                    n_total_hits += 1
 
             found_nodes = np.zeros(n_total_hits, dtype=np.int)
             found_ref_offsets = np.zeros(n_total_hits, dtype=np.int)
@@ -154,6 +162,8 @@ def run(reads_file_name,
                     continue
 
                 for j in range(n_local_hits):
+                    #if index_kmers[index_position+j] != kmers[i]:
+                    #    continue
                     found_nodes[counter] = nodes[index_position+j]
                     found_ref_offsets[counter] = ref_offsets[index_position+j]
                     found_read_offsets[counter] = i
@@ -175,6 +185,9 @@ def run(reads_file_name,
 
             forward_and_reverse_chains.extend(chains)
             #print(chains)
+
+        #if len(forward_and_reverse_chains) == 0:
+        #continue
 
         # Find best chain
         best_score = 0

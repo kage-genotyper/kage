@@ -119,6 +119,7 @@ def genotypev2(args):
 hasher_hashes = None
 hashes_to_index = None
 n_kmers = None
+kmers = None
 nodes = None
 ref_offsets = None
 
@@ -134,7 +135,7 @@ def count_single_thread(reads):
     k = 31
     small_k = 16
     max_node_id = 13000000
-    kmer_index = KmerIndex(hasher, hashes_to_index, n_kmers, nodes, ref_offsets)
+    kmer_index = KmerIndex(hasher, hashes_to_index, n_kmers, nodes, ref_offsets, kmers)
     logging.info("Got %d lines" % len(reads))
     genotyper = CythonChainGenotyper(None, None, None, reads, kmer_index, None, k, None, None, reference_k=small_k, max_node_id=max_node_id)
     genotyper.get_counts()
@@ -163,6 +164,7 @@ def count(args):
     global n_kmers
     global nodes
     global ref_offsets
+    global kmers
 
     logging.info("Reading from file")
     kmer_index = KmerIndex.from_file(args.kmer_index)
@@ -171,6 +173,7 @@ def count(args):
     n_kmers = kmer_index._n_kmers
     nodes = kmer_index._nodes
     ref_offsets = kmer_index._ref_offsets
+    kmers = kmer_index._kmers
     reads = read_chunks(args.reads, chunk_size=args.chunk_size)
     max_node_id = 13000000
 
