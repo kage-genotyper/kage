@@ -117,7 +117,7 @@ def genotypev2(args):
 
 
 # Global numpy arrays used in multithreading, must be defined her to be global
-hasher_hashes = None
+modulo = None
 hashes_to_index = None
 n_kmers = None
 kmers = None
@@ -135,11 +135,10 @@ def count_single_thread(reads):
     if len(reads) == 0:
         logging.info("Skipping thread, no more reads")
         return None
-    hasher = ModuloHashMap(hasher_hashes)
     k = 31
     small_k = 16
     max_node_id = 13000000
-    kmer_index = KmerIndex(hasher, hashes_to_index, n_kmers, nodes, ref_offsets, kmers)
+    kmer_index = CollisionFreeKmerIndex(hashes_to_index, n_kmers, nodes, ref_offsets, kmers, modulo)
     logging.info("Got %d lines" % len(reads))
     genotyper = CythonChainGenotyper(None, None, None, reads, kmer_index, None, k, None, None, reference_k=small_k, max_node_id=max_node_id)
     genotyper.get_counts()
@@ -159,28 +158,30 @@ def read_chunks(fasta_file_name, chunk_size=10):
             yield out
             out = []
             i = 0
+    yield out
 
 
 
 def count(args):
-    global hasher_hashes
     global hashes_to_index
     global n_kmers
     global nodes
     global ref_offsets
     global kmers
+    global modulo
 
     logging.info("Reading from file")
-    kmer_index = KmerIndex.from_file(args.kmer_index)
-    hasher_hashes = kmer_index._hasher._hashes
+    kmer_index = CollisionFreeKmerIndex.from_file(args.kmer_index)
     hashes_to_index = kmer_index._hashes_to_index
     n_kmers = kmer_index._n_kmers
     nodes = kmer_index._nodes
     ref_offsets = kmer_index._ref_offsets
     kmers = kmer_index._kmers
+    modulo = kmer_index._modulo
     reads = read_chunks(args.reads, chunk_size=args.chunk_size)
     max_node_id = 13000000
 
+    logging.info("Making pool")
     pool = Pool(args.n_threads)
     node_counts = np.zeros(max_node_id+1, dtype=np.int64)
     for result in pool.imap_unordered(count_single_thread, reads):

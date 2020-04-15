@@ -55,12 +55,12 @@ cdef np.ndarray[np.int64_t] get_kmers(np.ndarray[np.int64_t] numeric_read, np.nd
 #@cython.boundscheck(False)
 #@cython.wraparound(False)
 def run(reads_file_name,
-          long[:] hashes,
           long[:] hashes_to_index,
-          long[:] n_kmers,
+          np.uint32_t[:] n_kmers,
           np.uint32_t[:] nodes,
           np.uint32_t[:] ref_offsets,
           np.uint64_t[:] index_kmers,
+          int modulo,
           np.ndarray[np.int64_t] reference_kmers,
           int max_node_id
           ):
@@ -102,6 +102,7 @@ def run(reads_file_name,
     cdef read_number = -1
     cdef np.ndarray[np.int64_t] chain_positions = np.zeros(100000000, dtype=np.int64)
 
+    logging.info("Starting cython chaining.")
     for line in file:
         if line.startswith(">"):
             continue
@@ -125,13 +126,13 @@ def run(reads_file_name,
 
             short_kmers_set = set(short_kmers)
 
-            kmer_hashes = np.mod(kmers, 452930477)
+            kmer_hashes = np.mod(kmers, modulo)
             n = kmers.shape[0]
             n_total_hits = 0
 
             # First find number of hits
             for i in range(n):
-                hash = hashes[kmer_hashes[i]]
+                hash = kmer_hashes[i]
                 if hash == 0:
                     continue
                 n_local_hits = n_kmers[hash]
@@ -151,7 +152,7 @@ def run(reads_file_name,
             counter = 0
 
             for i in range(n):
-                hash = hashes[kmer_hashes[i]]
+                hash = kmer_hashes[i]
                 if hash == 0:
                     continue
 
