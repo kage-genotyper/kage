@@ -1,6 +1,7 @@
 import gzip
 import logging
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
+from offsetbasedgraph.graph import AdjListAsNumpyArrays
 import sys
 from pyfaidx import Fasta
 import argparse
@@ -142,6 +143,15 @@ ref_offsets = None
 reference_kmers = None
 small_k = None
 k = None
+graph_edges_indices = None
+graph_edges_values = None
+graph_edges_n_edges = None
+graph_edges_node_id_offset = None
+distance_to_node = None
+reverse_index_nodes_to_index_positions = None
+reverse_index_nodes_to_n_hashes = None
+reverse_index_hashes = None
+reverse_index_ref_positions = None
 
 import numpy as np
 from pathos.multiprocessing import Pool
@@ -157,8 +167,10 @@ def count_single_thread(reads):
 
     max_node_id = 13000000
     kmer_index = CollisionFreeKmerIndex(hashes_to_index, n_kmers, nodes, ref_offsets, kmers, modulo, frequencies)
+    graph_edges = AdjListAsNumpyArrays(graph_edges_indices, graph_edges_values, graph_edges_n_edges, graph_edges_node_id_offset)
+    reverse_index = ReverseKmerIndex(reverse_index_nodes_to_index_positions, reverse_index_nodes_to_n_hashes, reverse_index_hashes, reverse_index_ref_positions)
     logging.info("Got %d lines" % len(reads))
-    genotyper = CythonChainGenotyper(None, None, None, reads, kmer_index, None, k, None, None, reference_k=small_k, max_node_id=max_node_id, reference_kmers=reference_kmers)
+    genotyper = CythonChainGenotyper(None, None, None, reads, kmer_index, None, k, None, None, reference_k=small_k, max_node_id=max_node_id, reference_kmers=reference_kmers, graph_edges=graph_edges, distance_to_node=distance_to_node, reverse_index=reverse_index)
     genotyper.get_counts()
     return genotyper._node_counts, genotyper.chain_positions
 
@@ -190,6 +202,15 @@ def count(args):
     global small_k
     global k
     global frequencies
+    global graph_edges_indices
+    global graph_edges_values
+    global graph_edges_n_edges
+    global graph_edges_node_id_offset
+    global distance_to_node
+    global reverse_index_nodes_to_index_positions
+    global reverse_index_nodes_to_n_hashes
+    global reverse_index_hashes
+    global reverse_index_ref_positions
 
     truth_positions = None
     if args.truth_alignments is not None:
@@ -208,7 +229,22 @@ def count(args):
     small_k = args.small_k
     k = args.kmer_size
     frequencies = kmer_index._frequencies
+    linear_path = NumpyIndexedInterval.from_file(args.linear_path)
+    distance_to_node = linear_path._distance_to_node
 
+    graph = Graph.from_file(args.graph)
+    edges = graph.adj_list
+
+    graph_edges_indices = edges._indices
+    graph_edges_values = edges._values
+    graph_edges_n_edges = edges._n_edges
+    graph_edges_node_id_offset = edges.node_id_offset
+
+    reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
+    reverse_index_nodes_to_index_positions = reverse_index.nodes_to_index_positions.astype(np.uint32)
+    reverse_index_nodes_to_n_hashes = reverse_index.nodes_to_n_hashes.astype(np.uint16)
+    reverse_index_hashes = reverse_index.hashes
+    reverse_index_ref_positions = reverse_index.ref_positions
 
     reference_kmers_cache_file_name = "ref.fa.%dmers" % args.small_k
     if os.path.isfile(reference_kmers_cache_file_name + ".npy"):
@@ -349,6 +385,9 @@ def run_argument_parser(args):
     subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
     subparser.add_argument("-c", "--chunk-size", type=int, default=10000, required=False, help="Number of reads to process in the same chunk")
     subparser.add_argument("-T", "--truth_alignments", required=False)
+    subparser.add_argument("-g", "--graph", required=True)
+    subparser.add_argument("-l", "--linear_path", required=True)
+    subparser.add_argument("-R", "--reverse-index", required=True)
     subparser.set_defaults(func=count)
 
     subparser = subparsers.add_parser("count_using_unique_index")
