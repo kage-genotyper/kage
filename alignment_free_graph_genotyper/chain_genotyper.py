@@ -13,6 +13,7 @@ from .letter_sequence_to_numeric import letter_sequence_to_numeric
 from .count_genotyper import CountGenotyper
 import math
 from alignment_free_graph_genotyper import cython_chain_genotyper
+from .genotyper import BestChainGenotyper
 
 def read_kmers(read, power_array):
     numeric = letter_sequence_to_numeric(read)
@@ -32,10 +33,12 @@ class NumpyNodeCounts:
         return cls(data)
 
 
+
 class ChainGenotyper:
     def __init__(self, graph, sequence_graph, linear_path, reads, kmer_index, vcf_file_name, k,
                  truth_alignments=None, write_alignments_to_file=None, reference_k=7,
-                 weight_chains_by_probabilities=False, max_node_id=None):
+                 weight_chains_by_probabilities=False, max_node_id=None, reference_kmers=None,
+                 unique_index=None, reverse_index=None):
 
         self._max_node_id = max_node_id
         self._reads = reads
@@ -53,8 +56,11 @@ class ChainGenotyper:
         self._has_not_correct_chain = []
         self._best_chain_matches = []
         self._weight_chains_by_probabilities = weight_chains_by_probabilities
-        self._reference_kmers = \
-            ReadKmers.get_kmers_from_read_dynamic(str(Fasta("ref.fa")["1"]), np.power(4, np.arange(0, reference_k)))
+        if reference_kmers is None:
+            self._reference_kmers = \
+                ReadKmers.get_kmers_from_read_dynamic(str(Fasta("ref.fa")["1"]), np.power(4, np.arange(0, reference_k)))
+        else:
+            self._reference_kmers = reference_kmers
 
         self._out_file_alignments = None
         if write_alignments_to_file is not None:
@@ -66,12 +72,16 @@ class ChainGenotyper:
 
         self._detected_chains = {}
         self.approx_read_length = 150
+        self.unique_index = unique_index
+        self.hits_against_unique_index = 0
+        self._reverse_index = reverse_index
 
     @staticmethod
-    def find_chains(ref_offsets, read_offsets, nodes, chain_position_threshold=2):
+    def find_chains(ref_offsets, read_offsets, nodes, frequencies, chain_position_threshold=2, kmers=None):
         # Sort everything
         potential_chain_start_positions = ref_offsets - read_offsets
         sorting = np.argsort(potential_chain_start_positions)
+        frequencies = frequencies[sorting]
         ref_offsets = ref_offsets[sorting]
         nodes = nodes[sorting]
         potential_chain_start_positions = potential_chain_start_positions[sorting]
@@ -83,10 +93,14 @@ class ChainGenotyper:
         chains = []
         for start, end in zip(chain_start_and_end_indexes[0:-1], chain_start_and_end_indexes[1:]):
             # Score depends on number of unique read offsets that matches kmers that gives this start
-            score = len(np.unique(read_offsets[start:end]))
+            #score = len(np.unique(read_offsets[start:end]))
             #logging.info("Score: %d" % score)
+            unique_ref_offsets, indexes = np.unique(read_offsets[start:end], return_index=True)
+            f = frequencies[start:end]
+            score = np.sum(1 / f[indexes])
+            #logging.info("Score: %.4f. %s" % (score, f[indexes]))
 
-            chains.append([potential_chain_start_positions[start], nodes[start:end], score])
+            chains.append([potential_chain_start_positions[start], nodes[start:end], score, kmers])
 
         return chains
 
@@ -114,7 +128,7 @@ class ChainGenotyper:
     def _get_read_chains_only_one_direction(self, read):
         kmers = read_kmers(read, self._power_array)
         short_kmers = read_kmers(read, self._power_array_short)
-        nodes, ref_offsets, read_offsets = self._kmer_index.get_nodes_and_ref_offsets_from_multiple_kmers(kmers)
+        nodes, ref_offsets, read_offsets, frequencies = self._kmer_index.get_nodes_and_ref_offsets_from_multiple_kmers(kmers)
         """
         nodes, ref_offsets, read_offsets = cython_index_lookup(
             kmers,
@@ -128,7 +142,7 @@ class ChainGenotyper:
 
         if len(nodes) == 0:
             return []
-        chains = ChainGenotyper.find_chains(ref_offsets, read_offsets, nodes)
+        chains = ChainGenotyper.find_chains(ref_offsets, read_offsets, nodes, frequencies, kmers=kmers)
         #chains = chain(ref_offsets, read_offsets, nodes)
         self._score_chains(chains, set(short_kmers))
         #chains = chain_with_score(ref_offsets, read_offsets, nodes, self._reference_kmers, short_kmers)
@@ -136,8 +150,27 @@ class ChainGenotyper:
 
     def _get_read_chains(self, read):
         # Gets all the chains for the read and its reverse complement
-        chains = self._get_read_chains_only_one_direction(read)
+        # First check match against unique index
+        hit_against_unique = False
+        if self.unique_index is not None:
+            for direction in [-1, 1]:
+                if direction == -1:
+                    kmers = read_kmers(str(Seq(read).reverse_complement()), self._power_array)
+                else:
+                    kmers = read_kmers(read, self._power_array)
 
+                for kmer_pos, kmer in enumerate(kmers):
+                    nodes = set(self.unique_index.get(kmer))
+                    if len(nodes) > 0:
+                        hit_against_unique = True
+                        self.hits_against_unique_index += 1
+                        for node in nodes:
+                            self._node_counts.add_count(node)
+
+        if hit_against_unique:
+            return None
+
+        chains = self._get_read_chains_only_one_direction(read)
         reverse_chains = self._get_read_chains_only_one_direction(str(Seq(read).reverse_complement()))
         chains.extend(reverse_chains)
         chains = sorted(chains, key=lambda c: c[2], reverse=True)
@@ -147,17 +180,26 @@ class ChainGenotyper:
     def get_counts(self):
         for i, read in enumerate(self._reads):
             if i % 1000 == 0:
-                logging.info("%d reads processed" % i)
+                logging.info("%d reads processed. Hits against unique index: %d" % (i, self.hits_against_unique_index))
 
             chains = self._get_read_chains(read)
+            if chains is None:
+                continue
+
             if len(chains) == 0:
                 logging.warning("Found no chains for %d" % i)
                 continue
             best_chain = chains[0]
             #self._detected_chains[i] = chains
 
-            for node in best_chain[1]:
-                self._node_counts.add_count(node)
+            if self._reverse_index is not None:
+                matching_nodes = BestChainGenotyper.align_nodes_to_read(self._reverse_index, self._graph, self._linear_path, int(best_chain[0]), best_chain[3], 150, set(best_chain[1]))
+                #logging.info("Matching nodes with reverse: %s. Original nodes: %s" % (matching_nodes, best_chain[1]))
+                for node in matching_nodes:
+                    self._node_counts.add_count(node)
+            else:
+                for node in best_chain[1]:
+                    self._node_counts.add_count(node)
 
             self._check_correctness(i, chains, best_chain)
 
@@ -204,10 +246,15 @@ class CythonChainGenotyper(ChainGenotyper):
                     index._nodes,
                     index._ref_offsets,
                     index._kmers,
+                    index._frequencies,
                     index._modulo,
                     self._reference_kmers,
-                    self._max_node_id
+                    self._max_node_id,
+                    self._reference_k,
+                    self._k
+
         )
+        self.chain_positions = chain_positions
         self._node_counts = NumpyNodeCounts(node_counts)
 
         end_time = time.time()
@@ -219,3 +266,54 @@ class CythonChainGenotyper(ChainGenotyper):
 
     def get_node_count(self, node):
         return self._node_counts.node_counts[node]
+
+
+class UniqueKmerGenotyper:
+    def __init__(self, unique_index, reads, k, max_node=13000000):
+        self._unique_index = unique_index
+        self._reads = reads
+        self._k = k
+        self._power_array = np.power(4, np.arange(0, self._k))
+        self._node_counts = NumpyNodeCounts(np.zeros(max_node))
+
+    def get_counts(self):
+        n_reads_hit = 0
+        logging.info("Getting counts for %d reads" % len(self._reads))
+        prev_time = time.time()
+        i = 0
+        debug_kmers = [ 327561780834057096, 3785481886904335240,  615792156985768840, 614947749235506056,  327561798013926280, 4074556687986178952,
+            326717355903925128,  615792174165638024, 4073712245876177800,
+           3786326311834467208,  614947732055636872, 4073712263056046984,
+           4074556670806309768, 3786326294654598024,  326717373083794312,
+           3785481869724466056]
+
+        debug_kmers = [94443029691480101, 94495806249613349]
+        for read in self._reads:
+            if read.startswith(">"):
+                continue
+
+            if i % 1000 == 0:
+                logging.info("%d lines processed. N reads hit index: %d. Time on last 1000: %.4f" % (i, n_reads_hit, time.time() - prev_time))
+                prev_time = time.time()
+
+            for direction in [-1, 1]:
+
+                if direction == -1:
+                    kmers = read_kmers(str(Seq(read).reverse_complement()), self._power_array)
+                else:
+                    kmers = read_kmers(read, self._power_array)
+
+                for kmer_pos, kmer in enumerate(kmers):
+                    if kmer in debug_kmers:
+                        logging.info("HIT! Read %d, kmer pos: %d, dir: %d. Kmer: %d. Read: %s" % (i, kmer_pos, direction, kmer, read))
+
+                    nodes = set(self._unique_index.get(kmer))
+                    if len(nodes) > 0:
+                        n_reads_hit += 1
+                        for node in nodes:
+                            self._node_counts.node_counts[node] += 1
+                        #break
+            i += 1
+
+
+

@@ -38,6 +38,7 @@ class CountGenotyper:
         apriori_haplotype_probabilities = [1-allele_frequency, allele_frequency]
         allele_counts = [self.genotyper.get_node_count(reference_node), self.genotyper.get_node_count(variant_node)]
 
+
         tot_counts = sum(allele_counts)
         e = self.expected_read_error_rate
         # Simple when we have bialleleic. Formula for multiallelic given in malva supplmentary
@@ -77,6 +78,10 @@ class CountGenotyper:
             logging.info("Prob of counts: %.3f" % prob_counts)
             logging.info("Posteriori probs for 00, 11, 01: %.4f, %.4f, %.4f" % (prob_posteriori_homozygous_ref, prob_posteriori_homozygous_alt, prob_posteriori_heterozygous))
 
+        # Minimum counts for genotyping
+        if allele_counts[1] < 0:
+            return "0/0"
+
         if prob_posteriori_homozygous_ref > prob_posteriori_homozygous_alt and prob_posteriori_homozygous_ref > prob_posteriori_heterozygous:
             return "0/0"
         elif prob_posteriori_homozygous_alt > prob_posteriori_heterozygous:
@@ -115,7 +120,7 @@ class CountGenotyper:
 
             if variant_type == "SNP":
                 debug = False
-                if ref_offset == 1016354-1:
+                if ref_offset == 1130902-1:
                     debug = True
                 reference_node, variant_node = self._process_substitution(ref_offset, variant_allele)
                 predicted_genotype = self._genotype_biallelic_snp(reference_node, variant_node, allele_frequency, debug, line)

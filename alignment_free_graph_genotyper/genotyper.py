@@ -317,7 +317,7 @@ class BestChainGenotyper(BaseGenotyper):
             chain[5] = prob
 
     @staticmethod
-    def read_has_kmer_around_position(read_kmers, kmer, position, threshold=0):
+    def read_has_kmer_around_position(read_kmers, kmer, position, threshold=1):
         if kmer in read_kmers[position-threshold: position+threshold+1]:
             return True
         return False

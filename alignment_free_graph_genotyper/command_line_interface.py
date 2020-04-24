@@ -1,17 +1,21 @@
-import sys
-import argparse
+import gzip
 import logging
-import time
-
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
+import sys
+from pyfaidx import Fasta
+import argparse
+import time
+import os
+
 from offsetbasedgraph import Graph, SequenceGraph, NumpyIndexedInterval
 from graph_kmer_index.kmer_index import KmerIndex
 from .genotyper import IndependentKmerGenotyper, ReadKmers, BestChainGenotyper, NodeCounts
 from numpy_alignments import NumpyAlignments
-from graph_kmer_index import ReverseKmerIndex, CollisionFreeKmerIndex
+from graph_kmer_index import ReverseKmerIndex, CollisionFreeKmerIndex, UniqueKmerIndex
 from .reads import Reads
-from .chain_genotyper import ChainGenotyper, CythonChainGenotyper, NumpyNodeCounts
+from .chain_genotyper import ChainGenotyper, CythonChainGenotyper, NumpyNodeCounts, UniqueKmerGenotyper
 
+logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
 
 def main():
     run_argument_parser(sys.argv[1:])
@@ -101,8 +105,19 @@ def genotypev2(args):
         genotyper_class = CythonChainGenotyper
         logging.info("Will use the cython genotyper")
 
+    unique_index = None
+    if args.unique_index is not None:
+        logging.info("Using unique index")
+        unique_index = UniqueKmerIndex.from_file(args.unique_index)
+
+    align_nodes_to_reads = None
+    if args.align_nodes_to_reads is not None:
+        logging.info("Variant nodes will be realigned to reads using Reverse Kmer Index")
+        align_nodes_to_reads = ReverseKmerIndex.from_file(args.align_nodes_to_reads)
+
     genotyper = genotyper_class(graph, sequence_graph, linear_path, reads, kmer_index, args.vcf, k,
-                                       truth_alignments, args.write_alignments_to_file, reference_k=args.small_k, max_node_id=4000000)
+                                       truth_alignments, args.write_alignments_to_file, reference_k=args.small_k, max_node_id=4000000,
+                                unique_index=unique_index, reverse_index=align_nodes_to_reads)
 
     if args.use_node_counts is not None:
         logging.info("Using node counts from file. Not getting counts.")
@@ -122,7 +137,11 @@ hashes_to_index = None
 n_kmers = None
 kmers = None
 nodes = None
+frequencies = None
 ref_offsets = None
+reference_kmers = None
+small_k = None
+k = None
 
 import numpy as np
 from pathos.multiprocessing import Pool
@@ -134,15 +153,14 @@ def count_single_thread(reads):
     logging.info("Startin thread")
     if len(reads) == 0:
         logging.info("Skipping thread, no more reads")
-        return None
-    k = 31
-    small_k = 16
+        return None, None
+
     max_node_id = 13000000
-    kmer_index = CollisionFreeKmerIndex(hashes_to_index, n_kmers, nodes, ref_offsets, kmers, modulo)
+    kmer_index = CollisionFreeKmerIndex(hashes_to_index, n_kmers, nodes, ref_offsets, kmers, modulo, frequencies)
     logging.info("Got %d lines" % len(reads))
-    genotyper = CythonChainGenotyper(None, None, None, reads, kmer_index, None, k, None, None, reference_k=small_k, max_node_id=max_node_id)
+    genotyper = CythonChainGenotyper(None, None, None, reads, kmer_index, None, k, None, None, reference_k=small_k, max_node_id=max_node_id, reference_kmers=reference_kmers)
     genotyper.get_counts()
-    return genotyper._node_counts
+    return genotyper._node_counts, genotyper.chain_positions
 
 
 
@@ -152,14 +170,13 @@ def read_chunks(fasta_file_name, chunk_size=10):
     out = []
     i = 0
     for line in file:
-        out.append(line)
+        out.append(line.strip())
         i += 1
-        if i >= chunk_size:
+        if i >= chunk_size and chunk_size > 0:
             yield out
             out = []
             i = 0
     yield out
-
 
 
 def count(args):
@@ -169,6 +186,16 @@ def count(args):
     global ref_offsets
     global kmers
     global modulo
+    global reference_kmers
+    global small_k
+    global k
+    global frequencies
+
+    truth_positions = None
+    if args.truth_alignments is not None:
+        truth_alignments = NumpyAlignments.from_file(args.truth_alignments)
+        truth_positions = truth_alignments.positions
+        logging.info("Read numpy alignments")
 
     logging.info("Reading from file")
     kmer_index = CollisionFreeKmerIndex.from_file(args.kmer_index)
@@ -178,16 +205,34 @@ def count(args):
     ref_offsets = kmer_index._ref_offsets
     kmers = kmer_index._kmers
     modulo = kmer_index._modulo
+    small_k = args.small_k
+    k = args.kmer_size
+    frequencies = kmer_index._frequencies
+
+
+    reference_kmers_cache_file_name = "ref.fa.%dmers" % args.small_k
+    if os.path.isfile(reference_kmers_cache_file_name + ".npy"):
+        logging.info("Used cached reference kmers from file %s.npy" % reference_kmers_cache_file_name)
+        reference_kmers = np.load(reference_kmers_cache_file_name + ".npy")
+    else:
+        logging.info("Creating reference kmers")
+        reference_kmers = ReadKmers.get_kmers_from_read_dynamic(str(Fasta("ref.fa")["1"]), np.power(4, np.arange(0, args.small_k)))
+        np.save(reference_kmers_cache_file_name, reference_kmers)
+
+    #reference_kmers = reference_kmers.astype(np.uint64)
     reads = read_chunks(args.reads, chunk_size=args.chunk_size)
     max_node_id = 13000000
 
     logging.info("Making pool")
     pool = Pool(args.n_threads)
     node_counts = np.zeros(max_node_id+1, dtype=np.int64)
-    for result in pool.imap_unordered(count_single_thread, reads):
+    for result, chain_positions in pool.imap_unordered(count_single_thread, reads):
         if result is not None:
             print("Got result. Length of counts: %d" % len(result.node_counts))
             node_counts += result.node_counts
+            if truth_positions is not None:
+                n_correct = len(np.where(np.abs(truth_positions - chain_positions) <= 150)[0])
+                logging.info("N correct chains: %d" % n_correct)
 
     NumpyNodeCounts(node_counts).to_file(args.node_counts_out_file_name)
 
@@ -203,6 +248,53 @@ def genotype_from_counts(args):
 
     genotyper._node_counts = counts
     genotyper.genotype()
+
+
+def count_using_unique_index(args):
+    unique_index = UniqueKmerIndex.from_file(args.unique_kmer_index)
+    k = args.kmer_size
+    reads = read_chunks(args.reads, -1).__next__()
+    genotyper = UniqueKmerGenotyper(unique_index, reads, k)
+    genotyper.get_counts()
+    genotyper._node_counts.to_file(args.node_counts_out_file_name)
+
+
+def vcfdiff(args):
+    allowed = ["0/0", "0/1", "1/1"]
+    assert args.truth_vcf.endswith(".gz"), "Assumes gz for now"
+    assert args.genotype in allowed
+    truth_positions = set()
+    genotype = args.genotype
+    truth = gzip.open(args.truth_vcf)
+    for i, line in enumerate(truth):
+        if i % 1000 == 0:
+            logging.info("Reading truth, %d lines" % i)
+
+        line = line.decode("utf-8")
+        if line.startswith("#"):
+            continue
+
+        l = line.split()
+        field = l[9]
+        if genotype == "0/1":
+            if "0/1" in field or "0|1" in field or "1/0" in field or "1|0" in field:
+                truth_positions.add(line.split()[1])
+        elif genotype == "1/1":
+            if "1/1" in field or "1|1":
+                truth_positions.add(line.split()[1])
+
+
+    vcf = open(args.vcf)
+    for line in vcf:
+        if line.startswith("#"):
+            continue
+
+        if genotype in line:
+            pos = line.split()[1]
+            if pos not in truth_positions:
+                print("False positive: %s" % line.strip())
+
+
 
 
 def run_argument_parser(args):
@@ -243,18 +335,30 @@ def run_argument_parser(args):
     subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
     subparser.add_argument("-u", "--use_node_counts", required=False)
     subparser.add_argument("-c", "--use_cython", required=False, type=bool, default=False)
+    subparser.add_argument("-U", "--unique_index", required=False, default=None)
+    subparser.add_argument("-L", "--align-nodes-to-reads", required=False, help="Reverse Kmer Index that will be used to check for support of variant nodes in reads")
     subparser.set_defaults(func=genotypev2)
 
 
     subparser = subparsers.add_parser("count")
     subparser.add_argument("-i", "--kmer_index", required=True)
     subparser.add_argument("-r", "--reads", required=True)
-    subparser.add_argument("-k", "--kmer_size", required=False, type=int, default=32)
+    subparser.add_argument("-k", "--kmer_size", required=False, type=int, default=31)
     subparser.add_argument("-w", "--small-k", required=False, type=int, default=16)
     subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
     subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
     subparser.add_argument("-c", "--chunk-size", type=int, default=10000, required=False, help="Number of reads to process in the same chunk")
+    subparser.add_argument("-T", "--truth_alignments", required=False)
     subparser.set_defaults(func=count)
+
+    subparser = subparsers.add_parser("count_using_unique_index")
+    subparser.add_argument("-i", "--unique_kmer_index", required=True)
+    subparser.add_argument("-r", "--reads", required=True)
+    subparser.add_argument("-k", "--kmer_size", required=False, type=int, default=31)
+    subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
+    subparser.add_argument("-T", "--truth_alignments", required=False)
+    subparser.set_defaults(func=count_using_unique_index)
+
 
     subparser = subparsers.add_parser("genotype_from_counts")
     subparser.add_argument("-c", "--counts", required=True)
@@ -263,6 +367,11 @@ def run_argument_parser(args):
     subparser.add_argument("-v", "--vcf", required=True, help="Vcf to genotype")
     subparser.set_defaults(func=genotype_from_counts)
 
+    subparser = subparsers.add_parser("vcfdiff")
+    subparser.add_argument("-v", "--vcf", required=True)
+    subparser.add_argument("-t", "--truth-vcf", required=True)
+    subparser.add_argument("-g", "--genotype", required=True)
+    subparser.set_defaults(func=vcfdiff)
 
     if len(args) == 0:
         parser.print_help()
