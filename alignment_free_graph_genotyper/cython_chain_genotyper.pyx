@@ -123,12 +123,15 @@ def run(reads_file_name,
     cdef np.ndarray[np.uint32_t] ref_nodes_in_read_area = np.zeros(0, dtype=np.uint32)
     cdef np.ndarray[np.int32_t] snp_nodes = np.zeros(0, dtype=np.int32)
     #cdef np.ndarray[np.int8_t] short_kmers_index = np.zeros(4**k_short, dtype=np.int8)
+    cdef np.uint64_t[:] reverse_kmers
+    cdef np.uint32_t[:] reverse_ref_positions
 
     cdef int best_chain_ref_pos = 0
     cdef np.uint32_t ref_node, current_node
     cdef np.uint32_t edges_index, n_edges
     cdef np.ndarray[np.int64_t] best_chain_kmers
     cdef int read_pos, reverse_index_index
+    cdef int current_node_match
 
     logging.info("Starting cython chaining.")
     prev_time = time.time()
@@ -279,7 +282,7 @@ def run(reads_file_name,
                     reverse_ref_positions = reverse_index_ref_positions[reverse_index_index:reverse_index_index+reverse_index_nodes_to_n_hashes[current_node]]
                     #logging.info("Reverse kmers at node %d: %s" % (current_node, list(reverse_kmers)))
                     # Check for existence in read
-                    current_node_match = False
+                    current_node_match = 0
                     for r in range(reverse_kmers.shape[0]):
                         read_pos = reverse_ref_positions[r] - best_chain_ref_pos
                         # Check for match around this pos
@@ -288,7 +291,7 @@ def run(reads_file_name,
                                 continue
 
                             if best_chain_kmers[a] == reverse_kmers[r]:
-                                current_node_match = True
+                                current_node_match = 1
                                 #logging.info("Read %d, Match against node %d. Read pos: %d, local read pos: %d, Ref pos: %d, Reverse kmer: %d. Snp nodes: %s" % (read_number, current_node, read_pos, a, reverse_ref_positions[r], reverse_kmers[r], list(snp_nodes)))
                                 break
 
