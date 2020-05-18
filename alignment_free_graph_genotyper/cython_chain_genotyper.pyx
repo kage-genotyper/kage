@@ -66,19 +66,18 @@ def run(reads_file_name,
           np.ndarray[np.int64_t] hashes_to_index,
           np.ndarray[np.uint32_t] n_kmers,
           np.uint32_t[:] nodes,
-          np.uint32_t[:] ref_offsets,
+          np.uint64_t[:] ref_offsets,
           np.uint64_t[:] index_kmers,
           np.uint16_t[:] index_frequencies,
           int modulo,
-          np.ndarray[np.int32_t] edges_indices,
-          np.ndarray[np.int32_t] edges_values,
-          np.ndarray[np.int32_t] edges_n_edges,
-          int edges_node_id_offset,
+          np.ndarray[np.uint32_t] edges_indices,
+          np.ndarray[np.int64_t] edges_values,
+          np.ndarray[np.uint8_t] edges_n_edges,
           np.uint32_t[:] distance_to_node,
           np.uint32_t[:] reverse_index_nodes_to_index_positions,
           np.uint16_t[:] reverse_index_nodes_to_n_hashes,
           np.uint64_t[:] reverse_index_hashes,
-          np.uint32_t[:] reverse_index_ref_positions,
+          np.uint64_t[:] reverse_index_ref_positions,
           np.ndarray[np.int64_t] reference_kmers,
           int max_node_id,
           int k_short,
@@ -111,22 +110,22 @@ def run(reads_file_name,
     cdef int n_local_hits, j
     cdef list forward_and_reverse_chains
     cdef float chain_score
-    cdef int ref_start, ref_end
+    cdef long ref_start, ref_end
     cdef int approx_read_length = 150
     #cdef np.ndarray[np.int64_t] local_reference_kmers
     cdef long[:] local_reference_kmers
     cdef set short_kmers_set
     cdef float best_score = 0
-    cdef list best_chain
+    #cdef list best_chain
     cdef read_number = -1
     cdef np.ndarray[np.int64_t] chain_positions = np.zeros(len(file)//2, dtype=np.int64)
     cdef np.ndarray[np.uint32_t] ref_nodes_in_read_area = np.zeros(0, dtype=np.uint32)
-    cdef np.ndarray[np.int32_t] snp_nodes = np.zeros(0, dtype=np.int32)
+    cdef np.ndarray[np.int64_t] snp_nodes = np.zeros(0, dtype=np.int64)
     #cdef np.ndarray[np.int8_t] short_kmers_index = np.zeros(4**k_short, dtype=np.int8)
     cdef np.uint64_t[:] reverse_kmers
-    cdef np.uint32_t[:] reverse_ref_positions
+    cdef np.uint64_t[:] reverse_ref_positions
 
-    cdef int best_chain_ref_pos = 0
+    cdef long best_chain_ref_pos = 0
     cdef np.uint32_t ref_node, current_node
     cdef np.uint32_t edges_index, n_edges
     cdef np.ndarray[np.int64_t] best_chain_kmers
@@ -186,7 +185,7 @@ def run(reads_file_name,
                     if index_kmers[index_position+j] != kmers[i]:
                         continue
 
-                    if index_frequencies[index_position+j] > 3:
+                    if index_frequencies[index_position+j] > 5:
                         continue
                     n_total_hits += 1
 
@@ -218,7 +217,7 @@ def run(reads_file_name,
                 for j in range(n_local_hits):
                     if index_kmers[index_position+j] != kmers[i]:
                         continue
-                    if index_frequencies[index_position+j] > 3:
+                    if index_frequencies[index_position+j] > 5:
                         continue
                     found_nodes[counter] = nodes[index_position+j]
                     found_ref_offsets[counter] = ref_offsets[index_position+j]
@@ -248,10 +247,14 @@ def run(reads_file_name,
 
         # Find best chain
         best_chain_kmers = None
+        best_chain = None
         for c in range(len(forward_and_reverse_chains)):
             if forward_and_reverse_chains[c][2] >= best_score:
                 best_score = forward_and_reverse_chains[c][2]
                 best_chain = forward_and_reverse_chains[c]
+
+        if best_chain is None:
+            continue
 
         chain_positions[read_number] = best_chain[0]
         best_score = 0
@@ -266,8 +269,8 @@ def run(reads_file_name,
 
         for c in range(0, ref_nodes_in_read_area.shape[0]):
             ref_node = ref_nodes_in_read_area[c]
-            edges_index = edges_indices[ref_node - edges_node_id_offset]
-            n_edges = edges_n_edges[ref_node-edges_node_id_offset]
+            edges_index = edges_indices[ref_node]
+            n_edges = edges_n_edges[ref_node]
             #logging.info("Ref node: %d, index: %d, n edges: %d" % (ref_node, edges_index, n_edges))
             if n_edges == 2:
                 # The next two nodes are snp nodes

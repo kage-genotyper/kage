@@ -38,7 +38,7 @@ class ChainGenotyper:
     def __init__(self, graph, sequence_graph, linear_path, reads, kmer_index, vcf_file_name, k,
                  truth_alignments=None, write_alignments_to_file=None, reference_k=7,
                  weight_chains_by_probabilities=False, max_node_id=None, reference_kmers=None,
-                 unique_index=None, reverse_index=None, graph_edges=None, distance_to_node=None):
+                 unique_index=None, reverse_index=None, graph_edges=None, distance_to_node=None, skip_reference_kmers=False):
 
         self._max_node_id = max_node_id
         self._reads = reads
@@ -56,11 +56,12 @@ class ChainGenotyper:
         self._has_not_correct_chain = []
         self._best_chain_matches = []
         self._weight_chains_by_probabilities = weight_chains_by_probabilities
-        if reference_kmers is None:
-            self._reference_kmers = \
-                ReadKmers.get_kmers_from_read_dynamic(str(Fasta("ref.fa")["1"]), np.power(4, np.arange(0, reference_k)))
-        else:
-            self._reference_kmers = reference_kmers
+        if not skip_reference_kmers:
+            if reference_kmers is None:
+                self._reference_kmers = \
+                    ReadKmers.get_kmers_from_read_dynamic(str(Fasta("ref.fa")["1"]), np.power(4, np.arange(0, reference_k)))
+            else:
+                self._reference_kmers = reference_kmers
 
         self._out_file_alignments = None
         if write_alignments_to_file is not None:
@@ -250,11 +251,10 @@ class CythonChainGenotyper(ChainGenotyper):
                     index._kmers,
                     index._frequencies,
                     index._modulo,
-                    self._graph_edges._indices,
-                    self._graph_edges._values,
-                    self._graph_edges._n_edges,
-                    self._graph_edges.node_id_offset,
-                    self._distance_to_node,
+                    self._graph.node_to_edge_index,
+                    self._graph.edges,
+                    self._graph.node_to_n_edges,
+                    self._graph.ref_offset_to_node,
                     self._reverse_index.nodes_to_index_positions,
                     self._reverse_index.nodes_to_n_hashes,
                     self._reverse_index.hashes,

@@ -132,17 +132,17 @@ class CountGenotyper:
 
             print("%s\t%s" % ("\t".join(l[0:9]), predicted_genotype))
 
-    def _process_substitution(self, ref_offset, variant_bases):
-        node = self.reference_path.get_node_at_offset(ref_offset)
-        node_offset = self.reference_path.get_node_offset_at_offset(ref_offset)
+    def _process_substitution(self, ref_offset, variant_bases, chromosome=1):
+        node = self.graph.get_node_at_chromosome_and_chromosome_offset(chromosome, ref_offset)
+        node_offset = self.graph.get_node_offset_at_chromosome_and_chromosome_offset(chromosome, ref_offset)
         assert node_offset == 0
-        prev_node = self.reference_path.get_node_at_offset(ref_offset - 1)
+        prev_node = self.graph.get_node_at_chromosome_and_chromosome_offset(chromosome, ref_offset - 1)
 
         # Try to find next node that matches read base
-        for potential_next in self.graph.adj_list[prev_node]:
+        for potential_next in self.graph.get_edges(prev_node):
             if potential_next == node:
                 continue
-            node_seq = self.sequence_graph.get_sequence(potential_next, 0, 1)
+            node_seq = self.graph.get_node_sequence(potential_next)[0]
             if node_seq.lower() == variant_bases.lower():
                 return node, potential_next
 

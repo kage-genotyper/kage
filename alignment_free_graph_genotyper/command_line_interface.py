@@ -1,7 +1,6 @@
 import gzip
 import logging
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
-from offsetbasedgraph.graph import AdjListAsNumpyArrays
 import sys
 from pyfaidx import Fasta
 import argparse
@@ -9,6 +8,7 @@ import time
 import os
 
 from offsetbasedgraph import Graph, SequenceGraph, NumpyIndexedInterval
+from obgraph import Graph as ObGraph
 from graph_kmer_index.kmer_index import KmerIndex
 from .genotyper import IndependentKmerGenotyper, ReadKmers, BestChainGenotyper, NodeCounts
 from numpy_alignments import NumpyAlignments
@@ -146,7 +146,6 @@ k = None
 graph_edges_indices = None
 graph_edges_values = None
 graph_edges_n_edges = None
-graph_edges_node_id_offset = None
 distance_to_node = None
 reverse_index_nodes_to_index_positions = None
 reverse_index_nodes_to_n_hashes = None
@@ -165,12 +164,13 @@ def count_single_thread(reads):
         logging.info("Skipping thread, no more reads")
         return None, None
 
-    max_node_id = 13000000
+    max_node_id = 160000000
     kmer_index = CollisionFreeKmerIndex(hashes_to_index, n_kmers, nodes, ref_offsets, kmers, modulo, frequencies)
-    graph_edges = AdjListAsNumpyArrays(graph_edges_indices, graph_edges_values, graph_edges_n_edges, graph_edges_node_id_offset)
+    logging.info("Distance to node type: %s" % distance_to_node.dtype)
+    graph = ObGraph(None, None, None, graph_edges_indices, graph_edges_n_edges, graph_edges_values, None, distance_to_node, None)
     reverse_index = ReverseKmerIndex(reverse_index_nodes_to_index_positions, reverse_index_nodes_to_n_hashes, reverse_index_hashes, reverse_index_ref_positions)
     logging.info("Got %d lines" % len(reads))
-    genotyper = CythonChainGenotyper(None, None, None, reads, kmer_index, None, k, None, None, reference_k=small_k, max_node_id=max_node_id, reference_kmers=reference_kmers, graph_edges=graph_edges, distance_to_node=distance_to_node, reverse_index=reverse_index)
+    genotyper = CythonChainGenotyper(graph, None, None, reads, kmer_index, None, k, None, None, reference_k=small_k, max_node_id=max_node_id, reference_kmers=reference_kmers, reverse_index=reverse_index)
     genotyper.get_counts()
     return genotyper._node_counts, genotyper.chain_positions
 
@@ -205,7 +205,6 @@ def count(args):
     global graph_edges_indices
     global graph_edges_values
     global graph_edges_n_edges
-    global graph_edges_node_id_offset
     global distance_to_node
     global reverse_index_nodes_to_index_positions
     global reverse_index_nodes_to_n_hashes
@@ -229,16 +228,12 @@ def count(args):
     small_k = args.small_k
     k = args.kmer_size
     frequencies = kmer_index._frequencies
-    linear_path = NumpyIndexedInterval.from_file(args.linear_path)
-    distance_to_node = linear_path._distance_to_node
+    graph = ObGraph.from_file(args.graph)
+    distance_to_node = graph.ref_offset_to_node
 
-    graph = Graph.from_file(args.graph)
-    edges = graph.adj_list
-
-    graph_edges_indices = edges._indices
-    graph_edges_values = edges._values
-    graph_edges_n_edges = edges._n_edges
-    graph_edges_node_id_offset = edges.node_id_offset
+    graph_edges_indices = graph.node_to_edge_index
+    graph_edges_values = graph.edges
+    graph_edges_n_edges = graph.node_to_n_edges
 
     reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
     reverse_index_nodes_to_index_positions = reverse_index.nodes_to_index_positions.astype(np.uint32)
@@ -252,12 +247,12 @@ def count(args):
         reference_kmers = np.load(reference_kmers_cache_file_name + ".npy")
     else:
         logging.info("Creating reference kmers")
-        reference_kmers = ReadKmers.get_kmers_from_read_dynamic(str(Fasta("ref.fa")["1"]), np.power(4, np.arange(0, args.small_k)))
+        reference_kmers = ReadKmers.get_kmers_from_read_dynamic(str(Fasta("ref.fa")[args.reference_name]), np.power(4, np.arange(0, args.small_k)))
         np.save(reference_kmers_cache_file_name, reference_kmers)
 
     #reference_kmers = reference_kmers.astype(np.uint64)
     reads = read_chunks(args.reads, chunk_size=args.chunk_size)
-    max_node_id = 13000000
+    max_node_id = 160000000
 
     logging.info("Making pool")
     pool = Pool(args.n_threads)
@@ -269,18 +264,20 @@ def count(args):
             if truth_positions is not None:
                 n_correct = len(np.where(np.abs(truth_positions - chain_positions) <= 150)[0])
                 logging.info("N correct chains: %d" % n_correct)
+        else:
+            logging.info("No results")
 
     NumpyNodeCounts(node_counts).to_file(args.node_counts_out_file_name)
 
 
 def genotype_from_counts(args):
     counts = NumpyNodeCounts.from_file(args.counts)
-    graph = Graph.from_file(args.graph_file_name)
-    sequence_graph = SequenceGraph.from_file(args.graph_file_name + ".sequences")
-    linear_path = NumpyIndexedInterval.from_file(args.linear_path_file_name)
+    graph = ObGraph.from_file(args.graph_file_name)
+    sequence_graph =  None  #SequenceGraph.from_file(args.graph_file_name + ".sequences")
+    linear_path = None  # NumpyIndexedInterval.from_file(args.linear_path_file_name)
 
     genotyper = CythonChainGenotyper(graph, sequence_graph, linear_path, None, None, args.vcf, None,
-                                       None)
+                                       None, skip_reference_kmers=True)
 
     genotyper._node_counts = counts
     genotyper.genotype()
@@ -381,12 +378,12 @@ def run_argument_parser(args):
     subparser.add_argument("-r", "--reads", required=True)
     subparser.add_argument("-k", "--kmer_size", required=False, type=int, default=31)
     subparser.add_argument("-w", "--small-k", required=False, type=int, default=16)
-    subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
+    subparser.add_argument("-n", "--node_counts_out_file_name", required=True)
     subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
     subparser.add_argument("-c", "--chunk-size", type=int, default=10000, required=False, help="Number of reads to process in the same chunk")
     subparser.add_argument("-T", "--truth_alignments", required=False)
     subparser.add_argument("-g", "--graph", required=True)
-    subparser.add_argument("-l", "--linear_path", required=True)
+    subparser.add_argument("-y", "--reference-name", required=False, default="1")
     subparser.add_argument("-R", "--reverse-index", required=True)
     subparser.set_defaults(func=count)
 
@@ -402,7 +399,6 @@ def run_argument_parser(args):
     subparser = subparsers.add_parser("genotype_from_counts")
     subparser.add_argument("-c", "--counts", required=True)
     subparser.add_argument("-g", "--graph_file_name", required=True)
-    subparser.add_argument("-l", "--linear_path_file_name", required=True)
     subparser.add_argument("-v", "--vcf", required=True, help="Vcf to genotype")
     subparser.set_defaults(func=genotype_from_counts)
 
