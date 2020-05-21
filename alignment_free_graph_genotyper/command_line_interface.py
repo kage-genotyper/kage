@@ -9,12 +9,14 @@ import os
 
 from offsetbasedgraph import Graph, SequenceGraph, NumpyIndexedInterval
 from obgraph import Graph as ObGraph
-from graph_kmer_index.kmer_index import KmerIndex
+from graph_kmer_index import KmerIndex
 from .genotyper import IndependentKmerGenotyper, ReadKmers, BestChainGenotyper, NodeCounts
 from numpy_alignments import NumpyAlignments
 from graph_kmer_index import ReverseKmerIndex, CollisionFreeKmerIndex, UniqueKmerIndex
 from .reads import Reads
 from .chain_genotyper import ChainGenotyper, CythonChainGenotyper, NumpyNodeCounts, UniqueKmerGenotyper
+from graph_kmer_index.cython_kmer_index import CythonKmerIndex
+from .reference_kmers import ReferenceKmers
 
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
 
@@ -189,6 +191,30 @@ def read_chunks(fasta_file_name, chunk_size=10):
             out = []
             i = 0
     yield out
+
+
+def run_map(args):
+    index = KmerIndex.from_file(args.kmer_index)
+    cython_index = CythonKmerIndex(index)
+    k = args.kmer_size
+    short_k = args.short_kmer_size
+    reference_kmers = ReferenceKmers(args.reference_fasta_file, args.reference_name, short_k, allow_cache=True)
+
+    with open(args.reads) as f:
+        reads = [line.strip() for line in f if not line.startswith(">")]
+
+    from .cython_mapper import map
+    positions = map(reads, cython_index, reference_kmers, k, short_k)
+
+    truth_positions = None
+    if args.truth_alignments is not None:
+        truth_alignments = NumpyAlignments.from_file(args.truth_alignments)
+        truth_positions = truth_alignments.positions
+        logging.info("Read numpy alignments")
+
+    if truth_positions is not None:
+        n_correct = len(np.where(np.abs(truth_positions - positions) <= 150)[0])
+        logging.info("N correct chains: %d" % n_correct)
 
 
 def count(args):
@@ -372,7 +398,6 @@ def run_argument_parser(args):
     subparser.add_argument("-L", "--align-nodes-to-reads", required=False, help="Reverse Kmer Index that will be used to check for support of variant nodes in reads")
     subparser.set_defaults(func=genotypev2)
 
-
     subparser = subparsers.add_parser("count")
     subparser.add_argument("-i", "--kmer_index", required=True)
     subparser.add_argument("-r", "--reads", required=True)
@@ -407,6 +432,16 @@ def run_argument_parser(args):
     subparser.add_argument("-t", "--truth-vcf", required=True)
     subparser.add_argument("-g", "--genotype", required=True)
     subparser.set_defaults(func=vcfdiff)
+
+    subparser = subparsers.add_parser("map")
+    subparser.add_argument("-r", "--reads", required=True)
+    subparser.add_argument("-i", "--kmer-index", required=True)
+    subparser.add_argument("-k", "--kmer-size", required=True, type=int)
+    subparser.add_argument("-s", "--short-kmer-size", type=int, default=16, required=False)
+    subparser.add_argument("-F", "--reference-fasta-file", required=True)
+    subparser.add_argument("-y", "--reference-name", required=False, default="1")
+    subparser.add_argument("-T", "--truth_alignments", required=False)
+    subparser.set_defaults(func=run_map)
 
     if len(args) == 0:
         parser.print_help()
