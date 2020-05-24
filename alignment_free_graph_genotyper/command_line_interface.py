@@ -1,6 +1,7 @@
 import gzip
 import logging
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
+from itertools import repeat
 import sys
 from pyfaidx import Fasta
 import argparse
@@ -17,6 +18,7 @@ from .reads import Reads
 from .chain_genotyper import ChainGenotyper, CythonChainGenotyper, NumpyNodeCounts, UniqueKmerGenotyper
 from graph_kmer_index.cython_kmer_index import CythonKmerIndex
 from .reference_kmers import ReferenceKmers
+from .cython_mapper import map
 
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
 
@@ -184,6 +186,9 @@ def read_chunks(fasta_file_name, chunk_size=10):
     out = []
     i = 0
     for line in file:
+        if line.startswith(">"):
+            continue
+
         out.append(line.strip())
         i += 1
         if i >= chunk_size and chunk_size > 0:
@@ -191,6 +196,35 @@ def read_chunks(fasta_file_name, chunk_size=10):
             out = []
             i = 0
     yield out
+
+
+def run_map_single_thread(reads, args):
+    logging.info("Running single thread on %d reads" % len(reads))
+    logging.info("Args: %s" % args)
+    index = KmerIndex.from_file(args.kmer_index)
+    cython_index = CythonKmerIndex(index)
+    k = args.kmer_size
+    short_k = args.short_kmer_size
+    reference_kmers = ReferenceKmers(args.reference_fasta_file, args.reference_name, short_k, allow_cache=True)
+
+    from .cython_mapper import map
+    positions, counts = map(reads, cython_index, reference_kmers, k, short_k, args.max_node_id)
+    return np.array(counts)
+
+def run_map_multiprocess(args):
+    reads = read_chunks(args.reads, chunk_size=args.chunk_size)
+    max_node_id = args.max_node_id
+    logging.info("Making pool")
+    pool = Pool(args.n_threads)
+    node_counts = np.zeros(max_node_id, dtype=np.int64)
+
+    for counts in pool.starmap(run_map_single_thread, zip(reads, repeat(args))):
+        node_counts += counts
+
+    counts = NumpyNodeCounts(node_counts)
+    counts.to_file(args.node_counts_out_file_name)
+    logging.info("Wrote node counts to file %s" % args.node_counts_out_file_name)
+
 
 
 def run_map(args):
@@ -203,14 +237,19 @@ def run_map(args):
     with open(args.reads) as f:
         reads = [line.strip() for line in f if not line.startswith(">")]
 
-    from .cython_mapper import map
-    positions = map(reads, cython_index, reference_kmers, k, short_k)
+    positions, node_counts = map(reads, cython_index, reference_kmers, k, short_k, args.max_node_id)
 
     truth_positions = None
     if args.truth_alignments is not None:
         truth_alignments = NumpyAlignments.from_file(args.truth_alignments)
         truth_positions = truth_alignments.positions
         logging.info("Read numpy alignments")
+
+    if args.node_counts_out_file_name:
+        logging.info("Writing node counts to file: %s" % args.node_counts_out_file_name)
+
+        counts = NumpyNodeCounts(node_counts)
+        counts.to_file(args.node_counts_out_file_name)
 
     if truth_positions is not None:
         n_correct = len(np.where(np.abs(truth_positions - positions) <= 150)[0])
@@ -293,7 +332,8 @@ def count(args):
         else:
             logging.info("No results")
 
-    NumpyNodeCounts(node_counts).to_file(args.node_counts_out_file_name)
+    counts = NumpyNodeCounts(node_counts)
+    counts.to_file(args.node_counts_out_file_name)
 
 
 def genotype_from_counts(args):
@@ -441,7 +481,12 @@ def run_argument_parser(args):
     subparser.add_argument("-F", "--reference-fasta-file", required=True)
     subparser.add_argument("-y", "--reference-name", required=False, default="1")
     subparser.add_argument("-T", "--truth_alignments", required=False)
-    subparser.set_defaults(func=run_map)
+    subparser.add_argument("-M", "--max_node_id", type=int, default=2000000, required=False)
+    subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
+    subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
+    subparser.add_argument("-c", "--chunk-size", type=int, default=10000, required=False, help="Number of reads to process in the same chunk")
+
+    subparser.set_defaults(func=run_map_multiprocess)
 
     if len(args) == 0:
         parser.print_help()

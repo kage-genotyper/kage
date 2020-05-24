@@ -63,7 +63,7 @@ cdef unsigned long[:] get_kmers(np.ndarray[np.uint64_t] numeric_read, np.ndarray
     return np.convolve(numeric_read, power_array, mode='valid')
 
 
-cpdef map(reads, kmer_index, ref_kmers, int k, int k_short):
+cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id):
     start_time = time.time()
     cdef int n_reads = len(reads)
     cdef np.ndarray[np.uint64_t, ndim=1] numeric_read, reverse_read
@@ -82,6 +82,7 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short):
     cdef int l, n_hits
     cdef np.ndarray[np.int64_t] reference_kmers = ref_kmers.reference_kmers
     cdef float best_score = 0
+    cdef np.ndarray[np.uint16_t] node_counts = np.zeros(max_node_id, dtype=np.uint16)
 
     cdef unsigned long[:] mapping_positions = np.zeros(n_reads, dtype=np.uint64)
 
@@ -135,14 +136,22 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short):
                 best_score = forward_and_reverse_chains[c][2]
                 best_chain = forward_and_reverse_chains[c]
 
+        if best_score < 0.4 * (150 - k_short):
+            continue
+
         best_score = 0.0
         if best_chain is None:
             continue
 
+
+        # Increase node counts
+        for l in range(best_chain[1].shape[0]):
+            node_counts[best_chain[1][l]] += 1
+
         mapping_positions[read_number] = best_chain[0]
 
     logging.info("Time spent: %.4f" % (time.time() - start_time))
-    return mapping_positions
+    return mapping_positions, node_counts
 
 
 
