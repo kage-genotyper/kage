@@ -17,8 +17,10 @@ from graph_kmer_index import ReverseKmerIndex, CollisionFreeKmerIndex, UniqueKme
 from .reads import Reads
 from .chain_genotyper import ChainGenotyper, CythonChainGenotyper, NumpyNodeCounts, UniqueKmerGenotyper
 from graph_kmer_index.cython_kmer_index import CythonKmerIndex
+from graph_kmer_index.cython_reference_kmer_index import CythonReferenceKmerIndex
 from .reference_kmers import ReferenceKmers
 from .cython_mapper import map
+from graph_kmer_index import ReferenceKmerIndex
 
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
 
@@ -201,14 +203,26 @@ def read_chunks(fasta_file_name, chunk_size=10):
 def run_map_single_thread(reads, args):
     logging.info("Running single thread on %d reads" % len(reads))
     logging.info("Args: %s" % args)
+    logging.info("Reading kmerindex from file")
     index = KmerIndex.from_file(args.kmer_index)
+    logging.info("Done reading index")
     cython_index = CythonKmerIndex(index)
     k = args.kmer_size
     short_k = args.short_kmer_size
-    reference_kmers = ReferenceKmers(args.reference_fasta_file, args.reference_name, short_k, allow_cache=True)
+    if args.reference_kmer_index.endswith(".fa"):
+        reference_kmers = ReferenceKmers(args.reference_kmer_index, args.reference_name, short_k, allow_cache=True)
+        ref_index_index = np.zeros(1, dtype=np.uint64)
+        ref_index_kmers= np.zeros(1, dtype=np.uint64)
+    else:
+        logging.info("Reading reference kmer index")
+        reference_kmers = ReferenceKmerIndex.from_file(args.reference_kmer_index)
+        #reference_kmers = CythonReferenceKmerIndex(reference_kmers)
+        ref_index_index = reference_kmers.ref_position_to_index
+        ref_index_kmers = reference_kmers.kmers
+
 
     from .cython_mapper import map
-    positions, counts = map(reads, cython_index, reference_kmers, k, short_k, args.max_node_id)
+    positions, counts = map(reads, cython_index, reference_kmers, k, short_k, args.max_node_id, ref_index_index, ref_index_kmers)
     return np.array(counts)
 
 def run_map_multiprocess(args):
@@ -216,7 +230,9 @@ def run_map_multiprocess(args):
     max_node_id = args.max_node_id
     logging.info("Making pool")
     pool = Pool(args.n_threads)
+    logging.info("Allocating node counts array")
     node_counts = np.zeros(max_node_id, dtype=np.int64)
+    logging.info("Done allocating")
 
     for counts in pool.starmap(run_map_single_thread, zip(reads, repeat(args))):
         node_counts += counts
@@ -478,7 +494,8 @@ def run_argument_parser(args):
     subparser.add_argument("-i", "--kmer-index", required=True)
     subparser.add_argument("-k", "--kmer-size", required=True, type=int)
     subparser.add_argument("-s", "--short-kmer-size", type=int, default=16, required=False)
-    subparser.add_argument("-F", "--reference-fasta-file", required=True)
+    #subparser.add_argument("-F", "--reference-fasta-file", required=True)
+    subparser.add_argument("-F", "--reference-kmer-index", required=True)
     subparser.add_argument("-y", "--reference-name", required=False, default="1")
     subparser.add_argument("-T", "--truth_alignments", required=False)
     subparser.add_argument("-M", "--max_node_id", type=int, default=2000000, required=False)
