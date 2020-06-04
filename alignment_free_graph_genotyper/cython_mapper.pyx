@@ -23,8 +23,8 @@ cdef list chain(np.ndarray[np.uint64_t] ref_offsets,  np.ndarray[np.uint64_t] re
 
     cdef list chains = []
     cdef float score
-    cdef int current_start = 0
-    cdef int prev_position = potential_chain_start_positions[0]
+    cdef unsigned long current_start = 0
+    cdef unsigned long prev_position = potential_chain_start_positions[0]
     for i in range(1, potential_chain_start_positions.shape[0]):
         if potential_chain_start_positions[i] >= prev_position + 2:
             score = 0.0  #np.unique(read_offsets[current_start:i]).shape[0]
@@ -39,7 +39,7 @@ cdef list chain(np.ndarray[np.uint64_t] ref_offsets,  np.ndarray[np.uint64_t] re
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef np.ndarray[np.int64_t, ndim=1] letter_sequence_to_numeric(np.ndarray[np.int8_t, ndim=1] letter_sequence):
+cdef np.ndarray[np.uint64_t] letter_sequence_to_numeric(np.ndarray[np.int8_t, ndim=1] letter_sequence):
 #cdef letter_sequence_to_numeric(np.ndarray[np.int8_t, ndim=1] letter_sequence):
     cdef np.ndarray[np.uint64_t] numeric = np.zeros(letter_sequence.shape[0], dtype=np.uint64)
     cdef int i = 0
@@ -47,13 +47,13 @@ cdef np.ndarray[np.int64_t, ndim=1] letter_sequence_to_numeric(np.ndarray[np.int
     for i in range(0, letter_sequence.shape[0]):
         base = letter_sequence[i]
         if base == 97 or base == 65:
-            numeric[i] = 0
+            numeric[i] = <np.uint64_t> 0
         elif base == 99 or base == 67:
-            numeric[i] = 1
+            numeric[i] = <np.uint64_t> 1
         elif base == 116 or base == 84:
-            numeric[i] = 2
+            numeric[i] = <np.uint64_t> 2
         elif base == 103 or base == 71:
-            numeric[i] = 3
+            numeric[i] = <np.uint64_t> 3
     return numeric
 
 
@@ -72,7 +72,7 @@ cdef int set_intersection(int[:] set_array, unsigned long[:] other_array):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef int set_intersection_noslice(int[:] set_array, unsigned long[:] other_array, unsigned long start, unsigned long stop):
+cdef int set_intersection_noslice(int[:] set_array, unsigned int[:] other_array, unsigned int start, unsigned int stop):
     cdef int n = 0
     cdef unsigned long i = 0
     for i in range(start, stop):
@@ -84,7 +84,7 @@ cdef int set_intersection_noslice(int[:] set_array, unsigned long[:] other_array
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef unsigned long[:] get_kmers(np.ndarray[np.uint64_t] numeric_read, np.ndarray[np.uint64_t] power_array):
+cdef np.ndarray[np.uint64_t, ndim=1] get_kmers(np.ndarray[np.uint64_t] numeric_read, np.ndarray[np.uint64_t] power_array):
 #def get_kmers(np.ndarray[np.int64_t] numeric_read, np.ndarray[np.int64_t] power_array):
     return np.convolve(numeric_read, power_array, mode='valid')
 
@@ -94,14 +94,14 @@ cdef unsigned long[:] get_spaced_kmers(np.ndarray[np.uint64_t] numeric_read, np.
 #def get_kmers(np.ndarray[np.int64_t] numeric_read, np.ndarray[np.int64_t] power_array):
     return np.convolve(numeric_read, power_array, mode='valid')[::spacing]
 
-@cython.boundscheck(False)
+#@cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
-cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, unsigned long[:] ref_index_index, unsigned long[:] ref_index_kmers):
+cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, unsigned int[:] ref_index_kmers, reverse_index):
     start_time = time.time()
     cdef int n_reads = len(reads)
-    cdef np.ndarray[np.uint64_t, ndim=1] numeric_read, reverse_read
-    cdef unsigned long[:] kmers, short_kmers, kmer_hashes
+    cdef np.ndarray[np.uint64_t] numeric_read, reverse_read
+    cdef np.ndarray[np.uint64_t] kmers, short_kmers, kmer_hashes
     cdef np.ndarray[np.uint64_t] power_array = np.power(4, np.arange(0, k, dtype=np.uint64))
     cdef np.ndarray[np.uint64_t] power_array_short = np.power(4, np.arange(0, k_short, dtype=np.uint64))
     cdef np.ndarray[np.uint64_t] node_hits
@@ -112,7 +112,7 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
     cdef float chain_score
     cdef unsigned long ref_start, ref_end
     cdef unsigned long approx_read_length = 150
-    cdef np.ndarray[np.int64_t] best_chain_kmers
+    cdef unsigned long[:] best_chain_kmers
     cdef int l, n_hits
     #cdef np.ndarray[np.int64_t] reference_kmers = ref_kmers.reference_kmers
     cdef float best_score = 0
@@ -124,6 +124,8 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
     cdef set short_kmers_set
     cdef int u
     cdef int chain_score_int
+    cdef unsigned long best_chain_ref_position = 0
+    cdef unsigned long approx_read_position
 
     cdef int[:] short_kmers_array_set = np.zeros(100000007, dtype=np.int32)
 
@@ -138,6 +140,7 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
         read_number += 1
 
         numeric_read = letter_sequence_to_numeric(np.array(list(read), dtype="|S1").view(np.int8))
+        #logging.info(type(numeric_read[0]))
         reverse_read = numeric_read[::-1]
         #forward_and_reverse_chains = []
 
@@ -151,7 +154,8 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
                short_kmers = get_kmers(reverse_read, power_array_short)
                #short_kmers = get_spaced_kmers(reverse_read, power_array_short, k_short)
 
-
+            #logging.info(kmers.dtype)
+            #logging.info(kmers[0].dtype)
             #short_kmers_set = set(short_kmers)
             #n_unique_short_kmers = len(short_kmers_set)
 
@@ -183,13 +187,13 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
                 #    continue
                 #chains[c][2] = len(short_kmers_set.intersection(ref_index_kmers[ref_index_index[ref_start]:ref_index_index[ref_end-k_short]]))
                 #chains[c][2] = set_intersection(short_kmers_array_set, ref_index_kmers[ref_index_index[ref_start]:ref_index_index[ref_end-k_short]])    # n_unique_short_kmers
-                chain_score_int = set_intersection_noslice(short_kmers_array_set, ref_index_kmers, ref_index_index[ref_start], ref_index_index[ref_start + approx_read_length - k_short])
+                chain_score_int = set_intersection_noslice(short_kmers_array_set, ref_index_kmers, ref_start, ref_start + approx_read_length - k_short)
                 #chains[c][2] = chain_score_int
 
                 if chain_score_int >= best_score:
                     best_score = chain_score_int
                     best_chain = chains[c]
-
+                    best_chain_ref_position = best_chain[0]
 
             #logging.info("N chains: %d" % len(chains))
             for u in range(short_kmers.shape[0]):
@@ -219,10 +223,50 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
         if best_chain is None:
             continue
 
+        # Lookup in reverse index
+        best_chain_kmers = best_chain[3]
+        rev_kmers, rev_positions, rev_nodes = reverse_index.get_all_between(best_chain_ref_position, best_chain_ref_position + approx_read_length - 31)
+        nodes_increased = set()
+        got_hit = False
+        #nodes_to_increase = []
+        for l in range(rev_kmers.shape[0]):
+            # Look for match of this kmer in the read
+            approx_read_position = rev_positions[l] - best_chain_ref_position
+            #assert rev_positions[l] >= best_chain_ref_position and rev_positions[l] < best_chain_ref_position + approx_read_length, "Assert failed on interval %d-%d" % (best_chain_ref_position, best_chain_ref_position + approx_read_length)
+            for c in range(approx_read_position-1, approx_read_position+2):
+                if (<np.uint64_t> best_chain_kmers[c]) == (<np.uint64_t> rev_kmers[l]):
+                    # Never increase same node more than once for the same read
+                    if rev_nodes[l] not in nodes_increased:
+                        node_counts[rev_nodes[l]] += 1
+                        nodes_increased.add(rev_nodes[l])
+                        #nodes_to_increase.append(rev_nodes[l])
 
+                    got_hit = True
+                    if rev_nodes[l] == 20057:
+                        logging.info("Read: %s, mapped to position %d" % (read, best_chain_ref_position))
+                        logging.info("Reverse lookup: %s, %s, %s" % (rev_kmers, rev_positions, rev_nodes))
+                        logging.info("    Got a match! Reverse lookup %d, read position: %d" % (l, c))
+                        logging.info("Read kmers: %s" % (list(best_chain_kmers)))
+                        logging.info("Kmer at position %d: %s" % (c, best_chain_kmers[c]))
+                        logging.info("Rev kmers at position %d: %s" % (l, rev_kmers[l]))
+                        logging.info("Type: %s" % rev_kmers[l].dtype)
+                        logging.info("Type: %s" % type(best_chain_kmers[c]))
+                        logging.info(rev_kmers[l] == best_chain_kmers[c])
+                        logging.info("%s == %s" % (rev_kmers[l], best_chain_kmers[c]))
+                    #break
+
+        """
+        if abs(len(set(nodes_to_increase)) - len(set(best_chain[1]))) > 4 and best_chain_ref_position == 2910192 and False:
+            logging.info("====== Read pos %d, %s ====" % (best_chain_ref_position, read))
+            logging.info("NOdes to increase:      %s" % sorted(list(set(nodes_to_increase))))
+            logging.info("NOdes matched in index: %s" % sorted(list(set(best_chain[1]))))
+        """
+
+        """
         # Increase node counts
         for l in range(best_chain[1].shape[0]):
             node_counts[best_chain[1][l]] += 1
+        """
 
         mapping_positions[read_number] = best_chain[0]
 

@@ -203,26 +203,24 @@ def read_chunks(fasta_file_name, chunk_size=10):
 def run_map_single_thread(reads, args):
     logging.info("Running single thread on %d reads" % len(reads))
     logging.info("Args: %s" % args)
+    logging.info("Reading reverse index")
+    reverse_index = ReferenceKmerIndex.from_file(args.reverse_index)
+    logging.info("Done reading reverse index")
     logging.info("Reading kmerindex from file")
     index = KmerIndex.from_file(args.kmer_index)
     logging.info("Done reading index")
     cython_index = CythonKmerIndex(index)
     k = args.kmer_size
     short_k = args.short_kmer_size
-    if args.reference_kmer_index.endswith(".fa"):
-        reference_kmers = ReferenceKmers(args.reference_kmer_index, args.reference_name, short_k, allow_cache=True)
-        ref_index_index = np.zeros(1, dtype=np.uint64)
-        ref_index_kmers= np.zeros(1, dtype=np.uint64)
-    else:
-        logging.info("Reading reference kmer index")
-        reference_kmers = ReferenceKmerIndex.from_file(args.reference_kmer_index)
-        #reference_kmers = CythonReferenceKmerIndex(reference_kmers)
-        ref_index_index = reference_kmers.ref_position_to_index
-        ref_index_kmers = reference_kmers.kmers
+    logging.info("Reading reference kmer index")
+    reference_kmers = ReferenceKmerIndex.from_file(args.reference_kmer_index)
+    #reference_kmers = CythonReferenceKmerIndex(reference_kmers)
+    #ref_index_index = reference_kmers.ref_position_to_index
+    ref_index_kmers = reference_kmers.kmers
 
 
     from .cython_mapper import map
-    positions, counts = map(reads, cython_index, reference_kmers, k, short_k, args.max_node_id, ref_index_index, ref_index_kmers)
+    positions, counts = map(reads, cython_index, reference_kmers, k, short_k, args.max_node_id, ref_index_kmers, reverse_index)
     return np.array(counts)
 
 def run_map_multiprocess(args):
@@ -502,6 +500,7 @@ def run_argument_parser(args):
     subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
     subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
     subparser.add_argument("-c", "--chunk-size", type=int, default=10000, required=False, help="Number of reads to process in the same chunk")
+    subparser.add_argument("-R", "--reverse-index", required=True)
 
     subparser.set_defaults(func=run_map_multiprocess)
 
