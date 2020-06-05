@@ -1,4 +1,5 @@
 import gzip
+import itertools
 import logging
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
 from itertools import repeat
@@ -183,6 +184,7 @@ def count_single_thread(reads):
 
 
 def read_chunks(fasta_file_name, chunk_size=10):
+    logging.info("Read chunks")
     # yields chunks of reads
     file = open(fasta_file_name)
     out = []
@@ -190,6 +192,9 @@ def read_chunks(fasta_file_name, chunk_size=10):
     for line in file:
         if line.startswith(">"):
             continue
+
+        if i % 500000 == 0:
+            logging.info("Read %d lines" % i)
 
         out.append(line.strip())
         i += 1
@@ -221,19 +226,41 @@ def run_map_single_thread(reads, args):
 
     from .cython_mapper import map
     positions, counts = map(reads, cython_index, reference_kmers, k, short_k, args.max_node_id, ref_index_kmers, reverse_index)
+
+    truth_positions = None
+    if args.truth_alignments is not None:
+        truth_alignments = NumpyAlignments.from_file(args.truth_alignments)
+        truth_positions = truth_alignments.positions
+        logging.info("Read numpy alignments")
+
+    if truth_positions is not None:
+        n_correct = len(np.where(np.abs(truth_positions - positions) <= 150)[0])
+        logging.info("N correct chains: %d" % n_correct)
+
+
     return np.array(counts)
 
 def run_map_multiprocess(args):
     reads = read_chunks(args.reads, chunk_size=args.chunk_size)
     max_node_id = args.max_node_id
-    logging.info("Making pool")
+    logging.info("Making pool with %d workers" % args.n_threads)
     pool = Pool(args.n_threads)
     logging.info("Allocating node counts array")
-    node_counts = np.zeros(max_node_id, dtype=np.int64)
+    node_counts = np.zeros(max_node_id, dtype=np.uint16)
     logging.info("Done allocating")
 
-    for counts in pool.starmap(run_map_single_thread, zip(reads, repeat(args))):
-        node_counts += counts
+    n_chunks_in_each_pool = args.n_threads * 2
+    data_to_process = zip(reads, repeat(args))
+    while True:
+        counts = pool.starmap(run_map_single_thread, itertools.islice(data_to_process, n_chunks_in_each_pool))
+        if counts:
+            counts = counts[0]
+            node_counts += counts
+            time.sleep(1)
+        else:
+            break
+    #for counts in pool.starmap(run_map_single_thread, zip(reads, repeat(args))):
+    #    node_counts += counts
 
     counts = NumpyNodeCounts(node_counts)
     counts.to_file(args.node_counts_out_file_name)
