@@ -237,7 +237,6 @@ def run_map_single_thread(reads, args):
         n_correct = len(np.where(np.abs(truth_positions - positions) <= 150)[0])
         logging.info("N correct chains: %d" % n_correct)
 
-
     return np.array(counts)
 
 def run_map_multiprocess(args):
@@ -249,18 +248,24 @@ def run_map_multiprocess(args):
     node_counts = np.zeros(max_node_id, dtype=np.uint16)
     logging.info("Done allocating")
 
-    n_chunks_in_each_pool = args.n_threads * 2
+    n_chunks_in_each_pool = args.n_threads * 3
     data_to_process = zip(reads, repeat(args))
+    n_reads_processed = 0
     while True:
-        counts = pool.starmap(run_map_single_thread, itertools.islice(data_to_process, n_chunks_in_each_pool))
-        if counts:
-            counts = counts[0]
-            node_counts += counts
-            time.sleep(1)
+        results = pool.starmap(run_map_single_thread, itertools.islice(data_to_process, n_chunks_in_each_pool))
+        if results:
+            for counts in results:
+                n_reads_processed += args.chunk_size
+                logging.info("-------- %d reads processed in total ------" % n_reads_processed)
+                node_counts += counts
         else:
+            logging.info("No results, breaking")
             break
-    #for counts in pool.starmap(run_map_single_thread, zip(reads, repeat(args))):
-    #    node_counts += counts
+    """
+    for counts in pool.starmap(run_map_single_thread, zip(reads, repeat(args))):
+        node_counts += counts
+    """
+
 
     counts = NumpyNodeCounts(node_counts)
     counts.to_file(args.node_counts_out_file_name)

@@ -134,7 +134,7 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
     prev_time = time.time()
     cdef int read_number = -1
     for read in reads:
-        if read_number % 1000 == 0:
+        if read_number % 20000 == 0:
             logging.info("%d reads processed in %.5f sec" % (read_number, time.time() - prev_time))
             prev_time = time.time()
         read_number += 1
