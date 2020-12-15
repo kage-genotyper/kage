@@ -22,16 +22,16 @@ cdef list chain(np.ndarray[np.uint64_t] ref_offsets,  np.ndarray[np.uint64_t] re
 
 
     cdef list chains = []
-    cdef float score
+    cdef int score
     cdef unsigned long current_start = 0
     cdef unsigned long prev_position = potential_chain_start_positions[0]
     for i in range(1, potential_chain_start_positions.shape[0]):
-        if potential_chain_start_positions[i] >= prev_position + 2:
-            score = 0.0  #np.unique(read_offsets[current_start:i]).shape[0]
+        if potential_chain_start_positions[i] >= prev_position + 40:
+            score = np.unique(read_offsets[current_start:i]).shape[0]
             chains.append([potential_chain_start_positions[current_start], nodes[current_start:i], score, kmers])
             current_start = i
         prev_position = potential_chain_start_positions[i]
-    score = 0.0  #np.unique(read_offsets[current_start:]).shape[0]
+    score = np.unique(read_offsets[current_start:]).shape[0]
     chains.append([potential_chain_start_positions[current_start], nodes[current_start:], score, kmers])
 
     return chains
@@ -187,8 +187,10 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
                 #    continue
                 #chains[c][2] = len(short_kmers_set.intersection(ref_index_kmers[ref_index_index[ref_start]:ref_index_index[ref_end-k_short]]))
                 #chains[c][2] = set_intersection(short_kmers_array_set, ref_index_kmers[ref_index_index[ref_start]:ref_index_index[ref_end-k_short]])    # n_unique_short_kmers
-                chain_score_int = set_intersection_noslice(short_kmers_array_set, ref_index_kmers, ref_start, ref_start + approx_read_length - k_short)
+                # This one is used:
+                # chain_score_int = set_intersection_noslice(short_kmers_array_set, ref_index_kmers, ref_start, ref_start + approx_read_length - k_short)
                 #chains[c][2] = chain_score_int
+                chain_score_int = chains[c][2]
 
                 if chain_score_int >= best_score:
                     best_score = chain_score_int
@@ -233,7 +235,10 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
             # Look for match of this kmer in the read
             approx_read_position = rev_positions[l] - best_chain_ref_position
             #assert rev_positions[l] >= best_chain_ref_position and rev_positions[l] < best_chain_ref_position + approx_read_length, "Assert failed on interval %d-%d" % (best_chain_ref_position, best_chain_ref_position + approx_read_length)
-            for c in range(approx_read_position-1, approx_read_position+2):
+            #for c in range(approx_read_position-1, approx_read_position+2):
+            for c in range(approx_read_position-10, approx_read_position+10):
+                if c < 0 or c >= len(best_chain_kmers):
+                    continue
                 if (<np.uint64_t> best_chain_kmers[c]) == (<np.uint64_t> rev_kmers[l]):
                     # Never increase same node more than once for the same read
                     if rev_nodes[l] not in nodes_increased:

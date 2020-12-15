@@ -8,6 +8,7 @@ from pyfaidx import Fasta
 import argparse
 import time
 import os
+from graph_kmer_index.shared_mem import from_shared_memory, to_shared_memory
 
 from offsetbasedgraph import Graph, SequenceGraph, NumpyIndexedInterval
 from obgraph import Graph as ObGraph
@@ -22,8 +23,12 @@ from graph_kmer_index.cython_reference_kmer_index import CythonReferenceKmerInde
 from .reference_kmers import ReferenceKmers
 from .cython_mapper import map
 from graph_kmer_index import ReferenceKmerIndex
+from .analysis import KmerAnalyser, GenotypeCalls, TruthRegions
 
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
+
+import platform
+logging.info("Using Python version " + platform.python_version())
 
 def main():
     run_argument_parser(sys.argv[1:])
@@ -212,9 +217,13 @@ def run_map_single_thread(reads, args):
     reverse_index = ReferenceKmerIndex.from_file(args.reverse_index)
     logging.info("Done reading reverse index")
     logging.info("Reading kmerindex from file")
+    #index = KmerIndex.from_file(args.kmer_index)
+
+    #index = from_shared_memory(KmerIndex, "kmerindex1")
     index = KmerIndex.from_file(args.kmer_index)
-    logging.info("Done reading index")
+    logging.info("Done reading KmerIndex. Now making CythonKmerIndex.")
     cython_index = CythonKmerIndex(index)
+    logging.info("Made CythonKmerIndex")
     k = args.kmer_size
     short_k = args.short_kmer_size
     logging.info("Reading reference kmer index")
@@ -247,6 +256,10 @@ def run_map_multiprocess(args):
     logging.info("Allocating node counts array")
     node_counts = np.zeros(max_node_id, dtype=np.uint16)
     logging.info("Done allocating")
+    index = KmerIndex.from_file(args.kmer_index)
+    logging.info("Testing to create a cython kmer index")
+    logging.info("Done creating cython kmer index")
+    to_shared_memory(index, "kmerindex1")
 
     n_chunks_in_each_pool = args.n_threads * 3
     data_to_process = zip(reads, repeat(args))
@@ -533,8 +546,27 @@ def run_argument_parser(args):
     subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
     subparser.add_argument("-c", "--chunk-size", type=int, default=10000, required=False, help="Number of reads to process in the same chunk")
     subparser.add_argument("-R", "--reverse-index", required=True)
-
     subparser.set_defaults(func=run_map_multiprocess)
+
+    def analyse_variants(args):
+        graph = ObGraph.from_file(args.graph_file_name)
+        kmer_index = KmerIndex.from_file(args.kmer_index)
+        reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
+
+        analyser = KmerAnalyser(graph, args.kmer_size, GenotypeCalls.from_vcf(args.vcf), kmer_index, reverse_index, GenotypeCalls.from_vcf(args.predicted_vcf), GenotypeCalls.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file))
+        analyser.analyse_unique_kmers_on_variants()
+
+    subparser = subparsers.add_parser("analyse_variants")
+    subparser.add_argument("-g", "--graph_file_name", required=True)
+    subparser.add_argument("-i", "--kmer-index", required=True)
+    subparser.add_argument("-k", "--kmer-size", required=True, type=int)
+    subparser.add_argument("-R", "--reverse-index", required=True)
+    subparser.add_argument("-v", "--vcf", required=True, help="Vcf to genotype")
+    subparser.add_argument("-P", "--predicted-vcf", required=True)
+    subparser.add_argument("-T", "--truth-vcf", required=True)
+    subparser.add_argument("-t", "--truth-regions-file", required=True)
+    subparser.set_defaults(func=analyse_variants)
+
 
     if len(args) == 0:
         parser.print_help()

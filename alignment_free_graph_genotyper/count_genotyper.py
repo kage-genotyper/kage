@@ -9,12 +9,17 @@ def get_variant_type(vcf_line):
         return "SNP"
     elif "VT=SNP" in vcf_line:
         return "SNP"
+    elif len(l[3]) > len(l[4]):
+        return "DELETION"
+    elif len(l[3]) < len(l[4]):
+        return "INSERTION"
     elif "VT=INDEL" in vcf_line:
         if len(l[3]) > len(l[4]):
             return "DELETION"
         else:
             return "INSERTION"
     else:
+        return ""
         raise Exception("Unsupported variant type on line %s" % vcf_line)
 
 
@@ -28,6 +33,7 @@ class CountGenotyper:
         self.sequence_graph = sequence_graph
         self.reference_path = reference_path
         self.expected_read_error_rate = 0.001
+        self.n_deletions = 0
 
 
     def _store_processed_variant(self, line, edge):
@@ -118,21 +124,24 @@ class CountGenotyper:
             if allele_frequency == 1.0:
                 allele_frequency = 0.99
 
+            debug = False
             if variant_type == "SNP":
-                debug = False
                 if ref_offset == 1130902-1:
                     debug = True
                 reference_node, variant_node = self._process_substitution(ref_offset, variant_allele)
                 predicted_genotype = self._genotype_biallelic_snp(reference_node, variant_node, allele_frequency, debug, line)
             elif variant_type == "DELETION":
-                continue
-                #edge = self._process_deletion(ref_offset+1, len(variant_allele)-1)
+                reference_node, variant_node = self._process_deletion(ref_offset, len(ref_allele)-1)
+                #logging.info("Deletion has reference node/variant node: %d/%d" % (reference_node, variant_node))
+                predicted_genotype = self._genotype_biallelic_snp(reference_node, variant_node, allele_frequency, debug, line)
             else:
                 continue
 
             print("%s\t%s" % ("\t".join(l[0:9]), predicted_genotype))
 
     def _process_substitution(self, ref_offset, variant_bases, chromosome=1):
+        return self.graph.get_snp_nodes(ref_offset, variant_bases, chromosome)
+
         node = self.graph.get_node_at_chromosome_and_chromosome_offset(chromosome, ref_offset)
         node_offset = self.graph.get_node_offset_at_chromosome_and_chromosome_offset(chromosome, ref_offset)
         assert node_offset == 0
@@ -142,6 +151,7 @@ class CountGenotyper:
         for potential_next in self.graph.get_edges(prev_node):
             if potential_next == node:
                 continue
+
             node_seq = self.graph.get_node_sequence(potential_next)[0]
             if node_seq.lower() == variant_bases.lower():
                 return node, potential_next
@@ -149,28 +159,38 @@ class CountGenotyper:
         logging.error("Could not parse substitution at offset %d with bases %s" % (ref_offset, variant_bases))
         raise Exception("Parseerrror")
 
-    def _process_deletion(self, ref_offset, deletion_length):
-        logging.info("Processing deletion at ref pos %d with size %d" % (ref_offset, deletion_length))
-        node = self.reference_path.get_node_at_offset(ref_offset)
-        node_offset = self.reference_path.get_node_offset_at_offset(ref_offset)
+    def _process_deletion(self, ref_offset, deletion_length, chromosome=1):
+        return self.graph.get_deletion_nodes(ref_offset, deletion_length, chromosome)
 
-        print("Processing deltion %s, %d, node offset %d" % (ref_offset, deletion_length, node_offset))
+
+        ref_offset += 1
+        node = self.graph.get_node_at_chromosome_and_chromosome_offset(chromosome, ref_offset)
+        node_offset = self.graph.get_node_offset_at_chromosome_and_chromosome_offset(chromosome, ref_offset)
+        #logging.info("Processing deletion at ref pos %d with size %d. Node inside deletion: %d" % (ref_offset, deletion_length, node))
+
         assert node_offset == 0
 
-        prev_node = self.reference_path.get_node_at_offset(ref_offset - 1)
+        prev_node = self.graph.get_node_at_chromosome_and_chromosome_offset(chromosome, ref_offset - 1)
+        #logging.info("Node before deletion: %d" % prev_node)
 
         # Find next reference node with offset corresponding to the number of deleted base pairs
         next_ref_pos = ref_offset + deletion_length
-        next_ref_node = self.reference_path.get_node_at_offset(ref_offset + deletion_length)
-        if self.reference_path.get_node_offset_at_offset(next_ref_pos) != 0:
+        next_ref_node = self.graph.get_node_at_chromosome_and_chromosome_offset(chromosome, ref_offset + deletion_length)
+        #logging.info("Node after deletion: %d" % next_ref_node)
+        if self.graph.get_node_offset_at_chromosome_and_chromosome_offset(chromosome, next_ref_pos) != 0:
             logging.error("Offset %d is not at beginning of node" % next_ref_pos)
             logging.error("Node at %d: %d" % (next_ref_pos, next_ref_node))
             logging.error("Ref length in deletion: %s" % deletion_length)
             logging.info("Ref pos beginning of deletion: %d" % ref_offset)
             raise Exception("Deletion not in graph")
 
+        # Find an empty node between prev_node and next_ref_node
+        deletion_nodes = [node for node in self.graph.get_edges(prev_node) if next_ref_node in self.graph.get_edges(node) and self.graph.get_node_size(node) == 0]
+        assert len(deletion_nodes) == 1, "There should be only one deletion node between %d and %d. There are %d" % (prev_node, next_ref_node, len(deletion_nodes))
+
+        deletion_node = deletion_nodes[0]
         self.n_deletions += 1
-        return (prev_node, next_ref_node)
+        return (node, deletion_node)
 
     def _process_insertion(self, ref_offset, read_offset):
         base = self.bam_entry.query_sequence[read_offset]

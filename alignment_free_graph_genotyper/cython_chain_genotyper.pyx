@@ -25,11 +25,11 @@ cdef list chain(long[:] ref_offsets, np.ndarray[np.int64_t] read_offsets, np.nda
     cdef int prev_position = potential_chain_start_positions[0]
     for i in range(1, potential_chain_start_positions.shape[0]):
         if potential_chain_start_positions[i] >= prev_position + 2:
-            score = 0  #np.unique(read_offsets[current_start:i]).shape[0]
+            score = 0 #np.unique(read_offsets[current_start:i]).shape[0]
             chains.append([potential_chain_start_positions[current_start], nodes[current_start:i], score, kmers])
             current_start = i
         prev_position = potential_chain_start_positions[i]
-    score = 0  # np.unique(read_offsets[current_start:]).shape[0]
+    score = 0  #np.unique(read_offsets[current_start:]).shape[0]
     chains.append([potential_chain_start_positions[current_start], nodes[current_start:], score, kmers])
 
     return chains
@@ -235,6 +235,7 @@ def run(reads_file_name,
                 ref_end = ref_start + approx_read_length
                 #local_reference_kmers = reference_kmers[ref_start:ref_end-k_short]
                 #short_kmers_set.intersection(reference_kmers[ref_start:ref_end-k_short])
+                # set-scoring (slow):
                 chains[c][2] = len(short_kmers_set.intersection(reference_kmers[ref_start:ref_end-k_short]))
                 #chains[c][2] = chain_score
 

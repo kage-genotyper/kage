@@ -1,5 +1,5 @@
 import logging
-from graph_kmer_index.kmer_index import KmerIndex
+#from graph_kmer_index.kmer_index import KmerIndex
 from graph_kmer_index import kmer_to_hash_fast
 #from graph_kmer_index import letter_sequence_to_numeric
 from .letter_sequence_to_numeric import letter_sequence_to_numeric
