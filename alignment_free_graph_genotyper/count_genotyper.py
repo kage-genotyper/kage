@@ -1,47 +1,67 @@
 import logging
 from scipy.special import comb
+from .variants import VariantGenotype
+from collections import defaultdict
+import numpy as np
 
-
-def get_variant_type(vcf_line):
-
-    l = vcf_line.split()
-    if len(l[3]) == len(l[4]):
-        return "SNP"
-    elif "VT=SNP" in vcf_line:
-        return "SNP"
-    elif len(l[3]) > len(l[4]):
-        return "DELETION"
-    elif len(l[3]) < len(l[4]):
-        return "INSERTION"
-    elif "VT=INDEL" in vcf_line:
-        if len(l[3]) > len(l[4]):
-            return "DELETION"
-        else:
-            return "INSERTION"
-    else:
-        return ""
-        raise Exception("Unsupported variant type on line %s" % vcf_line)
+def parse_vcf_genotype(genotype):
+    return genotype.replace("|", "/").replace("1/0", "1/0")
 
 
 # Genotypes a vcf from node and edge counts in the graph
 class CountGenotyper:
 
-    def __init__(self, genotyper, graph, sequence_graph, vcf_file_name, reference_path):
+    def __init__(self, genotyper, graph, sequence_graph, vcf_file_name, reference_path, variant_window_size=500, n_individuals=2600):
         self.genotyper = genotyper
         self.vcf_file_name = vcf_file_name
         self.graph = graph
         self.sequence_graph = sequence_graph
         self.reference_path = reference_path
-        self.expected_read_error_rate = 0.001
+        self.expected_read_error_rate = 0.01  # 0.001
         self.n_deletions = 0
-
+        self._variant_window_size = variant_window_size
+        self._individuals_with_genotypes = []
+        self._individual_counts = np.zeros((variant_window_size, n_individuals))
+        self._variant_counter = 0
 
     def _store_processed_variant(self, line, edge):
         pass
 
-    def _genotype_biallelic_snp(self, reference_node, variant_node, allele_frequency, debug=False, variant_line=""):
+    def add_individuals_with_genotype(self, vcf_line, genotype):
+        #individuals = []
+        for i, vcf_column in enumerate(vcf_line[9:]):
+            individual_genotype = parse_vcf_genotype(vcf_column[0:3])
+            individual_id = i
+            if genotype == individual_genotype:
+                #individuals.append(individual_id)
+                self._individual_counts[self._variant_counter % self._variant_window_size][individual_id] = 1
+            else:
+                self._individual_counts[self._variant_counter % self._variant_window_size][individual_id] = 0
+
+        #self._individuals_with_genotypes.append(individuals)
+
+    def get_most_common_individual_on_previous_variants(self):
+        return np.argmax(np.sum(self._individual_counts, 0))
+
+        counts = defaultdict(int)
+        for i in range(0, n_variants):
+            if i >= len(self._individuals_with_genotypes):
+                continue
+            for individual in self._individuals_with_genotypes[-i]:
+                counts[individual] += 1
+
+        if len(counts) == 0:
+            return False
+
+        most_common = max(counts, key=counts.get)
+        return most_common
+
+    def get_genotype_for_individual(self, vcf_line, individual_id):
+        entry = vcf_line[9:][individual_id]
+        return parse_vcf_genotype(entry)
+
+    def _genotype_biallelic_snp(self, reference_node, variant_node, a_priori_homozygous_ref, a_priori_homozygous_alt, a_priori_heterozygous, debug=False):
         #logging.info("Genotyping biallelic SNP with nodes %d/%d and allele frequency %.5f" % (reference_node, variant_node, allele_frequency))
-        apriori_haplotype_probabilities = [1-allele_frequency, allele_frequency]
         allele_counts = [self.genotyper.get_node_count(reference_node), self.genotyper.get_node_count(variant_node)]
 
 
@@ -53,17 +73,15 @@ class CountGenotyper:
         #p_counts_given_heterozygous = 1 - p_counts_given_homozygous_alt - p_counts_given_homozygous_ref
         p_counts_given_heterozygous = 1 * comb(tot_counts, allele_counts[0]) * ((1-e)/2)**allele_counts[0] * ((1-e)/2)**allele_counts[1]
 
-
-
         #a_priori_homozygous_ref = (1-allele_frequency)**2
         #a_priori_homozygous_alt = allele_frequency**2
         #a_priori_homozygous_ref = (1-allele_frequency) * 0.9
         #a_priori_homozygous_alt = allele_frequency * 0.9
         #a_priori_heterozygous = 1 - a_priori_homozygous_alt - a_priori_homozygous_ref
 
-        a_priori_homozygous_ref = float(variant_line.split("AF_HOMO_REF=")[1].split(";")[0]) + 0.001
-        a_priori_homozygous_alt = float(variant_line.split("AF_HOMO_ALT=")[1].split(";")[0]) + 0.001
-        a_priori_heterozygous = 1 - a_priori_homozygous_alt - a_priori_homozygous_ref
+        #a_priori_homozygous_ref = float(variant_line.split("AF_HOMO_REF=")[1].split(";")[0]) + 0.001
+        #a_priori_homozygous_alt = float(variant_line.split("AF_HOMO_ALT=")[1].split(";")[0]) + 0.001
+        #a_priori_heterozygous = 1 - a_priori_homozygous_alt - a_priori_homozygous_ref
 
         # Denominator in bayes formula
         prob_counts = a_priori_homozygous_ref * p_counts_given_homozygous_ref + \
@@ -95,124 +113,73 @@ class CountGenotyper:
         else:
             return "0/1"
 
+    def compute_a_priori_probabilities(self, genotype, vcf_line):
+        most_likely_individual = self.get_most_common_individual_on_previous_variants()
+        #logging.info("Most likely individual: %d" % most_likely_individual)
+        if most_likely_individual:
+            most_likely_individual_genotype = self.get_genotype_for_individual(vcf_line, most_likely_individual)
+
+        prob_following_same_individual = 0.95
+        prob_breaking = 1 - prob_following_same_individual
+
+        if False and most_likely_individual:
+            logging.info("Most common individual is %d and has genotype %s" % (most_likely_individual, most_likely_individual_genotype))
+        if most_likely_individual and most_likely_individual_genotype == genotype:
+            return 0.95
+        else:
+            # Get population probs, there's 0.025 chance for having these
+            try:
+                a_priori_homozygous_ref = float(vcf_line[7].split("AF_HOMO_REF=")[1].split(";")[0]) + 0.001
+                a_priori_homozygous_alt = float(vcf_line[7].split("AF_HOMO_ALT=")[1].split(";")[0]) + 0.001
+                a_priori_heterozygous = 1 - a_priori_homozygous_alt - a_priori_homozygous_ref
+            except IndexError:
+                logging.error("Could not find AF_HOMO_REF/ALT tags in vcf. Info column is: %s" % vcf_line[6])
+                raise
+
+
+
+            if genotype == "0/0":
+                return prob_breaking * a_priori_homozygous_ref
+            elif genotype == "0/1":
+                return prob_breaking * a_priori_heterozygous
+            elif genotype == "1/1":
+                return prob_breaking * a_priori_homozygous_alt
+            else:
+                raise Exception("Invalid genotype %s" % genotype)
+
+
     def genotype(self):
 
         for i, line in enumerate(open(self.vcf_file_name)):
-            if i % 20000 == 0:
+            if i % 100 == 0:
                 logging.info("%d lines processed" % i)
 
             if line.startswith("#"):
                 if line.startswith("#CHROM"):
                     self._n_haplotypes = (len(line.split()) - 9) * 2
                     logging.info("There are %d haplotypes in this file" % self._n_haplotypes)
-                    print(line.strip() + "\tDONOR")
+                    print("\t".join(line.split()[0:9]).strip() + "\tDONOR")
                 else:
                     print(line.strip())
 
                 continue
 
-            variant_type = get_variant_type(line)
             l = line.split()
-            ref_allele = l[3]
-            variant_allele = l[4].lower()
-            ref_offset = int(l[1]) - 1
-            assert "," not in variant_allele, "Only biallelic variants are allowed. Line is not bialleleic"
+            variant = VariantGenotype.from_vcf_line(line)
+            assert "," not in variant.variant_sequence, "Only biallelic variants are allowed. Line is not bialleleic"
 
-            allele_frequency = float(line.split("AF=")[1].split(";")[0])
-
-            # Never accept allele freq 1.0, there is a chance this sample is different
-            if allele_frequency == 1.0:
-                allele_frequency = 0.99
+            prob_homo_ref = self.compute_a_priori_probabilities("0/0", l)
+            prob_homo_alt = self.compute_a_priori_probabilities("1/1", l)
+            prob_hetero = self.compute_a_priori_probabilities("0/1", l)
 
             debug = False
-            if variant_type == "SNP":
-                if ref_offset == 1130902-1:
-                    debug = True
-                reference_node, variant_node = self._process_substitution(ref_offset, variant_allele)
-                predicted_genotype = self._genotype_biallelic_snp(reference_node, variant_node, allele_frequency, debug, line)
-            elif variant_type == "DELETION":
-                reference_node, variant_node = self._process_deletion(ref_offset, len(ref_allele)-1)
-                #logging.info("Deletion has reference node/variant node: %d/%d" % (reference_node, variant_node))
-                predicted_genotype = self._genotype_biallelic_snp(reference_node, variant_node, allele_frequency, debug, line)
-            else:
-                continue
+            reference_node, variant_node = self.graph.get_variant_nodes(variant)
+            predicted_genotype = self._genotype_biallelic_snp(reference_node, variant_node, prob_homo_ref, prob_homo_alt, prob_hetero, debug)
+
+            self.add_individuals_with_genotype(l, predicted_genotype)
+            if len(self._individuals_with_genotypes) > 40:
+                self._individuals_with_genotypes.pop(0)
+
+            self._variant_counter += 1
 
             print("%s\t%s" % ("\t".join(l[0:9]), predicted_genotype))
-
-    def _process_substitution(self, ref_offset, variant_bases, chromosome=1):
-        return self.graph.get_snp_nodes(ref_offset, variant_bases, chromosome)
-
-        node = self.graph.get_node_at_chromosome_and_chromosome_offset(chromosome, ref_offset)
-        node_offset = self.graph.get_node_offset_at_chromosome_and_chromosome_offset(chromosome, ref_offset)
-        assert node_offset == 0
-        prev_node = self.graph.get_node_at_chromosome_and_chromosome_offset(chromosome, ref_offset - 1)
-
-        # Try to find next node that matches read base
-        for potential_next in self.graph.get_edges(prev_node):
-            if potential_next == node:
-                continue
-
-            node_seq = self.graph.get_node_sequence(potential_next)[0]
-            if node_seq.lower() == variant_bases.lower():
-                return node, potential_next
-
-        logging.error("Could not parse substitution at offset %d with bases %s" % (ref_offset, variant_bases))
-        raise Exception("Parseerrror")
-
-    def _process_deletion(self, ref_offset, deletion_length, chromosome=1):
-        return self.graph.get_deletion_nodes(ref_offset, deletion_length, chromosome)
-
-
-        ref_offset += 1
-        node = self.graph.get_node_at_chromosome_and_chromosome_offset(chromosome, ref_offset)
-        node_offset = self.graph.get_node_offset_at_chromosome_and_chromosome_offset(chromosome, ref_offset)
-        #logging.info("Processing deletion at ref pos %d with size %d. Node inside deletion: %d" % (ref_offset, deletion_length, node))
-
-        assert node_offset == 0
-
-        prev_node = self.graph.get_node_at_chromosome_and_chromosome_offset(chromosome, ref_offset - 1)
-        #logging.info("Node before deletion: %d" % prev_node)
-
-        # Find next reference node with offset corresponding to the number of deleted base pairs
-        next_ref_pos = ref_offset + deletion_length
-        next_ref_node = self.graph.get_node_at_chromosome_and_chromosome_offset(chromosome, ref_offset + deletion_length)
-        #logging.info("Node after deletion: %d" % next_ref_node)
-        if self.graph.get_node_offset_at_chromosome_and_chromosome_offset(chromosome, next_ref_pos) != 0:
-            logging.error("Offset %d is not at beginning of node" % next_ref_pos)
-            logging.error("Node at %d: %d" % (next_ref_pos, next_ref_node))
-            logging.error("Ref length in deletion: %s" % deletion_length)
-            logging.info("Ref pos beginning of deletion: %d" % ref_offset)
-            raise Exception("Deletion not in graph")
-
-        # Find an empty node between prev_node and next_ref_node
-        deletion_nodes = [node for node in self.graph.get_edges(prev_node) if next_ref_node in self.graph.get_edges(node) and self.graph.get_node_size(node) == 0]
-        assert len(deletion_nodes) == 1, "There should be only one deletion node between %d and %d. There are %d" % (prev_node, next_ref_node, len(deletion_nodes))
-
-        deletion_node = deletion_nodes[0]
-        self.n_deletions += 1
-        return (node, deletion_node)
-
-    def _process_insertion(self, ref_offset, read_offset):
-        base = self.bam_entry.query_sequence[read_offset]
-        node = self.reference_path.get_node_at_offset(ref_offset)
-        node_offset = self.reference_path.get_node_offset_at_offset(ref_offset)
-        node_size = self.graph.blocks[node].length()
-        if node_offset != node_size - 1:
-            # We are not at end of node, insertion is not represented in the graph, ignore
-            return False
-
-        # Find out which next node matches the insertion
-        for potential_next in self.graph.adj_list[node]:
-            if potential_next in self.linear_reference_nodes:
-                continue  # Next should not be in linear ref
-
-            #print("Processing insertion at ref offset %d with base %s" % (ref_offset, base))
-            #print("  Node %d with offset %d. Node size: %d" % (node, node_offset, self.graph.blocks[node].length()))
-
-            next_base = self.sequence_graph.get_sequence(potential_next, 0, 1).upper()
-            if next_base == base.upper():
-                self._variant_edges_detected.add((node, potential_next))
-                self.n_insertions += 1
-                #print("  Found next node %d with seq %s" % (potential_next, next_base))
-                return
-

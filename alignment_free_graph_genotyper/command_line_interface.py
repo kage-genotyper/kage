@@ -23,7 +23,8 @@ from graph_kmer_index.cython_reference_kmer_index import CythonReferenceKmerInde
 from .reference_kmers import ReferenceKmers
 from .cython_mapper import map
 from graph_kmer_index import ReferenceKmerIndex
-from .analysis import KmerAnalyser, GenotypeCalls, TruthRegions
+from .analysis import KmerAnalyser
+from .variants import GenotypeCalls, TruthRegions
 
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
 
@@ -244,7 +245,10 @@ def run_map_single_thread(reads, args):
 
     if truth_positions is not None:
         n_correct = len(np.where(np.abs(truth_positions - positions) <= 150)[0])
+        n_correct_and_mapped = len(np.where((np.abs(truth_positions - positions) <= 150) & (np.array(positions) > 0))[0])
         logging.info("N correct chains: %d" % n_correct)
+        n_reads = len(truth_positions)
+        logging.info("Ratio correct among those that were mapped: %.3f" % (n_correct_and_mapped / len(np.where(np.array(positions)[0:n_reads] > 0)[0])))
 
     return np.array(counts)
 
@@ -553,7 +557,7 @@ def run_argument_parser(args):
         kmer_index = KmerIndex.from_file(args.kmer_index)
         reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
 
-        analyser = KmerAnalyser(graph, args.kmer_size, GenotypeCalls.from_vcf(args.vcf), kmer_index, reverse_index, GenotypeCalls.from_vcf(args.predicted_vcf), GenotypeCalls.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file))
+        analyser = KmerAnalyser(graph, args.kmer_size, GenotypeCalls.from_vcf(args.vcf), kmer_index, reverse_index, GenotypeCalls.from_vcf(args.predicted_vcf), GenotypeCalls.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NumpyNodeCounts.from_file(args.node_counts))
         analyser.analyse_unique_kmers_on_variants()
 
     subparser = subparsers.add_parser("analyse_variants")
@@ -565,6 +569,7 @@ def run_argument_parser(args):
     subparser.add_argument("-P", "--predicted-vcf", required=True)
     subparser.add_argument("-T", "--truth-vcf", required=True)
     subparser.add_argument("-t", "--truth-regions-file", required=True)
+    subparser.add_argument("-n", "--node-counts", required=True)
     subparser.set_defaults(func=analyse_variants)
 
 

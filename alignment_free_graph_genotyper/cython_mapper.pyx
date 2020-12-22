@@ -8,7 +8,7 @@ import time
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef list chain(np.ndarray[np.uint64_t] ref_offsets,  np.ndarray[np.uint64_t] read_offsets,  np.ndarray[np.uint64_t] nodes, unsigned long[:] kmers):
+cdef list chain(np.ndarray[np.uint64_t] ref_offsets,  np.ndarray[np.uint64_t] read_offsets,  np.ndarray[np.uint64_t] nodes, unsigned long[:] kmers, np.ndarray[np.uint64_t] frequencies):
 
     cdef np.ndarray[np.uint64_t] potential_chain_start_positions = ref_offsets - read_offsets
     cdef int i, start, end
@@ -19,19 +19,21 @@ cdef list chain(np.ndarray[np.uint64_t] ref_offsets,  np.ndarray[np.uint64_t] re
     read_offsets = read_offsets[sorting]
     nodes = nodes[sorting]
     potential_chain_start_positions = potential_chain_start_positions[sorting]
+    frequencies = frequencies[sorting]
 
 
     cdef list chains = []
-    cdef int score
+    cdef float score
     cdef unsigned long current_start = 0
     cdef unsigned long prev_position = potential_chain_start_positions[0]
     for i in range(1, potential_chain_start_positions.shape[0]):
-        if potential_chain_start_positions[i] >= prev_position + 40:
-            score = np.unique(read_offsets[current_start:i]).shape[0]
+        if potential_chain_start_positions[i] >= prev_position + 25:
+            score = np.sum(1 / frequencies[np.unique(read_offsets[current_start:i], True)[1]])  #.shape[0]
             chains.append([potential_chain_start_positions[current_start], nodes[current_start:i], score, kmers])
             current_start = i
         prev_position = potential_chain_start_positions[i]
-    score = np.unique(read_offsets[current_start:]).shape[0]
+    #score = np.unique(read_offsets[current_start:]).shape[0]
+    score = np.sum(1 / frequencies[np.unique(read_offsets[current_start:], True)[1]])
     chains.append([potential_chain_start_positions[current_start], nodes[current_start:], score, kmers])
 
     return chains
@@ -107,6 +109,7 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
     cdef np.ndarray[np.uint64_t] node_hits
     cdef np.ndarray[np.uint64_t] ref_offsets_hits
     cdef np.ndarray[np.uint64_t] read_offsets_hits
+    cdef np.ndarray[np.uint64_t] frequencies
     cdef np.ndarray[np.uint64_t, ndim=2] index_lookup_result
     cdef list forward_and_reverse_chains
     cdef float chain_score
@@ -123,7 +126,7 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
     cdef int n_unique_short_kmers
     cdef set short_kmers_set
     cdef int u
-    cdef int chain_score_int
+    cdef float chain_score_int
     cdef unsigned long best_chain_ref_position = 0
     cdef unsigned long approx_read_position
 
@@ -147,11 +150,11 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
         for l in range(2):
             if l == 0:
                kmers = get_kmers(numeric_read, power_array)
-               short_kmers = get_kmers(numeric_read, power_array_short)
+               #short_kmers = get_kmers(numeric_read, power_array_short)
                #short_kmers = get_spaced_kmers(numeric_read, power_array_short, k_short)
             else:
                kmers = get_kmers(reverse_read, power_array)
-               short_kmers = get_kmers(reverse_read, power_array_short)
+               #short_kmers = get_kmers(reverse_read, power_array_short)
                #short_kmers = get_spaced_kmers(reverse_read, power_array_short, k_short)
 
             #logging.info(kmers.dtype)
@@ -167,14 +170,15 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
             node_hits = index_lookup_result[0,:]
             ref_offsets_hits = index_lookup_result[1,:]
             read_offsets_hits = index_lookup_result[2,:]
+            frequencies = index_lookup_result[3,:]
 
-            chains = chain(ref_offsets_hits, read_offsets_hits, node_hits, kmers)
+            chains = chain(ref_offsets_hits, read_offsets_hits, node_hits, kmers, frequencies)
 
             n_chains = len(chains)
 
             for c in range(n_chains):
-                for u in range(short_kmers.shape[0]):
-                    short_kmers_array_set[short_kmers[u] % 100000007] = 1
+                #for u in range(short_kmers.shape[0]):
+                #    short_kmers_array_set[short_kmers[u] % 100000007] = 1
 
                 ref_start = chains[c][0]
                 #ref_end = ref_start + approx_read_length
@@ -198,8 +202,8 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
                     best_chain_ref_position = best_chain[0]
 
             #logging.info("N chains: %d" % len(chains))
-            for u in range(short_kmers.shape[0]):
-                short_kmers_array_set[short_kmers[u] % 100000007] = 0
+            #for u in range(short_kmers.shape[0]):
+            #    short_kmers_array_set[short_kmers[u] % 100000007] = 0
 
             #forward_and_reverse_chains.extend(chains)
 
@@ -218,7 +222,7 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
         #    logging.info("LONG TIME! Read: %s" % read)
         #logging.info("Best score: %.3f" % best_score)
 
-        if best_score < 0.4: # * 150 / 15:  #  * (150 - k_short):
+        if best_score < 0: # * 150 / 15:  #  * (150 - k_short):
             continue
 
         best_score = 0.0
@@ -236,7 +240,8 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
             approx_read_position = rev_positions[l] - best_chain_ref_position
             #assert rev_positions[l] >= best_chain_ref_position and rev_positions[l] < best_chain_ref_position + approx_read_length, "Assert failed on interval %d-%d" % (best_chain_ref_position, best_chain_ref_position + approx_read_length)
             #for c in range(approx_read_position-1, approx_read_position+2):
-            for c in range(approx_read_position-10, approx_read_position+10):
+            #for c in range(approx_read_position-10, approx_read_position+10):
+            for c in range(0, len(best_chain_kmers)):
                 if c < 0 or c >= len(best_chain_kmers):
                     continue
                 if (<np.uint64_t> best_chain_kmers[c]) == (<np.uint64_t> rev_kmers[l]):
@@ -247,7 +252,7 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
                         #nodes_to_increase.append(rev_nodes[l])
 
                     got_hit = True
-                    if rev_nodes[l] == 20057:
+                    if rev_nodes[l] == 64088:
                         logging.info("Read: %s, mapped to position %d" % (read, best_chain_ref_position))
                         logging.info("Reverse lookup: %s, %s, %s" % (rev_kmers, rev_positions, rev_nodes))
                         logging.info("    Got a match! Reverse lookup %d, read position: %d" % (l, c))
