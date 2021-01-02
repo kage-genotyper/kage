@@ -8,7 +8,7 @@ import time
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef list chain(np.ndarray[np.uint64_t] ref_offsets,  np.ndarray[np.uint64_t] read_offsets,  np.ndarray[np.uint64_t] nodes, unsigned long[:] kmers, np.ndarray[np.uint64_t] frequencies):
+cdef list chain(np.ndarray[np.uint64_t] ref_offsets,  np.ndarray[np.uint64_t] read_offsets,  np.ndarray[np.uint64_t] nodes, unsigned long[:] kmers, np.ndarray[np.uint64_t] frequencies, np.ndarray[np.uint64_t] allele_frequencies):
 
     cdef np.ndarray[np.uint64_t] potential_chain_start_positions = ref_offsets - read_offsets
     cdef int i, start, end
@@ -20,6 +20,7 @@ cdef list chain(np.ndarray[np.uint64_t] ref_offsets,  np.ndarray[np.uint64_t] re
     nodes = nodes[sorting]
     potential_chain_start_positions = potential_chain_start_positions[sorting]
     frequencies = frequencies[sorting]
+    allele_frequencies = allele_frequencies[sorting]
 
 
     cdef list chains = []
@@ -29,11 +30,16 @@ cdef list chain(np.ndarray[np.uint64_t] ref_offsets,  np.ndarray[np.uint64_t] re
     for i in range(1, potential_chain_start_positions.shape[0]):
         if potential_chain_start_positions[i] >= prev_position + 25:
             score = np.sum(1 / frequencies[np.unique(read_offsets[current_start:i], True)[1]])  #.shape[0]
+            #score = np.sum(allele_frequencies[np.unique(read_offsets[current_start:i], True)[1]])  #.shape[0]
+            #score = np.sum(allele_frequencies[np.unique(read_offsets[current_start:i], True)[1]] / frequencies[np.unique(read_offsets[current_start:i], True)[1]])  #.shape[0]
+            #print(allele_frequencies[np.unique(read_offsets[current_start:i], True)[1]])  #.shape[0]
             chains.append([potential_chain_start_positions[current_start], nodes[current_start:i], score, kmers])
             current_start = i
         prev_position = potential_chain_start_positions[i]
     #score = np.unique(read_offsets[current_start:]).shape[0]
     score = np.sum(1 / frequencies[np.unique(read_offsets[current_start:], True)[1]])
+    #score = np.sum(allele_frequencies[np.unique(read_offsets[current_start:], True)[1]])
+    #score = np.sum(allele_frequencies[np.unique(read_offsets[current_start:], True)[1]] / frequencies[np.unique(read_offsets[current_start:], True)[1]])
     chains.append([potential_chain_start_positions[current_start], nodes[current_start:], score, kmers])
 
     return chains
@@ -171,8 +177,9 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
             ref_offsets_hits = index_lookup_result[1,:]
             read_offsets_hits = index_lookup_result[2,:]
             frequencies = index_lookup_result[3,:]
+            allele_frequencies = index_lookup_result[4,:]
 
-            chains = chain(ref_offsets_hits, read_offsets_hits, node_hits, kmers, frequencies)
+            chains = chain(ref_offsets_hits, read_offsets_hits, node_hits, kmers, frequencies, allele_frequencies)
 
             n_chains = len(chains)
 
