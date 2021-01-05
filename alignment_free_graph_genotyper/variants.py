@@ -54,7 +54,6 @@ class VariantGenotype:
     def id(self):
         return (self.position, self.ref_sequence, self.variant_sequence)
 
-
     def __str__(self):
         return "%d %s/%s %s %s" % (self.position, self.ref_sequence, self.variant_sequence, self.genotype, self.type)
 

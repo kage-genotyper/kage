@@ -31,7 +31,11 @@ class NumpyNodeCounts:
 
     @classmethod
     def from_file(cls, file_name):
-        data = np.load(file_name + ".npy")
+        try:
+            data = np.load(file_name + ".npy")
+        except FileNotFoundError:
+            data = np.load(file_name)
+
         return cls(data)
 
 

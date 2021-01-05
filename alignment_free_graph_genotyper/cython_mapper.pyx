@@ -149,9 +149,7 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
         read_number += 1
 
         numeric_read = letter_sequence_to_numeric(np.array(list(read), dtype="|S1").view(np.int8))
-        #logging.info(type(numeric_read[0]))
         reverse_read = numeric_read[::-1]
-        #forward_and_reverse_chains = []
 
         for l in range(2):
             if l == 0:
@@ -184,23 +182,7 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
             n_chains = len(chains)
 
             for c in range(n_chains):
-                #for u in range(short_kmers.shape[0]):
-                #    short_kmers_array_set[short_kmers[u] % 100000007] = 1
-
                 ref_start = chains[c][0]
-                #ref_end = ref_start + approx_read_length
-                #chains[c][2] = len(short_kmers_set.intersection(reference_kmers[ref_start:ref_end-k_short]))
-                #chains[c][2] = len(short_kmers_set.intersection(ref_kmers.get_between(ref_start, ref_end-k_short)))
-                #logging.info("Start, end: %d/%d" % (ref_index_index[ref_start], ref_index_index[ref_end-k_short]))
-                #assert ref_index_index[ref_end] - ref_index_index[ref_start] < 500, "Very long ref index segment for ref start/end %d / %d" % (ref_start, ref_end)
-                #if chains[c][2] <= 0 and n_chains > 10:
-                #    chains[c][2] = 0.0
-                #    continue
-                #chains[c][2] = len(short_kmers_set.intersection(ref_index_kmers[ref_index_index[ref_start]:ref_index_index[ref_end-k_short]]))
-                #chains[c][2] = set_intersection(short_kmers_array_set, ref_index_kmers[ref_index_index[ref_start]:ref_index_index[ref_end-k_short]])    # n_unique_short_kmers
-                # This one is used:
-                # chain_score_int = set_intersection_noslice(short_kmers_array_set, ref_index_kmers, ref_start, ref_start + approx_read_length - k_short)
-                #chains[c][2] = chain_score_int
                 chain_score_int = chains[c][2]
 
                 if chain_score_int >= best_score:
@@ -208,26 +190,6 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
                     best_chain = chains[c]
                     best_chain_ref_position = best_chain[0]
 
-            #logging.info("N chains: %d" % len(chains))
-            #for u in range(short_kmers.shape[0]):
-            #    short_kmers_array_set[short_kmers[u] % 100000007] = 0
-
-            #forward_and_reverse_chains.extend(chains)
-
-
-        # Find best chain
-        """
-        best_chain_kmers = None
-        best_chain = None
-        for c in range(len(forward_and_reverse_chains)):
-            if forward_and_reverse_chains[c][2] >= best_score:
-                best_score = forward_and_reverse_chains[c][2]
-                best_chain = forward_and_reverse_chains[c]
-        """
-
-        #if time.time() - prev_time > 1:
-        #    logging.info("LONG TIME! Read: %s" % read)
-        #logging.info("Best score: %.3f" % best_score)
 
         if best_score < 0: # * 150 / 15:  #  * (150 - k_short):
             continue
@@ -237,6 +199,12 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
             continue
 
         # Lookup in reverse index
+        best_chain_kmers = best_chain[3]
+
+
+
+
+        """
         best_chain_kmers = best_chain[3]
         rev_kmers, rev_positions, rev_nodes = reverse_index.get_all_between(best_chain_ref_position, best_chain_ref_position + approx_read_length - 31)
         nodes_increased = set()
@@ -272,6 +240,7 @@ cpdef map(reads, kmer_index, ref_kmers, int k, int k_short, int max_node_id, uns
                         logging.info("%s == %s" % (rev_kmers[l], best_chain_kmers[c]))
                     #break
 
+        """
         """
         if abs(len(set(nodes_to_increase)) - len(set(best_chain[1]))) > 4 and best_chain_ref_position == 2910192 and False:
             logging.info("====== Read pos %d, %s ====" % (best_chain_ref_position, read))
