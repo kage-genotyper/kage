@@ -9,7 +9,7 @@ class NoChainMapper:
         self._k = k
         self._reads = reads
         self._kmer_index = kmer_index
-        self._node_counts = np.zeros(max_node_id+1, dtype=np.uint16)
+        self._node_counts = np.zeros(max_node_id+1, dtype=np.float)
 
     def get_counts(self):
         power_array = get_power_array(self._k)
@@ -21,6 +21,6 @@ class NoChainMapper:
                 kmers = read_kmers(sequence, power_array)
                 node_hits = self._kmer_index.get_nodes_from_multiple_kmers(kmers)
                 if len(node_hits) > 0:
-                    self._node_counts[node_hits] += 1
+                    self._node_counts[node_hits] += 1 / len(node_hits)
 
         return self._node_counts
