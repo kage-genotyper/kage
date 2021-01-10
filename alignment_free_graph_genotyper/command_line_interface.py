@@ -28,6 +28,8 @@ from .analysis import KmerAnalyser
 from .variants import GenotypeCalls, TruthRegions
 
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
+import numpy as np
+np.random.seed(1)
 
 import platform
 logging.info("Using Python version " + platform.python_version())
@@ -627,6 +629,19 @@ def run_argument_parser(args):
         from Bio.Seq import Seq
         from .chain_mapper import read_kmers, get_power_array
         max_node_id = args.max_node_id
+
+        from .node_count_model import NodeCountModelCreatorFromSimpleChaining
+        from obgraph.haplotype_nodes import HaplotypeNodes
+        kmer_index = KmerIndex.from_file(args.kmer_index)
+        nodes = HaplotypeNodes.from_file(args.haplotype_nodes).nodes
+        graph = ObGraph.from_file(args.graph_file_name)
+        sequence_forward = graph.get_nodes_sequence(nodes[haplotype])
+        nodes_set = set(nodes[haplotype])
+        creator = NodeCountModelCreatorFromSimpleChaining(nodes_set, sequence_forward, kmer_index, args.max_node_id, n_reads_to_simulate=args.n_reads)
+        following, not_following = creator.get_node_counts()
+        return following, not_following
+
+        """
         expected_node_counts_not_following_node = np.zeros(max_node_id)
         n_individuals_not_following_node = np.zeros(max_node_id)
         expected_node_counts_following_node = np.zeros(max_node_id)
@@ -664,7 +679,8 @@ def run_argument_parser(args):
                 else:
                     expected_node_counts_not_following_node[node] += 1
 
-        return expected_node_counts_following_node, n_individuals_following_node, expected_node_counts_not_following_node, n_individuals_not_following_node
+        return expected_node_counts_following_node, expected_node_counts_not_following_node
+        """
 
     def model_kmers_from_haplotype_nodes(args):
         from obgraph.haplotype_nodes import HaplotypeNodes
@@ -672,9 +688,7 @@ def run_argument_parser(args):
 
         max_node_id = args.max_node_id
         expected_node_counts_not_following_node = np.zeros(max_node_id)
-        n_individuals_not_following_node = np.zeros(max_node_id)
         expected_node_counts_following_node = np.zeros(max_node_id)
-        n_individuals_following_node = np.zeros(max_node_id)
 
         n_chunks_in_each_pool = args.n_threads
         pool = Pool(args.n_threads)
@@ -683,14 +697,17 @@ def run_argument_parser(args):
         while True:
             results = pool.starmap(model_kmers_from_haplotype_nodes_single_thread, itertools.islice(data_to_process, n_chunks_in_each_pool))
             if results:
-                for expected_follow, n_follow, expected_not_follow, n_not_follow in results:
+                for expected_follow, expected_not_follow in results:
                     expected_node_counts_following_node += expected_follow
                     expected_node_counts_not_following_node += expected_not_follow
-                    n_individuals_following_node += n_follow
-                    n_individuals_not_following_node += n_not_follow
             else:
                 logging.info("No results, breaking")
                 break
+
+        haplotype_nodes = HaplotypeNodes.from_file(args.haplotype_nodes)
+        n_individuals_following_node = haplotype_nodes.n_haplotypes_on_node
+        n_individuals_tot = args.n_haplotypes
+        n_individuals_not_following_node = np.zeros(len(n_individuals_following_node)) + n_individuals_tot - n_individuals_following_node
 
         nonzero = np.where(expected_node_counts_following_node != 0)[0]
         expected_node_counts_following_node[nonzero] = expected_node_counts_following_node[nonzero] / \
@@ -703,57 +720,6 @@ def run_argument_parser(args):
                  node_counts_not_following_node=expected_node_counts_not_following_node)
         logging.info("Wrote expected node counts to file %s" % args.out_file_name)
 
-    def model_kmers(args):
-        from Bio.Seq import Seq
-        from .chain_mapper import read_kmers, get_power_array
-        max_node_id = 3000000
-        power_array = get_power_array(args.kmer_size)
-        haplotypes = list(range(0, 10))
-        graph = ObGraph.from_file(args.graph_file_name)
-        kmer_index = KmerIndex.from_file(args.kmer_index)
-        variants = GenotypeCalls.from_vcf(args.vcf)
-        nodes = graph.get_haplotype_node_paths_for_haplotypes(variants, haplotypes)
-
-        expected_node_counts_not_following_node = np.zeros(max_node_id)
-        n_individuals_not_following_node = np.zeros(max_node_id)
-        expected_node_counts_following_node = np.zeros(max_node_id)
-        n_individuals_following_node = np.zeros(max_node_id)
-
-        for haplotype in haplotypes:
-            logging.info("Analysing haplotype %d" % haplotype)
-
-            # Increase count for how many individuals follow and do not follow nodes
-            n_individuals_following_node[nodes[haplotype]] += 1
-            indexes = np.ones(max_node_id)
-            indexes[nodes[haplotype]] = 0
-            n_individuals_not_following_node[np.nonzero(indexes)] += 1
-
-            nodes_set = set(nodes[haplotype])
-            sequence_forward = graph.get_nodes_sequence(nodes[haplotype])
-            sequence_reverse = str(Seq(sequence_forward).reverse_complement())
-            for sequence in (sequence_forward, sequence_reverse):
-                kmers = read_kmers(sequence, power_array)
-                logging.info("Getting kmer hits")
-                node_hits = kmer_index.get_nodes_from_multiple_kmers(kmers)
-
-                logging.info("Increasing node counts")
-                for node in node_hits:
-                    if node in nodes_set:
-                        expected_node_counts_following_node[node] += 1
-                    else:
-                        expected_node_counts_not_following_node[node] += 1
-
-        # Divide counts by number of individuals following and not following nodes, to get an average per individual
-        # this shouldn't give division by zero, since we only pick nonzero counts, and they can only get count if individuals follow/not follow node
-        nonzero = np.where(expected_node_counts_following_node != 0)[0]
-        expected_node_counts_following_node[nonzero] = expected_node_counts_following_node[nonzero] / n_individuals_following_node[nonzero]
-        nonzero = np.where(expected_node_counts_not_following_node != 0)[0]
-        expected_node_counts_not_following_node[nonzero] = expected_node_counts_not_following_node[nonzero] / n_individuals_not_following_node[nonzero]
-
-        np.savez(args.out_file_name, node_counts_following_node=expected_node_counts_following_node, node_counts_not_following_node=expected_node_counts_not_following_node)
-        logging.info("Wrote expected node counts to file %s" % args.out_file_name)
-
-
     subparser = subparsers.add_parser("model")
     subparser.add_argument("-g", "--graph_file_name", required=True)
     subparser.add_argument("-k", "--kmer-size", required=True, type=int)
@@ -763,6 +729,7 @@ def run_argument_parser(args):
     subparser.add_argument("-m", "--max-node-id", type=int, required=True)
     subparser.add_argument("-H", "--haplotype-nodes", required=True)
     subparser.add_argument("-n", "--n-haplotypes", type=int, required=True)
+    subparser.add_argument("-N", "--n-reads", type=int, required=True, help="N reads to simulate per genome")
     subparser.set_defaults(func=model_kmers_from_haplotype_nodes)
 
     def no_chain_map_single_process(reads, args):

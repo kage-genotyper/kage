@@ -1,6 +1,7 @@
 import numpy as np
 from .simple_best_chain_finder import SimpleBestChainFinder
 from Bio.Seq import Seq
+import logging
 
 class NodeCountModel:
     def __init__(self, node_counts_following_node, node_counts_not_following_node, average_coverage=1):
@@ -40,10 +41,12 @@ class NodeCountModelCreatorFromSimpleChaining:
         chain_finder = SimpleBestChainFinder(self.kmer_index)
 
         for i in range(0, self.n_reads_to_simulate):
+            if i % 10000 == 0:
+                logging.info("%d reads simulated" % i)
             pos_start = np.random.randint(0, self.genome_size - self.read_length)
-            pos_end = pos_start + self.genome_size
+            pos_end = pos_start + self.read_length
 
-            for read in (self.genome_sequence[pos_start:pos_end], self.reverse_genome_sequence[pos_start:pos_end]):
+            for read in [self.genome_sequence[pos_start:pos_end], self.reverse_genome_sequence[pos_start:pos_end]]:
                 nodes = chain_finder.get_nodes_in_best_chain_for_read(read)
                 for node in nodes:
                     if node in self.nodes_followed_by_individual:
