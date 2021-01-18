@@ -26,6 +26,7 @@ from .cython_mapper import map
 from graph_kmer_index import ReferenceKmerIndex
 from .analysis import KmerAnalyser
 from .variants import GenotypeCalls, TruthRegions
+from obgraph.haplotype_nodes import HaplotypeNodes
 
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
 import numpy as np
@@ -134,7 +135,7 @@ def genotypev2(args):
 
     genotyper = genotyper_class(graph, sequence_graph, linear_path, reads, kmer_index, args.vcf, k,
                                        truth_alignments, args.write_alignments_to_file, reference_k=args.small_k, max_node_id=4000000,
-                                unique_index=unique_index, reverse_index=align_nodes_to_reads)
+                                unique_index=unique_index, reverse_index=align_nodes_to_reads, skip_chaining=args.skip_chaining)
 
     if args.use_node_counts is not None:
         logging.info("Using node counts from file. Not getting counts.")
@@ -157,6 +158,8 @@ nodes = None
 frequencies = None
 ref_offsets = None
 reference_kmers = None
+max_node_id = None
+skip_chaining = False
 small_k = None
 k = None
 graph_edges_indices = None
@@ -174,19 +177,19 @@ from pathos.pools import ProcessPool
 from graph_kmer_index.logn_hash_map import ModuloHashMap
 test_array = np.zeros(400000000, dtype=np.int64) + 1
 
+
 def count_single_thread(reads):
     logging.info("Startin thread")
     if len(reads) == 0:
         logging.info("Skipping thread, no more reads")
         return None, None
 
-    max_node_id = 160000000
+
     kmer_index = CollisionFreeKmerIndex(hashes_to_index, n_kmers, nodes, ref_offsets, kmers, modulo, frequencies)
-    logging.info("Distance to node type: %s" % distance_to_node.dtype)
-    graph = ObGraph(None, None, None, graph_edges_indices, graph_edges_n_edges, graph_edges_values, None, distance_to_node, None)
-    reverse_index = ReverseKmerIndex(reverse_index_nodes_to_index_positions, reverse_index_nodes_to_n_hashes, reverse_index_hashes, reverse_index_ref_positions)
+    #graph = ObGraph(None, None, None, graph_edges_indices, graph_edges_n_edges, graph_edges_values, None, distance_to_node, None)
+    #reverse_index = ReverseKmerIndex(reverse_index_nodes_to_index_positions, reverse_index_nodes_to_n_hashes, reverse_index_hashes, reverse_index_ref_positions)
     logging.info("Got %d lines" % len(reads))
-    genotyper = CythonChainGenotyper(graph, None, None, reads, kmer_index, None, k, None, None, reference_k=small_k, max_node_id=max_node_id, reference_kmers=reference_kmers, reverse_index=reverse_index)
+    genotyper = CythonChainGenotyper(None, None, None, reads, kmer_index, None, k, None, None, reference_k=small_k, max_node_id=max_node_id, reference_kmers=None, reverse_index=None, skip_reference_kmers=True, skip_chaining=skip_chaining)
     genotyper.get_counts()
     return genotyper._node_counts, genotyper.chain_positions
 
@@ -341,6 +344,8 @@ def count(args):
     global reverse_index_nodes_to_n_hashes
     global reverse_index_hashes
     global reverse_index_ref_positions
+    global max_node_id
+    global skip_chaining
 
     truth_positions = None
     if args.truth_alignments is not None:
@@ -356,30 +361,10 @@ def count(args):
     ref_offsets = kmer_index._ref_offsets
     kmers = kmer_index._kmers
     modulo = kmer_index._modulo
-    small_k = args.small_k
     k = args.kmer_size
     frequencies = kmer_index._frequencies
-    graph = ObGraph.from_file(args.graph)
-    distance_to_node = graph.ref_offset_to_node
-
-    graph_edges_indices = graph.node_to_edge_index
-    graph_edges_values = graph.edges
-    graph_edges_n_edges = graph.node_to_n_edges
-
-    reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
-    reverse_index_nodes_to_index_positions = reverse_index.nodes_to_index_positions.astype(np.uint32)
-    reverse_index_nodes_to_n_hashes = reverse_index.nodes_to_n_hashes.astype(np.uint16)
-    reverse_index_hashes = reverse_index.hashes
-    reverse_index_ref_positions = reverse_index.ref_positions
-
-    reference_kmers_cache_file_name = "ref.fa.%dmers" % args.small_k
-    if os.path.isfile(reference_kmers_cache_file_name + ".npy"):
-        logging.info("Used cached reference kmers from file %s.npy" % reference_kmers_cache_file_name)
-        reference_kmers = np.load(reference_kmers_cache_file_name + ".npy")
-    else:
-        logging.info("Creating reference kmers")
-        reference_kmers = ReadKmers.get_kmers_from_read_dynamic(str(Fasta("ref.fa")[args.reference_name]), np.power(4, np.arange(0, args.small_k)))
-        np.save(reference_kmers_cache_file_name, reference_kmers)
+    max_node_id = args.max_node_id
+    skip_chaining = args.skip_chaining
 
     #reference_kmers = reference_kmers.astype(np.uint64)
     reads = read_chunks(args.reads, chunk_size=args.chunk_size)
@@ -387,7 +372,7 @@ def count(args):
 
     logging.info("Making pool")
     pool = Pool(args.n_threads)
-    node_counts = np.zeros(max_node_id+1, dtype=np.int64)
+    node_counts = np.zeros(max_node_id+1, dtype=float)
     for result, chain_positions in pool.imap_unordered(count_single_thread, reads):
         if result is not None:
             print("Got result. Length of counts: %d" % len(result.node_counts))
@@ -508,14 +493,12 @@ def run_argument_parser(args):
     subparser.add_argument("-i", "--kmer_index", required=True)
     subparser.add_argument("-r", "--reads", required=True)
     subparser.add_argument("-k", "--kmer_size", required=False, type=int, default=31)
-    subparser.add_argument("-w", "--small-k", required=False, type=int, default=16)
     subparser.add_argument("-n", "--node_counts_out_file_name", required=True)
+    subparser.add_argument("-M", "--max_node_id", type=int, default=2000000, required=False)
     subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
     subparser.add_argument("-c", "--chunk-size", type=int, default=10000, required=False, help="Number of reads to process in the same chunk")
     subparser.add_argument("-T", "--truth_alignments", required=False)
-    subparser.add_argument("-g", "--graph", required=True)
-    subparser.add_argument("-y", "--reference-name", required=False, default="1")
-    subparser.add_argument("-R", "--reverse-index", required=True)
+    subparser.add_argument("-s", "--skip-chaining", type=bool, default=False, required=False)
     subparser.set_defaults(func=count)
 
     subparser = subparsers.add_parser("count_using_unique_index")
@@ -609,7 +592,7 @@ def run_argument_parser(args):
         reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
         node_count_model = NodeCountModel.from_file(args.node_count_model)
 
-        analyser = KmerAnalyser(graph, args.kmer_size, GenotypeCalls.from_vcf(args.vcf), kmer_index, reverse_index, GenotypeCalls.from_vcf(args.predicted_vcf), GenotypeCalls.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NumpyNodeCounts.from_file(args.node_counts), node_count_model)
+        analyser = KmerAnalyser(graph, args.kmer_size, GenotypeCalls.from_vcf(args.vcf), kmer_index, reverse_index, GenotypeCalls.from_vcf(args.predicted_vcf), GenotypeCalls.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NumpyNodeCounts.from_file(args.node_counts), node_count_model, HaplotypeNodes.from_file(args.haplotype_nodes))
         analyser.analyse_unique_kmers_on_variants()
 
     subparser = subparsers.add_parser("analyse_variants")
@@ -623,22 +606,20 @@ def run_argument_parser(args):
     subparser.add_argument("-t", "--truth-regions-file", required=True)
     subparser.add_argument("-n", "--node-counts", required=True)
     subparser.add_argument("-m", "--node-count-model", required=True)
+    subparser.add_argument("-H", "--haplotype_nodes", required=True)
     subparser.set_defaults(func=analyse_variants)
 
     def model_kmers_from_haplotype_nodes_single_thread(haplotype, args):
-        from Bio.Seq import Seq
-        from .chain_mapper import read_kmers, get_power_array
-        max_node_id = args.max_node_id
-
         from .node_count_model import NodeCountModelCreatorFromSimpleChaining
         from obgraph.haplotype_nodes import HaplotypeNodes
         kmer_index = KmerIndex.from_file(args.kmer_index)
         nodes = HaplotypeNodes.from_file(args.haplotype_nodes).nodes
         graph = ObGraph.from_file(args.graph_file_name)
         sequence_forward = graph.get_nodes_sequence(nodes[haplotype])
-        nodes_set = set(nodes[haplotype])
-        creator = NodeCountModelCreatorFromSimpleChaining(nodes_set, sequence_forward, kmer_index, args.max_node_id, n_reads_to_simulate=args.n_reads)
+        #nodes_set = set(nodes[haplotype])
+        creator = NodeCountModelCreatorFromSimpleChaining(nodes[haplotype], sequence_forward, kmer_index, args.max_node_id, n_reads_to_simulate=args.n_reads, skip_chaining=args.skip_chaining)
         following, not_following = creator.get_node_counts()
+        logging.info("Done with haplotype %d" % haplotype)
         return following, not_following
 
         """
@@ -687,8 +668,8 @@ def run_argument_parser(args):
         haplotypes = list(range(args.n_haplotypes))
 
         max_node_id = args.max_node_id
-        expected_node_counts_not_following_node = np.zeros(max_node_id)
-        expected_node_counts_following_node = np.zeros(max_node_id)
+        expected_node_counts_not_following_node = np.zeros(max_node_id+1)
+        expected_node_counts_following_node = np.zeros(max_node_id+1)
 
         n_chunks_in_each_pool = args.n_threads
         pool = Pool(args.n_threads)
@@ -730,7 +711,32 @@ def run_argument_parser(args):
     subparser.add_argument("-H", "--haplotype-nodes", required=True)
     subparser.add_argument("-n", "--n-haplotypes", type=int, required=True)
     subparser.add_argument("-N", "--n-reads", type=int, required=True, help="N reads to simulate per genome")
+    subparser.add_argument("-s", "--skip-chaining", type=bool, default=False, required=False)
     subparser.set_defaults(func=model_kmers_from_haplotype_nodes)
+
+    def model_using_kmer_index(args):
+        from .node_count_model import NodeCountModelCreatorFromNoChaining, NodeCountModel
+        index = KmerIndex.from_file(args.kmer_index)
+        graph = ObGraph.from_file(args.graph_file_name)
+        reverse_index = ReverseKmerIndex.from_file(args.reverse_node_kmer_index)
+        variants = GenotypeCalls.from_vcf(args.vcf)
+
+        model_creator = NodeCountModelCreatorFromNoChaining(index, reverse_index, graph, variants, args.max_node_id)
+        counts_following, counts_not_following = model_creator.get_node_counts()
+        model = NodeCountModel(counts_following, counts_not_following)
+        model.to_file(args.out_file_name)
+
+
+    subparser = subparsers.add_parser("model_using_kmer_index")
+    subparser.add_argument("-g", "--graph_file_name", required=True)
+    subparser.add_argument("-k", "--kmer-size", required=True, type=int)
+    subparser.add_argument("-i", "--kmer-index", required=True)
+    subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.add_argument("-m", "--max-node-id", type=int, required=True)
+    subparser.add_argument("-r", "--reverse_node_kmer_index", required=True)
+    subparser.add_argument("-v", "--vcf", required=True)
+    subparser.set_defaults(func=model_using_kmer_index)
+
 
     def no_chain_map_single_process(reads, args):
         from .no_chain_mapper import NoChainMapper
@@ -794,12 +800,15 @@ def run_argument_parser(args):
     def statistical_node_count_genotyper(args):
         from .statistical_node_count_genotyper import StatisticalNodeCountGenotyper
         from .node_count_model import NodeCountModel
-        from obgraph.haplotype_nodes import HaplotypeNodes
+        from obgraph.haplotype_nodes import HaplotypeNodes, NodeToHaplotypes
+        from obgraph.genotype_matrix import MostSimilarVariantLookup
+        most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
+        nodes_to_haplotypes = NodeToHaplotypes.from_file(args.nodes_to_haplotypes)
         model = NodeCountModel.from_file(args.model)
         graph = ObGraph.from_file(args.graph_file_name)
         #variants = GenotypeCalls.from_vcf(args.vcf)
         node_counts = NumpyNodeCounts.from_file(args.counts)
-        genotyper = StatisticalNodeCountGenotyper(model, args.vcf, graph, node_counts, HaplotypeNodes.from_file(args.haplotype_counts))
+        genotyper = StatisticalNodeCountGenotyper(model, args.vcf, graph, node_counts, HaplotypeNodes.from_file(args.haplotype_counts), nodes_to_haplotypes, most_similar_variant_lookup)
         genotyper.genotype()
 
     subparser = subparsers.add_parser("statistical_node_count_genotyper")
@@ -808,6 +817,8 @@ def run_argument_parser(args):
     subparser.add_argument("-v", "--vcf", required=True, help="Vcf to genotype")
     subparser.add_argument("-m", "--model", required=True, help="Node count model")
     subparser.add_argument("-H", "--haplotype_counts", required=True, help="Haplotype count model")
+    subparser.add_argument("-N", "--nodes_to_haplotypes", required=True, help="Nodes to haplotypes lookup")
+    subparser.add_argument("-M", "--most_similar_variant_lookup", required=True, help="Most similar variant lookup")
     subparser.set_defaults(func=statistical_node_count_genotyper)
 
 

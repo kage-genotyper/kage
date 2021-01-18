@@ -44,7 +44,8 @@ class ChainGenotyper:
     def __init__(self, graph, sequence_graph, linear_path, reads, kmer_index, vcf_file_name, k,
                  truth_alignments=None, write_alignments_to_file=None, reference_k=7,
                  weight_chains_by_probabilities=False, max_node_id=None, reference_kmers=None,
-                 unique_index=None, reverse_index=None, graph_edges=None, distance_to_node=None, skip_reference_kmers=False):
+                 unique_index=None, reverse_index=None, graph_edges=None, distance_to_node=None, skip_reference_kmers=False,
+                 skip_chaining=False):
 
         self._max_node_id = max_node_id
         self._reads = reads
@@ -84,6 +85,7 @@ class ChainGenotyper:
         self._reverse_index = reverse_index
         self._graph_edges = graph_edges
         self._distance_to_node = distance_to_node
+        self._skip_chaining = skip_chaining
 
     @staticmethod
     def find_chains(ref_offsets, read_offsets, nodes, frequencies, chain_position_threshold=2, kmers=None):
@@ -257,18 +259,9 @@ class CythonChainGenotyper(ChainGenotyper):
                     index._kmers,
                     index._frequencies,
                     index._modulo,
-                    self._graph.node_to_edge_index,
-                    self._graph.edges,
-                    self._graph.node_to_n_edges,
-                    self._graph.ref_offset_to_node,
-                    self._reverse_index.nodes_to_index_positions,
-                    self._reverse_index.nodes_to_n_hashes,
-                    self._reverse_index.hashes,
-                    self._reverse_index.ref_positions,
-                    self._reference_kmers,
                     self._max_node_id,
-                    self._reference_k,
-                    self._k
+                    self._k,
+                    self._skip_chaining
 
         )
         self.chain_positions = chain_positions

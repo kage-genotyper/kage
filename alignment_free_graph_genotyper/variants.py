@@ -96,6 +96,20 @@ class GenotypeCalls:
         self._index = {}
         self.make_index()
 
+    def get_chunks(self, chunk_size=5000):
+        out = []
+        i = 0
+        for variant_number, variant in enumerate(self.variant_genotypes):
+            if variant_number % 1000 == 0:
+                logging.info("%d variants read" % variant_number)
+            out.append(variant)
+            i += 1
+            if i >= chunk_size and chunk_size > 0:
+                yield out
+                out = []
+                i = 0
+        yield out
+
     def make_index(self):
         logging.info("Making vcf index")
         for variant in self.variant_genotypes:
@@ -116,6 +130,9 @@ class GenotypeCalls:
 
     def get(self, variant):
         return self._index[variant.id()]
+
+    def __len__(self):
+        return len(self.variant_genotypes)
 
     def __iter__(self):
         return self.variant_genotypes.__iter__()
