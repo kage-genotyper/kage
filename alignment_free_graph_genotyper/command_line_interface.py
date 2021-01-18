@@ -803,12 +803,11 @@ def run_argument_parser(args):
         from obgraph.haplotype_nodes import HaplotypeNodes, NodeToHaplotypes
         from obgraph.genotype_matrix import MostSimilarVariantLookup
         most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
-        nodes_to_haplotypes = NodeToHaplotypes.from_file(args.nodes_to_haplotypes)
         model = NodeCountModel.from_file(args.model)
         graph = ObGraph.from_file(args.graph_file_name)
         #variants = GenotypeCalls.from_vcf(args.vcf)
         node_counts = NumpyNodeCounts.from_file(args.counts)
-        genotyper = StatisticalNodeCountGenotyper(model, args.vcf, graph, node_counts, HaplotypeNodes.from_file(args.haplotype_counts), nodes_to_haplotypes, most_similar_variant_lookup)
+        genotyper = StatisticalNodeCountGenotyper(model, args.vcf, graph, node_counts, HaplotypeNodes.from_file(args.haplotype_counts), most_similar_variant_lookup)
         genotyper.genotype()
 
     subparser = subparsers.add_parser("statistical_node_count_genotyper")

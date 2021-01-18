@@ -11,11 +11,10 @@ def parse_vcf_genotype(genotype):
 
 
 class StatisticalNodeCountGenotyper:
-    def __init__(self, node_count_model, vcf_file, graph, node_counts, haplotype_counts, nodes_to_haplotypes, most_similar_variant_lookup, variant_window_size=500):
+    def __init__(self, node_count_model, vcf_file, graph, node_counts, haplotype_counts, most_similar_variant_lookup, variant_window_size=500):
         self._vcf_file = vcf_file
         self._node_count_model = node_count_model
         self._haplotype_counts = haplotype_counts
-        self._nodes_to_haplotypes = nodes_to_haplotypes
         self._graph = graph
         self._node_counts = node_counts
         self._n_haplotypes = haplotype_counts.nodes.shape[0]
@@ -31,34 +30,6 @@ class StatisticalNodeCountGenotyper:
         self._variant_counter = 0
         self._most_similar_variant_lookup = most_similar_variant_lookup
         self._genotypes_called_at_variant = []  # position is variant id, genotype is 1,2,3 (homo ref, homo alt, hetero)
-
-    def add_individuals_with_genotype(self, genotype, ref_node, variant_node):
-        #individuals = []
-
-        # Do not add 0/0 genotypes
-        if False and genotype == "0/0":
-            return
-
-        nodes = []
-        if genotype == "0/1":
-            nodes = [ref_node, variant_node]
-        elif genotype == "0/0":
-            nodes = [ref_node, ref_node]
-        elif genotype == "1/1":
-            nodes = [variant_node, variant_node]
-        else:
-            raise Exception("Unknown genotype")
-
-        has_genotype = self._nodes_to_haplotypes.get_individuals_having_node_pair(nodes[0], nodes[1])
-        for individual_id in range(0, self._n_individuals):
-
-            # Check whether this individual has haplotypes following the two nodes that are the genotype
-            if individual_id in has_genotype:
-                self._individual_counts[self._variant_counter % self._variant_window_size][individual_id] = 1
-            else:
-                self._individual_counts[self._variant_counter % self._variant_window_size][individual_id] = 0
-
-            self._variant_counter += 1
 
     def get_most_common_individual_on_previous_variants(self):
         most_common = np.argmax(np.sum(self._individual_counts, 0))
@@ -225,22 +196,6 @@ class StatisticalNodeCountGenotyper:
         else:
             return "0/1"
 
-    def get_genotype_for_individual(self, individual_id, reference_node, variant_node):
-        haplotype0 = individual_id * 2
-        haplotype1 = individual_id * 2 + 1
-
-        if haplotype0 in self._nodes_to_haplotypes.get_haplotypes_on_node(reference_node) and haplotype1 in self._nodes_to_haplotypes.get_haplotypes_on_node(variant_node):
-            return "0/0"
-        elif haplotype0 in self._nodes_to_haplotypes.get_haplotypes_on_node(variant_node) and haplotype1 in self._nodes_to_haplotypes.get_haplotypes_on_node(variant_node):
-            return "1/1"
-        elif haplotype0 in self._nodes_to_haplotypes.get_haplotypes_on_node(reference_node) and haplotype1 in self._nodes_to_haplotypes.get_haplotypes_on_node(variant_node):
-            return "0/1"
-        elif haplotype1 in self._nodes_to_haplotypes.get_haplotypes_on_node(reference_node) and haplotype0 in self._nodes_to_haplotypes.get_haplotypes_on_node(variant_node):
-            return "0/1"
-        else:
-            # This can happen if none of the haplotypes are covering the node (e.g. a snp inside a deletion). Then we want the genotype to be 0/0
-            return "0/0"
-        
     def get_allele_frequencies_from_most_similar_previous_variant(self, variant_id, reference_node, variant_node):
         most_similar = self._most_similar_variant_lookup.get_most_similar_variant(variant_id)
         most_similar_genotype = self._genotypes_called_at_variant[most_similar]
@@ -266,33 +221,6 @@ class StatisticalNodeCountGenotyper:
             prob_hetero += prob_same_genotype
 
         return prob_homo_ref, prob_homo_alt, prob_hetero
-
-    def compute_a_priori_probabilities(self, genotype, reference_node, variant_node):
-        most_likely_individual = self.get_most_common_individual_on_previous_variants()
-        #logging.info("Most likely individual: %d" % most_likely_individual)
-        if most_likely_individual:
-            most_likely_individual_genotype = self.get_genotype_for_individual(most_likely_individual, reference_node, variant_node)
-
-        prob_following_same_individual = 0.90
-
-        prob_breaking = 1 - prob_following_same_individual
-
-        if False and most_likely_individual:
-            logging.info("Most common individual is %d and has genotype %s" % (most_likely_individual, most_likely_individual_genotype))
-        if most_likely_individual and most_likely_individual_genotype == genotype:
-            return prob_following_same_individual
-        else:
-            # Get population probs, there's 0.025 chance for having these
-            prob_homo_ref, prob_homo_alt, prob_hetero = self.get_allele_frequencies_from_haplotype_counts(reference_node, variant_node)
-
-            if genotype == "0/0":
-                return prob_breaking * prob_homo_ref
-            elif genotype == "0/1":
-                return prob_breaking * prob_hetero
-            elif genotype == "1/1":
-                return prob_breaking * prob_homo_alt
-            else:
-                raise Exception("Invalid genotype %s" % genotype)
 
     def genotype(self):
         variant_id = -1
