@@ -17,4 +17,6 @@ tests/__pycache__/
 *.fasta
 *.vcf.gz
 *.vcf
-
+*.c
+*.so
+*.html
