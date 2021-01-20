@@ -1,6 +1,9 @@
 import gzip
 import itertools
 import logging
+
+from obgraph.genotype_matrix import GenotypeFrequencies
+
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s %Y-%m-%d %H:%M:%S')
 
 from itertools import repeat
@@ -27,6 +30,7 @@ from graph_kmer_index import ReferenceKmerIndex
 from .analysis import KmerAnalyser
 from .variants import GenotypeCalls, TruthRegions
 from obgraph.haplotype_nodes import HaplotypeNodes
+from obgraph.genotype_matrix import GenotypeFrequencies
 
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
 import numpy as np
@@ -587,12 +591,16 @@ def run_argument_parser(args):
 
     def analyse_variants(args):
         from .node_count_model import NodeCountModel
+        from obgraph.genotype_matrix import MostSimilarVariantLookup
+        most_similar_variants = MostSimilarVariantLookup.from_file(args.most_similar_variants)
         graph = ObGraph.from_file(args.graph_file_name)
         kmer_index = KmerIndex.from_file(args.kmer_index)
         reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
         node_count_model = NodeCountModel.from_file(args.node_count_model)
 
-        analyser = KmerAnalyser(graph, args.kmer_size, GenotypeCalls.from_vcf(args.vcf), kmer_index, reverse_index, GenotypeCalls.from_vcf(args.predicted_vcf), GenotypeCalls.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NumpyNodeCounts.from_file(args.node_counts), node_count_model, HaplotypeNodes.from_file(args.haplotype_nodes))
+        analyser = KmerAnalyser(graph, args.kmer_size, GenotypeCalls.from_vcf(args.vcf), kmer_index, reverse_index, GenotypeCalls.from_vcf(args.predicted_vcf),
+                                GenotypeCalls.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NumpyNodeCounts.from_file(args.node_counts),
+                                node_count_model, GenotypeFrequencies.from_file(args.genotype_frequencies), most_similar_variants)
         analyser.analyse_unique_kmers_on_variants()
 
     subparser = subparsers.add_parser("analyse_variants")
@@ -606,7 +614,8 @@ def run_argument_parser(args):
     subparser.add_argument("-t", "--truth-regions-file", required=True)
     subparser.add_argument("-n", "--node-counts", required=True)
     subparser.add_argument("-m", "--node-count-model", required=True)
-    subparser.add_argument("-H", "--haplotype_nodes", required=True)
+    subparser.add_argument("-G", "--genotype-frequencies", required=True)
+    subparser.add_argument("-M", "--most-similar-variants", required=True)
     subparser.set_defaults(func=analyse_variants)
 
     def model_kmers_from_haplotype_nodes_single_thread(haplotype, args):
@@ -800,14 +809,14 @@ def run_argument_parser(args):
     def statistical_node_count_genotyper(args):
         from .statistical_node_count_genotyper import StatisticalNodeCountGenotyper
         from .node_count_model import NodeCountModel
-        from obgraph.haplotype_nodes import HaplotypeNodes, NodeToHaplotypes
-        from obgraph.genotype_matrix import MostSimilarVariantLookup
+        from obgraph.genotype_matrix import MostSimilarVariantLookup, GenotypeFrequencies
+        genotype_frequencies = GenotypeFrequencies.from_file(args.genotype_frequencies)
         most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
         model = NodeCountModel.from_file(args.model)
         graph = ObGraph.from_file(args.graph_file_name)
         #variants = GenotypeCalls.from_vcf(args.vcf)
         node_counts = NumpyNodeCounts.from_file(args.counts)
-        genotyper = StatisticalNodeCountGenotyper(model, args.vcf, graph, node_counts, HaplotypeNodes.from_file(args.haplotype_counts), most_similar_variant_lookup)
+        genotyper = StatisticalNodeCountGenotyper(model, args.vcf, graph, node_counts, genotype_frequencies, most_similar_variant_lookup)
         genotyper.genotype()
 
     subparser = subparsers.add_parser("statistical_node_count_genotyper")
@@ -815,8 +824,7 @@ def run_argument_parser(args):
     subparser.add_argument("-g", "--graph_file_name", required=True)
     subparser.add_argument("-v", "--vcf", required=True, help="Vcf to genotype")
     subparser.add_argument("-m", "--model", required=True, help="Node count model")
-    subparser.add_argument("-H", "--haplotype_counts", required=True, help="Haplotype count model")
-    subparser.add_argument("-N", "--nodes_to_haplotypes", required=True, help="Nodes to haplotypes lookup")
+    subparser.add_argument("-G", "--genotype-frequencies", required=True, help="Genotype frequencies")
     subparser.add_argument("-M", "--most_similar_variant_lookup", required=True, help="Most similar variant lookup")
     subparser.set_defaults(func=statistical_node_count_genotyper)
 

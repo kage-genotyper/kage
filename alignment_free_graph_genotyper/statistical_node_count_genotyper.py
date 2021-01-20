@@ -11,22 +11,23 @@ def parse_vcf_genotype(genotype):
 
 
 class StatisticalNodeCountGenotyper:
-    def __init__(self, node_count_model, vcf_file, graph, node_counts, haplotype_counts, most_similar_variant_lookup, variant_window_size=500):
+    def __init__(self, node_count_model, vcf_file, graph, node_counts, genotype_frequencies, most_similar_variant_lookup, variant_window_size=500):
         self._vcf_file = vcf_file
         self._node_count_model = node_count_model
-        self._haplotype_counts = haplotype_counts
+        self._genotype_frequencies = genotype_frequencies
+        #self._haplotype_counts = haplotype_counts
         self._graph = graph
         self._node_counts = node_counts
-        self._n_haplotypes = haplotype_counts.nodes.shape[0]
-        logging.info("There are %d haplotypes")
-        assert self._n_haplotypes < 10000, "Too many haplotypes. Is something wrong?"
+        #self._n_haplotypes = haplotype_counts.nodes.shape[0]
+        #logging.info("There are %d haplotypes")
+        #assert self._n_haplotypes < 10000, "Too many haplotypes. Is something wrong?"
         self.expected_read_error_rate = 0.03
         self._average_coverage = 7.0
         self._average_node_count_followed_node = 7.0
         self._variant_window_size = variant_window_size
         self._individuals_with_genotypes = []
-        self._n_individuals = self._n_haplotypes // 2
-        self._individual_counts = np.zeros((variant_window_size, self._n_individuals))
+        #self._n_individuals = self._n_haplotypes // 2
+        #self._individual_counts = np.zeros((variant_window_size, self._n_individuals))
         self._variant_counter = 0
         self._most_similar_variant_lookup = most_similar_variant_lookup
         self._genotypes_called_at_variant = []  # position is variant id, genotype is 1,2,3 (homo ref, homo alt, hetero)
@@ -36,6 +37,7 @@ class StatisticalNodeCountGenotyper:
         return most_common
 
     def get_allele_frequencies_from_haplotype_counts(self, ref_node, variant_node):
+        raise Exception("Not supported anymore")
 
         n_haplotypes_total = self._haplotype_counts.nodes.shape[0]
 
@@ -186,15 +188,19 @@ class StatisticalNodeCountGenotyper:
                 prob_posteriori_homozygous_ref, prob_posteriori_homozygous_alt, prob_posteriori_heterozygous))
 
         # Minimum counts for genotyping
-        if allele_counts[1] < 0:
+        if allele_counts[1] <= 0:
             return "0/0"
 
         if prob_posteriori_homozygous_ref > prob_posteriori_homozygous_alt and prob_posteriori_homozygous_ref > prob_posteriori_heterozygous:
             return "0/0"
-        elif prob_posteriori_homozygous_alt > prob_posteriori_heterozygous:
+        elif prob_posteriori_homozygous_alt > prob_posteriori_heterozygous and prob_posteriori_homozygous_alt > 0.999:
             return "1/1"
-        else:
+        elif prob_posteriori_heterozygous > 0.999:
             return "0/1"
+        else:
+            logging.info("%.5f / %.5f / %.5f" % (
+                prob_posteriori_homozygous_ref, prob_posteriori_homozygous_alt, prob_posteriori_heterozygous))
+            return "0/0"
 
     def get_allele_frequencies_from_most_similar_previous_variant(self, variant_id, reference_node, variant_node):
         most_similar = self._most_similar_variant_lookup.get_most_similar_variant(variant_id)
@@ -205,8 +211,8 @@ class StatisticalNodeCountGenotyper:
 
         #logging.info("Most similar variant to %d is %d. Prob of having same genotype is: %.5f. Previous genotype was: %s" % (variant_id, most_similar, prob_same_genotype, most_similar_genotype))
 
-        orig_prob_homo_ref, orig_prob_homo_alt, orig_prob_hetero = self.get_allele_frequencies_from_haplotype_counts(reference_node,
-                                                                                                      variant_node)
+        #orig_prob_homo_ref, orig_prob_homo_alt, orig_prob_hetero = self.get_allele_frequencies_from_haplotype_counts(reference_node, variant_node)
+        orig_prob_homo_ref, orig_prob_homo_alt, orig_prob_hetero = self._genotype_frequencies.get_frequencies_for_variant(variant_id)
 
         # First init probs for having genotypes and not having same genotypes as most similar
         prob_homo_ref = (1 - prob_same_genotype) * orig_prob_homo_ref
@@ -245,10 +251,6 @@ class StatisticalNodeCountGenotyper:
             assert "," not in variant.variant_sequence, "Only biallelic variants are allowed. Line is not bialleleic"
             l = variant.vcf_line.split()
 
-
-            #prob_homo_ref = self.compute_a_priori_probabilities("0/0", l)
-            #prob_homo_alt = self.compute_a_priori_probabilities("1/1", l)
-            #prob_hetero = self.compute_a_priori_probabilities("0/1", l)
 
             debug = False
             try:

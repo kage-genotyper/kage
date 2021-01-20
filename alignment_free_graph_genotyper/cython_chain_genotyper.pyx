@@ -83,8 +83,8 @@ cdef np.ndarray[np.int64_t] get_kmers(np.ndarray[np.int64_t] numeric_read, np.nd
 
 
 
-#@cython.boundscheck(False)
-#@cython.wraparound(False)
+@cython.boundscheck(False)
+@cython.wraparound(False)
 def run(reads,
           np.ndarray[np.int64_t] hashes_to_index,
           np.ndarray[np.uint32_t] n_kmers,
@@ -154,7 +154,7 @@ def run(reads,
     prev_time = time.time()
     for read in reads:
         got_index_hits = 0
-        if read_number % 10000 == 0:
+        if read_number % 50000 == 0:
             logging.info("%d reads processed in %.5f sec" % (read_number, time.time() - prev_time))
             prev_time = time.time()
 
@@ -238,10 +238,6 @@ def run(reads,
                     if index_frequencies[index_position+j] > 100:
                         continue
                     found_nodes[counter] = nodes[index_position+j]
-
-                    if nodes[index_position+j] == 169352:
-                        logging.info("Hit with kmer %d. Frequency: %d" % (kmers[i], index_frequencies[index_position+j]))
-
                     found_ref_offsets[counter] = ref_offsets[index_position+j]
                     found_read_offsets[counter] = i
                     found_frequencies[counter] = index_frequencies[index_position+j]
@@ -252,11 +248,8 @@ def run(reads,
             if not skip_chaining:
                 chains = chain(found_ref_offsets, found_read_offsets, found_nodes, kmers)
                 forward_and_reverse_chains.extend(chains)
-
             else:
                 for c in range(found_nodes.shape[0]):
-                    if found_nodes[c] == 169352:
-                        logging.info("Hit against node. Frequency: %d. L=%d, read number %d" % (found_frequencies[c], l, read_number))
                     node_counts[found_nodes[c]] += 1 # / found_frequencies[c]
                 continue
             #print(chains)

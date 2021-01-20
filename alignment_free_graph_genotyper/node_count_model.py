@@ -47,7 +47,6 @@ class NodeCountModelCreatorFromNoChaining:
                 kmer = int(kmer)
                 nodes, ref_offsets, frequencies, allele_frequencies = self.kmer_index.get(kmer, max_hits=1000000)
                 if nodes is None:
-                    logging.warning("Found not index hits for kmer %d" % kmer)
                     continue
 
                 unique_ref_offsets, unique_indexes = np.unique(ref_offsets, return_index=True)
