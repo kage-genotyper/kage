@@ -252,17 +252,23 @@ class CythonChainGenotyper(ChainGenotyper):
         fasta_file_name = self._reads
         logging.info("Number of kmers in index: %d" % len(index._kmers))
         chain_positions, node_counts = cython_chain_genotyper.run(fasta_file_name,
-                    index._hashes_to_index,
-                    index._n_kmers,
-                    index._nodes,
-                    index._ref_offsets,
-                    index._kmers,
-                    index._frequencies,
-                    index._modulo,
-                    self._max_node_id,
-                    self._k,
-                    self._skip_chaining
-
+                index._hashes_to_index,
+                index._n_kmers,
+                index._nodes,
+                index._ref_offsets,
+                index._kmers,
+                index._frequencies,
+                index._modulo,
+                self._graph.node_to_edge_index,
+                self._graph.edges,
+                self._graph.node_to_n_edges,
+                self._graph.ref_offset_to_node,
+                self._reverse_index.nodes_to_index_positions,
+                self._reverse_index.nodes_to_n_hashes,
+                self._reverse_index.hashes,
+                self._reverse_index.ref_positions,
+                self._max_node_id,
+                self._k,
         )
         self.chain_positions = chain_positions
         self._node_counts = NumpyNodeCounts(node_counts)

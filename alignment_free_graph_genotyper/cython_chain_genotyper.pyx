@@ -5,8 +5,8 @@ cimport cython
 import time
 
 
-#@cython.boundscheck(False)
-#@cython.wraparound(False)
+@cython.boundscheck(False)
+@cython.wraparound(False)
 cdef list chain(long[:] ref_offsets, np.ndarray[np.int64_t] read_offsets, np.ndarray[np.int64_t] nodes, np.ndarray[np.int64_t] kmers):
 
     cdef np.ndarray[np.int64_t] potential_chain_start_positions = ref_offsets - read_offsets
@@ -86,22 +86,27 @@ cdef np.ndarray[np.int64_t] get_kmers(np.ndarray[np.int64_t] numeric_read, np.nd
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def run(reads,
-          np.ndarray[np.int64_t] hashes_to_index,
-          np.ndarray[np.uint32_t] n_kmers,
-          np.uint32_t[:] nodes,
-          np.uint64_t[:] ref_offsets,
-          np.uint64_t[:] index_kmers,
-          np.uint16_t[:] index_frequencies,
-          int modulo,
-          int max_node_id,
-          int k,
-          skip_chaining=False
-          ):
+        np.ndarray[np.int64_t] hashes_to_index,
+        np.ndarray[np.uint32_t] n_kmers,
+        np.uint32_t[:] nodes,
+        np.uint64_t[:] ref_offsets,
+        np.uint64_t[:] index_kmers,
+        np.uint16_t[:] index_frequencies,
+        int modulo,
+        np.ndarray[np.uint32_t] edges_indices,
+        np.ndarray[np.int64_t] edges_values,
+        np.ndarray[np.uint8_t] edges_n_edges,
+        np.uint32_t[:] distance_to_node,
+        np.uint32_t[:] reverse_index_nodes_to_index_positions,
+        np.uint16_t[:] reverse_index_nodes_to_n_hashes,
+        np.uint64_t[:] reverse_index_hashes,
+        np.uint64_t[:] reverse_index_ref_positions,
+        int max_node_id,
+        int k,
+        ):
 
     logging.info("Hash modulo is %d" % modulo)
 
-    if skip_chaining:
-        logging.info("Will skip chaining completely")
 
     logging.info("k=%d" % k)
 
@@ -149,13 +154,14 @@ def run(reads,
     cdef int read_pos, reverse_index_index
     cdef int current_node_match
     cdef int got_index_hits = 0
+    cdef int n_total_chains = 0
 
     logging.info("Starting cython chaining. N reads: %d" % len(reads))
     prev_time = time.time()
     for read in reads:
         got_index_hits = 0
-        if read_number % 50000 == 0:
-            logging.info("%d reads processed in %.5f sec" % (read_number, time.time() - prev_time))
+        if read_number % 1000 == 0:
+            logging.info("%d reads processed in %.5f sec. N total chains so far: %d" % (read_number, time.time() - prev_time, n_total_chains))
             prev_time = time.time()
 
         read_number += 1
@@ -165,13 +171,11 @@ def run(reads,
         reverse_read = complement_of_numeric_read(numeric_read[::-1])
         forward_and_reverse_chains = []
 
-
         for l in range(2):
-            #logging.info("l=%d" % l)
             if l == 0:
-               kmers = get_kmers(numeric_read, power_array)
+                kmers = get_kmers(numeric_read, power_array)
             else:
-               kmers = get_kmers(reverse_read, power_array)
+                kmers = get_kmers(reverse_read, power_array)
 
             kmer_hashes = np.mod(kmers, modulo)
             n = kmers.shape[0]
@@ -182,9 +186,7 @@ def run(reads,
                 hash = kmer_hashes[i]
                 if hash == 0:
                     continue
-
                 n_local_hits = n_kmers[hash]
-                #logging.info("N local hits: %d" % n_local_hits)
                 if n_local_hits > 10000:
                     #logging.warning("%d kmer hits for kmer %d" % (n_local_hits, kmers[i]))
                     continue
@@ -193,26 +195,19 @@ def run(reads,
                 for j in range(n_local_hits):
                     # Check that this entry actually matches the kmer, sometimes it will not due to collision
                     #logging.info("Checking index position %d. index_kmers len: %d" % (index_position + j, len(index_kmers)))
-                    if index_kmers[index_position+j] != kmers[i]:
+                    if index_kmers[index_position + j] != kmers[i]:
                         continue
 
-                    if index_frequencies[index_position+j] > 100:
+                    if index_frequencies[index_position + j] > 5:
                         continue
                     n_total_hits += 1
 
-            #logging.info("N total hits: %d" % (n_total_hits))
-
             if n_total_hits == 0:
-                #logging.info("0 total hits")
                 continue
-
-            got_index_hits = 1
-
 
             found_nodes = np.zeros(n_total_hits, dtype=np.int)
             found_ref_offsets = np.zeros(n_total_hits, dtype=np.int)
             found_read_offsets = np.zeros(n_total_hits, dtype=np.int)
-            found_frequencies = np.zeros(n_total_hits, dtype=np.int)
 
             # Get the actual hits
             counter = 0
@@ -233,61 +228,77 @@ def run(reads,
                     continue
 
                 for j in range(n_local_hits):
-                    if index_kmers[index_position+j] != kmers[i]:
+                    if index_kmers[index_position + j] != kmers[i]:
                         continue
-                    if index_frequencies[index_position+j] > 100:
+                    if index_frequencies[index_position + j] > 5:
                         continue
-                    found_nodes[counter] = nodes[index_position+j]
-                    found_ref_offsets[counter] = ref_offsets[index_position+j]
+                    found_nodes[counter] = nodes[index_position + j]
+                    found_ref_offsets[counter] = ref_offsets[index_position + j]
                     found_read_offsets[counter] = i
-                    found_frequencies[counter] = index_frequencies[index_position+j]
                     counter += 1
 
-
             #print(found_nodes)
-            if not skip_chaining:
-                chains = chain(found_ref_offsets, found_read_offsets, found_nodes, kmers)
-                forward_and_reverse_chains.extend(chains)
-            else:
-                for c in range(found_nodes.shape[0]):
-                    node_counts[found_nodes[c]] += 1 # / found_frequencies[c]
-                continue
+            chains = chain(found_ref_offsets, found_read_offsets, found_nodes, kmers)
+            n_total_chains += len(chains)
+
+            forward_and_reverse_chains.extend(chains)
             #print(chains)
 
         #if len(forward_and_reverse_chains) == 0:
         #continue
-        #logging.info("Done finding nodes")
-        #logging.info("Found %d nodes" % found_nodes.shape[0])
-
-        if skip_chaining:
-            continue
-
 
         # Find best chain
         best_chain_kmers = None
         best_chain = None
         for c in range(len(forward_and_reverse_chains)):
-            if forward_and_reverse_chains[c][2] > best_score:
+            if forward_and_reverse_chains[c][2] >= best_score:
                 best_score = forward_and_reverse_chains[c][2]
                 best_chain = forward_and_reverse_chains[c]
 
         if best_chain is None:
-            #logging.warning("No chain found for read %s" % read)
             continue
 
         chain_positions[read_number] = best_chain[0]
         best_score = 0
 
-        added = set()
-        for c in range(best_chain[1].shape[0]):
-            node = best_chain[1][c]
-            if node not in added:
-                node_counts[node] += 1
+        # Align nodes in area of best chain to the kmers (a reverse lookup)
+        # Find ref nodes within read area
+        ref_nodes_in_read_area = np.unique(distance_to_node[best_chain[0]-10:best_chain[0] + 150 + 10])
+        # Iterate all nodes, look for SNPs
+        best_chain_kmers = best_chain[3]
+        best_chain_ref_pos = best_chain[0]
 
-            added.add(node)
+        best_chain_kmers_set = set(best_chain_kmers)
+
+        for c in range(0, ref_nodes_in_read_area.shape[0]):
+            ref_node = ref_nodes_in_read_area[c]
+            edges_index = edges_indices[ref_node]
+            n_edges = edges_n_edges[ref_node]
+            #logging.info("Ref node: %d, index: %d, n edges: %d" % (ref_node, edges_index, n_edges))
+            if n_edges > 1:
+                # The next two nodes are snp nodes
+                variant_nodes = edges_values[edges_index:edges_index + n_edges]
+                #logging.info("Found SNP. Edges from %d: %s" % (ref_node, list(snp_nodes)))
+                for variant_node in variant_nodes:
+                    current_node = variant_node
+                    # Find kmers crossing node
+                    reverse_index_index = reverse_index_nodes_to_index_positions[current_node]
+                    reverse_kmers = reverse_index_hashes[
+                                    reverse_index_index:reverse_index_index + reverse_index_nodes_to_n_hashes[
+                                        current_node]]
+
+                    # Check for existence in read
+                    current_node_match = 0
+                    for r in range(reverse_kmers.shape[0]):
+                        # Check for match around this pos
+                        if reverse_kmers[r] in best_chain_kmers_set:
+                            current_node_match = 1
+
+                    if current_node_match:
+                        #logging.info("Increasing count for node %d" % current_node)
+                        node_counts[current_node] += 1.0
 
 
-    logging.info("Done with all reads")
     return chain_positions, node_counts
 
 

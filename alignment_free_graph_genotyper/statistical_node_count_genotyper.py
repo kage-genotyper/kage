@@ -14,6 +14,10 @@ class StatisticalNodeCountGenotyper:
     def __init__(self, node_count_model, vcf_file, graph, node_counts, genotype_frequencies, most_similar_variant_lookup, variant_window_size=500):
         self._vcf_file = vcf_file
         self._node_count_model = node_count_model
+
+        if self._node_count_model is None:
+            logging.warning("No node count model specified: Will use pseudocounts")
+
         self._genotype_frequencies = genotype_frequencies
         #self._haplotype_counts = haplotype_counts
         self._graph = graph
@@ -80,15 +84,19 @@ class StatisticalNodeCountGenotyper:
         return poisson.pmf(count, expected_rate)
 
     def expected_count_following_node(self, node):
+        if self._node_count_model is None:
+            return 100
+
         count = self._average_coverage * self._node_count_model.node_counts_following_node[node] / 1
         count += 0.5
-        #count = max(self._average_node_count_followed_node, count)
         return count
 
     def expected_count_not_following_node(self, node):
+        if self._node_count_model is None:
+            return 0.3
+
         count = self._average_coverage * self._node_count_model.node_counts_not_following_node[node] / 1
         count += 0.025
-        #count = max(self._average_node_count_followed_node * 0.01, count)
         return count
 
     def prob_counts_given_hetero(self, ref_node, variant_node, ref_count, variant_count, type="binomial"):
@@ -193,9 +201,9 @@ class StatisticalNodeCountGenotyper:
 
         if prob_posteriori_homozygous_ref > prob_posteriori_homozygous_alt and prob_posteriori_homozygous_ref > prob_posteriori_heterozygous:
             return "0/0"
-        elif prob_posteriori_homozygous_alt > prob_posteriori_heterozygous and prob_posteriori_homozygous_alt > 0.999:
+        elif prob_posteriori_homozygous_alt > prob_posteriori_heterozygous and prob_posteriori_homozygous_alt > 0.0:
             return "1/1"
-        elif prob_posteriori_heterozygous > 0.999:
+        elif prob_posteriori_heterozygous > 0.0:
             return "0/1"
         else:
             logging.info("%.5f / %.5f / %.5f" % (

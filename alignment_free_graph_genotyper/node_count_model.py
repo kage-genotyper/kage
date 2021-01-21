@@ -86,13 +86,15 @@ class NodeCountModelCreatorFromNoChaining:
 
 
 class NodeCountModelCreatorFromSimpleChaining:
-    def __init__(self, nodes_followed_by_individual, individual_genome_sequence, kmer_index, n_nodes, n_reads_to_simulate=1000, read_length=150,  k=31, skip_chaining=False):
+    def __init__(self, graph, reverse_kmer_index, nodes_followed_by_individual, individual_genome_sequence, kmer_index, n_nodes, n_reads_to_simulate=1000, read_length=150,  k=31, skip_chaining=False):
+        self._graph = graph
+        self._reverse_index = reverse_kmer_index
         self.kmer_index = kmer_index
         self.nodes_followed_by_individual = nodes_followed_by_individual
         self.genome_sequence = individual_genome_sequence
         self.reverse_genome_sequence = str(Seq(self.genome_sequence).reverse_complement())
-        self._node_counts_following_node = np.zeros(n_nodes+1, dtype=np.uint32)
-        self._node_counts_not_following_node = np.zeros(n_nodes+1, dtype=np.uint32)
+        self._node_counts_following_node = np.zeros(n_nodes+1, dtype=np.float)
+        self._node_counts_not_following_node = np.zeros(n_nodes+1, dtype=np.float)
         self.n_reads_to_simulate = n_reads_to_simulate
         self.read_length = read_length
         self.genome_size = len(self.genome_sequence)
@@ -128,9 +130,16 @@ class NodeCountModelCreatorFromSimpleChaining:
               index._kmers,
               index._frequencies,
               index._modulo,
+              self._graph.node_to_edge_index,
+              self._graph.edges,
+              self._graph.node_to_n_edges,
+              self._graph.ref_offset_to_node,
+              self._reverse_index.nodes_to_index_positions,
+              self._reverse_index.nodes_to_n_hashes,
+              self._reverse_index.hashes,
+              self._reverse_index.ref_positions,
               self._n_nodes,
               self._k,
-              self._skip_chaining
               )
 
         #logging.info("Sum of positions: %d" % np.sum(chain_positions))
