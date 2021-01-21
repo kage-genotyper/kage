@@ -7,7 +7,7 @@ import time
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef list chain(long[:] ref_offsets, np.ndarray[np.int64_t] read_offsets, np.ndarray[np.int64_t] nodes, np.ndarray[np.int64_t] kmers):
+cdef list chain(np.ndarray[np.int64_t] ref_offsets, np.ndarray[np.int64_t] read_offsets, np.ndarray[np.int64_t] nodes, np.ndarray[np.int64_t] kmers):
 
     cdef np.ndarray[np.int64_t] potential_chain_start_positions = ref_offsets - read_offsets
     cdef int i, start, end
@@ -27,12 +27,10 @@ cdef list chain(long[:] ref_offsets, np.ndarray[np.int64_t] read_offsets, np.nda
     for i in range(1, potential_chain_start_positions.shape[0]):
         if potential_chain_start_positions[i] >= prev_position + 2:
             score = np.unique(read_offsets[current_start:i]).shape[0]
-            #score = read_offsets[current_start:i].shape[0]
             chains.append([potential_chain_start_positions[current_start], nodes[current_start:i], score, kmers])
             current_start = i
         prev_position = potential_chain_start_positions[i]
     score = np.unique(read_offsets[current_start:]).shape[0]
-    #score = read_offsets[current_start:].shape[0]
     chains.append([potential_chain_start_positions[current_start], nodes[current_start:], score, kmers])
 
     return chains
@@ -156,11 +154,21 @@ def run(reads,
     cdef int got_index_hits = 0
     cdef int n_total_chains = 0
 
+    # Variables used in chaining
+    cdef np.ndarray[np.int64_t] potential_chain_start_positions
+    cdef int start, end
+    cdef long[:] sorting
+    cdef int score
+    cdef int current_start = 0
+    cdef int prev_position
+    cdef set read_offsets_given_score
+
+
     logging.info("Starting cython chaining. N reads: %d" % len(reads))
     prev_time = time.time()
     for read in reads:
         got_index_hits = 0
-        if read_number % 1000 == 0:
+        if read_number % 20000 == 0:
             logging.info("%d reads processed in %.5f sec. N total chains so far: %d" % (read_number, time.time() - prev_time, n_total_chains))
             prev_time = time.time()
 
@@ -205,9 +213,10 @@ def run(reads,
             if n_total_hits == 0:
                 continue
 
-            found_nodes = np.zeros(n_total_hits, dtype=np.int)
-            found_ref_offsets = np.zeros(n_total_hits, dtype=np.int)
-            found_read_offsets = np.zeros(n_total_hits, dtype=np.int)
+
+            found_nodes = np.zeros(n_total_hits, dtype=np.int64)
+            found_ref_offsets = np.zeros(n_total_hits, dtype=np.int64)
+            found_read_offsets = np.zeros(n_total_hits, dtype=np.int64)
 
             # Get the actual hits
             counter = 0
@@ -238,10 +247,42 @@ def run(reads,
                     counter += 1
 
             #print(found_nodes)
-            chains = chain(found_ref_offsets, found_read_offsets, found_nodes, kmers)
-            n_total_chains += len(chains)
+            #chains = chain(found_ref_offsets, found_read_offsets, found_nodes, kmers)
 
-            forward_and_reverse_chains.extend(chains)
+
+            # Do the chaining
+            potential_chain_start_positions = found_ref_offsets - found_read_offsets
+            sorting = np.argsort(potential_chain_start_positions)
+            found_read_offsets = found_read_offsets[sorting]
+            found_nodes = found_nodes[sorting]
+            potential_chain_start_positions = potential_chain_start_positions[sorting]
+
+            current_start = 0
+            prev_position = potential_chain_start_positions[0]
+            read_offsets_given_score = set()
+            score = 1
+            read_offsets_given_score.add(found_read_offsets[0])
+            for i in range(1, potential_chain_start_positions.shape[0]):
+                if potential_chain_start_positions[i] >= prev_position + 2:
+                    #score = np.unique(found_read_offsets[current_start:i]).shape[0]
+                    #score = found_read_offsets[current_start:i].shape[0]
+                    forward_and_reverse_chains.append([potential_chain_start_positions[current_start], found_nodes[current_start:i], score, kmers])
+                    current_start = i
+                    score = 0
+                    read_offsets_given_score = set()
+                prev_position = potential_chain_start_positions[i]
+
+                if found_read_offsets[i] not in read_offsets_given_score:
+                    score += 1
+                    read_offsets_given_score.add(found_read_offsets[i])
+
+            #score = np.unique(found_read_offsets[current_start:]).shape[0]
+            #score = found_read_offsets[current_start:].shape[0]
+            forward_and_reverse_chains.append([potential_chain_start_positions[current_start], found_nodes[current_start:], score, kmers])
+
+            #n_total_chains += len(chains)
+
+            #forward_and_reverse_chains.extend(chains)
             #print(chains)
 
         #if len(forward_and_reverse_chains) == 0:

@@ -190,9 +190,15 @@ def count_single_thread(reads):
         return None, None
 
 
-    kmer_index = CollisionFreeKmerIndex(hashes_to_index, n_kmers, nodes, ref_offsets, kmers, modulo, frequencies)
-    graph = ObGraph(None, None, None, graph_edges_indices, graph_edges_n_edges, graph_edges_values, None, distance_to_node, None)
-    reverse_index = ReverseKmerIndex(reverse_index_nodes_to_index_positions, reverse_index_nodes_to_n_hashes, reverse_index_hashes, reverse_index_ref_positions)
+    #kmer_index = CollisionFreeKmerIndex(hashes_to_index, n_kmers, nodes, ref_offsets, kmers, modulo, frequencies)
+    kmer_index = from_shared_memory(CollisionFreeKmerIndex, "kmer_index_shared")
+
+    #graph = ObGraph(None, None, None, graph_edges_indices, graph_edges_n_edges, graph_edges_values, None, distance_to_node, None)
+    graph = from_shared_memory(ObGraph, "graph_shared")
+
+    #reverse_index = ReverseKmerIndex(reverse_index_nodes_to_index_positions, reverse_index_nodes_to_n_hashes, reverse_index_hashes, reverse_index_ref_positions)
+    reverse_index = from_shared_memory(ReverseKmerIndex, "reverse_index_shared")
+
     logging.info("Got %d lines" % len(reads))
     genotyper = CythonChainGenotyper(graph, None, None, reads, kmer_index, None, k, None, None, reference_k=small_k, max_node_id=max_node_id,
                                      reference_kmers=None, reverse_index=reverse_index, skip_reference_kmers=True, skip_chaining=skip_chaining)
@@ -361,6 +367,8 @@ def count(args):
 
     logging.info("Reading from file")
     kmer_index = CollisionFreeKmerIndex.from_file(args.kmer_index)
+    to_shared_memory(kmer_index, "kmer_index_shared")
+
     hashes_to_index = kmer_index._hashes_to_index
     n_kmers = kmer_index._n_kmers
     nodes = kmer_index._nodes
@@ -372,6 +380,8 @@ def count(args):
     max_node_id = args.max_node_id
 
     graph = ObGraph.from_file(args.graph)
+    to_shared_memory(graph, "graph_shared")
+
     distance_to_node = graph.ref_offset_to_node
 
     graph_edges_indices = graph.node_to_edge_index
@@ -379,6 +389,7 @@ def count(args):
     graph_edges_n_edges = graph.node_to_n_edges
 
     reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
+    to_shared_memory(reverse_index, "reverse_index_shared")
     reverse_index_nodes_to_index_positions = reverse_index.nodes_to_index_positions.astype(np.uint32)
     reverse_index_nodes_to_n_hashes = reverse_index.nodes_to_n_hashes.astype(np.uint16)
     reverse_index_hashes = reverse_index.hashes
