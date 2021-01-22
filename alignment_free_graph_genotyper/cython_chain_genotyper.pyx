@@ -100,6 +100,11 @@ def run(reads,
 
 
     logging.info("k=%d" % k)
+    cdef unsigned int[:] reference_index_position_to_index = reference_index.ref_position_to_index
+    cdef unsigned long[:] reference_index_kmers = reference_index.kmers
+    cdef np.ndarray[np.uint32_t] reference_index_nodes = reference_index.nodes
+    cdef unsigned int reference_kmers_index_start
+    cdef unsigned int reference_kmers_index_end
 
     cdef np.ndarray[np.float_t] node_counts = np.zeros(max_node_id+1, dtype=np.float)
     cdef np.ndarray[np.int64_t] power_array = np.power(4, np.arange(0, k))
@@ -314,47 +319,17 @@ def run(reads,
         for c in range(best_chain_kmers.shape[0]):
             kmer_set_index[best_chain_kmers[c] % modulo] = 1
 
-        reference_kmers, reference_positions, reference_nodes = reference_index.get_all_between(best_chain[0]-10, best_chain[0] + 150 + 10)
-
+        reference_kmers_index_start = reference_index_position_to_index[best_chain[0]-10]
+        reference_kmers_index_end = reference_index_position_to_index[best_chain[0] + 150 + 10]
         nodes_added = set()
-        for c in range(reference_kmers.shape[0]):
-            reference_kmer = reference_kmers[c]
-            current_node = reference_nodes[c]
+
+        for c in range(reference_kmers_index_start, reference_kmers_index_end):
+            reference_kmer = reference_index_kmers[c]
+            current_node = reference_index_nodes[c]
+
             if kmer_set_index[reference_kmer % modulo] == 1 and current_node not in nodes_added:
                 node_counts[current_node] += 1.0
                 nodes_added.add(current_node)
-
-        """
-        ref_nodes_in_read_area = np.unique(distance_to_node[best_chain[0]-10:best_chain[0] + 150 + 10])
-        for c in range(0, ref_nodes_in_read_area.shape[0]):
-            ref_node = ref_nodes_in_read_area[c]
-            edges_index = edges_indices[ref_node]
-            n_edges = edges_n_edges[ref_node]
-            #logging.info("Ref node: %d, index: %d, n edges: %d" % (ref_node, edges_index, n_edges))
-            if n_edges > 1:
-                # The next two nodes are snp nodes
-                variant_nodes = edges_values[edges_index:edges_index + n_edges]
-                #logging.info("Found SNP. Edges from %d: %s" % (ref_node, list(snp_nodes)))
-                for variant_node in variant_nodes:
-                    current_node = variant_node
-                    # Find kmers crossing node
-                    reverse_index_index = reverse_index_nodes_to_index_positions[current_node]
-                    reverse_kmers = reverse_index_hashes[
-                                    reverse_index_index:reverse_index_index + reverse_index_nodes_to_n_hashes[
-                                        current_node]]
-
-                    # Check for existence in read
-                    current_node_match = 0
-                    for r in range(reverse_kmers.shape[0]):
-                        # Check for match around this pos
-                        #if reverse_kmers[r] in best_chain_kmers_set:
-                        if kmer_set_index[reverse_kmers[r] % modulo] == 1:
-                            current_node_match = 1
-
-                    if current_node_match:
-                        #logging.info("Increasing count for node %d" % current_node)
-                        node_counts[current_node] += 1.0
-        """
 
         # Reset set index
         for c in range(best_chain_kmers.shape[0]):

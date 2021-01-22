@@ -644,14 +644,14 @@ def run_argument_parser(args):
     def model_kmers_from_haplotype_nodes_single_thread(haplotype, args):
         from .node_count_model import NodeCountModelCreatorFromSimpleChaining
         from obgraph.haplotype_nodes import HaplotypeToNodes
-        reverse_kmers = ReverseKmerIndex.from_file(args.reverse_kmer_index)
+        reference_index = ReferenceKmerIndex.from_file(args.reference_index)
         kmer_index = KmerIndex.from_file(args.kmer_index)
         nodes = HaplotypeToNodes.from_file(args.haplotype_nodes)
         nodes = nodes.get_nodes(haplotype)
         graph = ObGraph.from_file(args.graph_file_name)
         sequence_forward = graph.get_nodes_sequence(nodes)
         #nodes_set = set(nodes[haplotype])
-        creator = NodeCountModelCreatorFromSimpleChaining(graph, reverse_kmers, nodes, sequence_forward, kmer_index, args.max_node_id, n_reads_to_simulate=args.n_reads, skip_chaining=args.skip_chaining)
+        creator = NodeCountModelCreatorFromSimpleChaining(graph, reference_index, nodes, sequence_forward, kmer_index, args.max_node_id, n_reads_to_simulate=args.n_reads, skip_chaining=args.skip_chaining)
         following, not_following = creator.get_node_counts()
         logging.info("Done with haplotype %d" % haplotype)
         return following, not_following
@@ -750,7 +750,7 @@ def run_argument_parser(args):
     subparser.add_argument("-n", "--n-haplotypes", type=int, required=True)
     subparser.add_argument("-N", "--n-reads", type=int, required=True, help="N reads to simulate per genome")
     subparser.add_argument("-s", "--skip-chaining", type=bool, default=False, required=False)
-    subparser.add_argument("-R", "--reverse-kmer-index", required=True)
+    subparser.add_argument("-Q", "--reference_index", required=True)
     subparser.set_defaults(func=model_kmers_from_haplotype_nodes)
 
     def model_using_kmer_index(args):

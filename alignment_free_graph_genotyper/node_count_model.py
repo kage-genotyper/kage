@@ -86,9 +86,9 @@ class NodeCountModelCreatorFromNoChaining:
 
 
 class NodeCountModelCreatorFromSimpleChaining:
-    def __init__(self, graph, reverse_kmer_index, nodes_followed_by_individual, individual_genome_sequence, kmer_index, n_nodes, n_reads_to_simulate=1000, read_length=150,  k=31, skip_chaining=False):
+    def __init__(self, graph, reference_index, nodes_followed_by_individual, individual_genome_sequence, kmer_index, n_nodes, n_reads_to_simulate=1000, read_length=150,  k=31, skip_chaining=False):
         self._graph = graph
-        self._reverse_index = reverse_kmer_index
+        self._reference_index = reference_index
         self.kmer_index = kmer_index
         self.nodes_followed_by_individual = nodes_followed_by_individual
         self.genome_sequence = individual_genome_sequence
@@ -130,16 +130,9 @@ class NodeCountModelCreatorFromSimpleChaining:
               index._kmers,
               index._frequencies,
               index._modulo,
-              self._graph.node_to_edge_index,
-              self._graph.edges,
-              self._graph.node_to_n_edges,
-              self._graph.ref_offset_to_node,
-              self._reverse_index.nodes_to_index_positions,
-              self._reverse_index.nodes_to_n_hashes,
-              self._reverse_index.hashes,
-              self._reverse_index.ref_positions,
               self._n_nodes,
               self._k,
+              self._reference_index
               )
 
         #logging.info("Sum of positions: %d" % np.sum(chain_positions))

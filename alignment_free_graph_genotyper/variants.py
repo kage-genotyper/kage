@@ -40,7 +40,8 @@ class TruthRegions:
         return False
 
 class VariantGenotype:
-    def __init__(self, position, ref_sequence, variant_sequence, genotype=None, type="", vcf_line=None):
+    def __init__(self, chromosome, position, ref_sequence, variant_sequence, genotype=None, type="", vcf_line=None):
+        self.chromosome = chromosome
         self.position = position
         self.ref_sequence = ref_sequence
         self.variant_sequence = variant_sequence
