@@ -53,10 +53,10 @@ class VariantGenotype:
         self.type = type
 
     def id(self):
-        return (self.position, self.ref_sequence, self.variant_sequence)
+        return (self.chromosome, self.position, self.ref_sequence, self.variant_sequence)
 
     def __str__(self):
-        return "%d %s/%s %s %s" % (self.position, self.ref_sequence, self.variant_sequence, self.genotype, self.type)
+        return "chr%d:%d %s/%s %s %s" % (self.chromosome, self.position, self.ref_sequence, self.variant_sequence, self.genotype, self.type)
 
     def __repr__(self):
         return self.__str__()
@@ -95,6 +95,13 @@ class VariantGenotype:
     @classmethod
     def from_vcf_line(cls, line):
         l = line.split()
+        chromosome = l[0]
+        if chromosome == "X":
+            chromosome = 23
+        elif chromosome == "Y":
+            chromosome = 24
+
+        chromosome = int(chromosome)
         position = int(l[1])
         ref_sequence = l[3].lower()
         variant_sequence = l[4].lower()
@@ -104,7 +111,7 @@ class VariantGenotype:
         else:
             genotype = ""
 
-        return cls(position, ref_sequence, variant_sequence, genotype, get_variant_type(line), line)
+        return cls(chromosome, position, ref_sequence, variant_sequence, genotype, get_variant_type(line), line)
 
 
 class GenotypeCalls:
