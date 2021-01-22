@@ -63,12 +63,7 @@ class ChainGenotyper:
         self._has_not_correct_chain = []
         self._best_chain_matches = []
         self._weight_chains_by_probabilities = weight_chains_by_probabilities
-        if not skip_reference_kmers:
-            if reference_kmers is None:
-                self._reference_kmers = \
-                    ReadKmers.get_kmers_from_read_dynamic(str(Fasta("ref.fa")["1"]), np.power(4, np.arange(0, reference_k)))
-            else:
-                self._reference_kmers = reference_kmers
+        self._reference_kmers = reference_kmers
 
         self._out_file_alignments = None
         if write_alignments_to_file is not None:
@@ -259,16 +254,9 @@ class CythonChainGenotyper(ChainGenotyper):
                 index._kmers,
                 index._frequencies,
                 index._modulo,
-                self._graph.node_to_edge_index,
-                self._graph.edges,
-                self._graph.node_to_n_edges,
-                self._graph.ref_offset_to_node,
-                self._reverse_index.nodes_to_index_positions,
-                self._reverse_index.nodes_to_n_hashes,
-                self._reverse_index.hashes,
-                self._reverse_index.ref_positions,
                 self._max_node_id,
                 self._k,
+                self._reference_kmers
         )
         self.chain_positions = chain_positions
         self._node_counts = NumpyNodeCounts(node_counts)

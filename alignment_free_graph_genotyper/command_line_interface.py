@@ -189,19 +189,21 @@ def count_single_thread(reads):
         logging.info("Skipping thread, no more reads")
         return None, None
 
+    reference_index = from_shared_memory(ReferenceKmerIndex, "reference_index_shared")
 
     #kmer_index = CollisionFreeKmerIndex(hashes_to_index, n_kmers, nodes, ref_offsets, kmers, modulo, frequencies)
     kmer_index = from_shared_memory(CollisionFreeKmerIndex, "kmer_index_shared")
 
     #graph = ObGraph(None, None, None, graph_edges_indices, graph_edges_n_edges, graph_edges_values, None, distance_to_node, None)
-    graph = from_shared_memory(ObGraph, "graph_shared")
+    graph = None  #from_shared_memory(ObGraph, "graph_shared")
 
     #reverse_index = ReverseKmerIndex(reverse_index_nodes_to_index_positions, reverse_index_nodes_to_n_hashes, reverse_index_hashes, reverse_index_ref_positions)
-    reverse_index = from_shared_memory(ReverseKmerIndex, "reverse_index_shared")
+    reverse_index = None  #from_shared_memory(ReverseKmerIndex, "reverse_index_shared")
+
 
     logging.info("Got %d lines" % len(reads))
     genotyper = CythonChainGenotyper(graph, None, None, reads, kmer_index, None, k, None, None, reference_k=small_k, max_node_id=max_node_id,
-                                     reference_kmers=None, reverse_index=reverse_index, skip_reference_kmers=True, skip_chaining=skip_chaining)
+                                     reference_kmers=reference_index, reverse_index=reverse_index, skip_reference_kmers=True, skip_chaining=skip_chaining)
     genotyper.get_counts()
     return genotyper._node_counts, genotyper.chain_positions
 
@@ -366,6 +368,10 @@ def count(args):
         logging.info("Read numpy alignments")
 
     logging.info("Reading from file")
+    reference_index = ReferenceKmerIndex.from_file(args.reference_index)
+    to_shared_memory(reference_index, "reference_index_shared")
+
+
     kmer_index = CollisionFreeKmerIndex.from_file(args.kmer_index)
     to_shared_memory(kmer_index, "kmer_index_shared")
 
@@ -379,21 +385,11 @@ def count(args):
     frequencies = kmer_index._frequencies
     max_node_id = args.max_node_id
 
-    graph = ObGraph.from_file(args.graph)
-    to_shared_memory(graph, "graph_shared")
+    #graph = ObGraph.from_file(args.graph)
+    #to_shared_memory(graph, "graph_shared")
 
-    distance_to_node = graph.ref_offset_to_node
-
-    graph_edges_indices = graph.node_to_edge_index
-    graph_edges_values = graph.edges
-    graph_edges_n_edges = graph.node_to_n_edges
-
-    reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
-    to_shared_memory(reverse_index, "reverse_index_shared")
-    reverse_index_nodes_to_index_positions = reverse_index.nodes_to_index_positions.astype(np.uint32)
-    reverse_index_nodes_to_n_hashes = reverse_index.nodes_to_n_hashes.astype(np.uint16)
-    reverse_index_hashes = reverse_index.hashes
-    reverse_index_ref_positions = reverse_index.ref_positions
+    #reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
+    #to_shared_memory(reverse_index, "reverse_index_shared")
 
     #reference_kmers = reference_kmers.astype(np.uint64)
     reads = read_chunks(args.reads, chunk_size=args.chunk_size)
@@ -529,6 +525,7 @@ def run_argument_parser(args):
     subparser.add_argument("-T", "--truth_alignments", required=False)
     subparser.add_argument("-g", "--graph", required=True)
     subparser.add_argument("-R", "--reverse-index", required=True)
+    subparser.add_argument("-Q", "--reference_index", required=True)
     subparser.set_defaults(func=count)
 
     subparser = subparsers.add_parser("count_using_unique_index")

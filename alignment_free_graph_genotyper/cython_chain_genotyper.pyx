@@ -91,16 +91,9 @@ def run(reads,
         np.uint64_t[:] index_kmers,
         np.uint16_t[:] index_frequencies,
         int modulo,
-        np.ndarray[np.uint32_t] edges_indices,
-        np.ndarray[np.int64_t] edges_values,
-        np.ndarray[np.uint8_t] edges_n_edges,
-        np.uint32_t[:] distance_to_node,
-        np.uint32_t[:] reverse_index_nodes_to_index_positions,
-        np.uint16_t[:] reverse_index_nodes_to_n_hashes,
-        np.uint64_t[:] reverse_index_hashes,
-        np.uint64_t[:] reverse_index_ref_positions,
         int max_node_id,
         int k,
+        reference_index
         ):
 
     logging.info("Hash modulo is %d" % modulo)
@@ -111,8 +104,7 @@ def run(reads,
     cdef np.ndarray[np.float_t] node_counts = np.zeros(max_node_id+1, dtype=np.float)
     cdef np.ndarray[np.int64_t] power_array = np.power(4, np.arange(0, k))
     cdef np.ndarray[np.uint8_t] kmer_set_index = np.zeros(modulo, dtype=np.uint8)
-
-
+    cdef long reference_kmer
 
     cdef list chains = []
     cdef np.ndarray[np.int64_t, ndim=1] numeric_read, reverse_read
@@ -164,6 +156,7 @@ def run(reads,
     cdef int current_start = 0
     cdef int prev_position
     cdef set read_offsets_given_score
+    cdef set nodes_added
 
 
     logging.info("Starting cython chaining. N reads: %d" % len(reads))
@@ -311,7 +304,6 @@ def run(reads,
         # Align nodes in area of best chain to the kmers (a reverse lookup)
         # Find ref nodes within read area
 
-        ref_nodes_in_read_area = np.unique(distance_to_node[best_chain[0]-10:best_chain[0] + 150 + 10])
         # Iterate all nodes, look for SNPs
         best_chain_kmers = best_chain[3]
         best_chain_ref_pos = best_chain[0]
@@ -322,6 +314,18 @@ def run(reads,
         for c in range(best_chain_kmers.shape[0]):
             kmer_set_index[best_chain_kmers[c] % modulo] = 1
 
+        reference_kmers, reference_positions, reference_nodes = reference_index.get_all_between(best_chain[0]-10, best_chain[0] + 150 + 10)
+
+        nodes_added = set()
+        for c in range(reference_kmers.shape[0]):
+            reference_kmer = reference_kmers[c]
+            current_node = reference_nodes[c]
+            if kmer_set_index[reference_kmer % modulo] == 1 and current_node not in nodes_added:
+                node_counts[current_node] += 1.0
+                nodes_added.add(current_node)
+
+        """
+        ref_nodes_in_read_area = np.unique(distance_to_node[best_chain[0]-10:best_chain[0] + 150 + 10])
         for c in range(0, ref_nodes_in_read_area.shape[0]):
             ref_node = ref_nodes_in_read_area[c]
             edges_index = edges_indices[ref_node]
@@ -350,6 +354,7 @@ def run(reads,
                     if current_node_match:
                         #logging.info("Increasing count for node %d" % current_node)
                         node_counts[current_node] += 1.0
+        """
 
         # Reset set index
         for c in range(best_chain_kmers.shape[0]):
