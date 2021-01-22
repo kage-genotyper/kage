@@ -84,8 +84,8 @@ cdef np.ndarray[np.int64_t] get_kmers(np.ndarray[np.int64_t] numeric_read, np.nd
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def run(reads,
-        np.ndarray[np.int64_t] hashes_to_index,
-        np.ndarray[np.uint32_t] n_kmers,
+        np.int64_t[:] hashes_to_index,
+        np.uint32_t[:] n_kmers,
         np.uint32_t[:] nodes,
         np.uint64_t[:] ref_offsets,
         np.uint64_t[:] index_kmers,
@@ -110,6 +110,8 @@ def run(reads,
 
     cdef np.ndarray[np.float_t] node_counts = np.zeros(max_node_id+1, dtype=np.float)
     cdef np.ndarray[np.int64_t] power_array = np.power(4, np.arange(0, k))
+    cdef np.ndarray[np.uint8_t] kmer_set_index = np.zeros(modulo, dtype=np.uint8)
+
 
 
     cdef list chains = []
@@ -166,7 +168,11 @@ def run(reads,
 
     logging.info("Starting cython chaining. N reads: %d" % len(reads))
     prev_time = time.time()
-    for read in reads:
+
+    cdef int read_index
+
+    for read_index in range(len(reads)):
+        read = reads[read_index]
         got_index_hits = 0
         if read_number % 20000 == 0:
             logging.info("%d reads processed in %.5f sec. N total chains so far: %d" % (read_number, time.time() - prev_time, n_total_chains))
@@ -304,12 +310,17 @@ def run(reads,
 
         # Align nodes in area of best chain to the kmers (a reverse lookup)
         # Find ref nodes within read area
+
         ref_nodes_in_read_area = np.unique(distance_to_node[best_chain[0]-10:best_chain[0] + 150 + 10])
         # Iterate all nodes, look for SNPs
         best_chain_kmers = best_chain[3]
         best_chain_ref_pos = best_chain[0]
 
-        best_chain_kmers_set = set(best_chain_kmers)
+        #best_chain_kmers_set = set(best_chain_kmers)
+
+        # Make a set index for kmers
+        for c in range(best_chain_kmers.shape[0]):
+            kmer_set_index[best_chain_kmers[c] % modulo] = 1
 
         for c in range(0, ref_nodes_in_read_area.shape[0]):
             ref_node = ref_nodes_in_read_area[c]
@@ -332,13 +343,17 @@ def run(reads,
                     current_node_match = 0
                     for r in range(reverse_kmers.shape[0]):
                         # Check for match around this pos
-                        if reverse_kmers[r] in best_chain_kmers_set:
+                        #if reverse_kmers[r] in best_chain_kmers_set:
+                        if kmer_set_index[reverse_kmers[r] % modulo] == 1:
                             current_node_match = 1
 
                     if current_node_match:
                         #logging.info("Increasing count for node %d" % current_node)
                         node_counts[current_node] += 1.0
 
+        # Reset set index
+        for c in range(best_chain_kmers.shape[0]):
+            kmer_set_index[best_chain_kmers[c] % modulo] = 0
 
     return chain_positions, node_counts
 

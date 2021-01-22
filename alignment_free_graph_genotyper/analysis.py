@@ -90,7 +90,7 @@ class KmerAnalyser:
                 logging.warning("False negative genotype!")
                 self.print_info_about_variant(reference_node, variant_node, variant)
 
-        if variant.type == "DELETION" and self.predicted_genotypes.has_variant(variant) and not self.truth_genotypes.has_variant(variant):
+        if variant.type == "SNP" and self.predicted_genotypes.has_variant(variant) and not self.truth_genotypes.has_variant(variant):
             if self.truth_regions.is_inside_regions(variant.position) and self.predicted_genotypes.get(variant).genotype != "0|0":
                 logging.warning("False positive genotype!")
                 self.print_info_about_variant(reference_node, variant_node, variant, variant_id)
