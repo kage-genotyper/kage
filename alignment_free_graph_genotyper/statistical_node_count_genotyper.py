@@ -167,7 +167,7 @@ class StatisticalNodeCountGenotyper:
         p_counts_given_homozygous_alt = self.prob_counts_given_homo_alt(reference_node, variant_node, allele_counts[0], allele_counts[1])
         p_counts_given_heterozygous = self.prob_counts_given_hetero(reference_node, variant_node, allele_counts[0], allele_counts[1])
 
-        if reference_node == 188126:
+        if reference_node == 33400:
             logging.info("Node counts: %s" % allele_counts)
             logging.info("P homo ref: %.18f" % p_counts_given_homozygous_ref)
             logging.info("P homo alt: %.18f" % p_counts_given_homozygous_alt)

@@ -70,6 +70,15 @@ class VariantGenotype:
 
         return False
 
+    def get_variant_sequence(self):
+        if self.type == "DELETION":
+            return ""
+        elif self.type == "INSERTION":
+            return self.variant_sequence[1:]
+        else:
+            return self.variant_sequence
+
+
     def get_variant_allele_frequency(self):
         return float(self.vcf_line.split("AF=")[1].split(";")[0])
 
@@ -112,6 +121,29 @@ class VariantGenotype:
             genotype = ""
 
         return cls(chromosome, position, ref_sequence, variant_sequence, genotype, get_variant_type(line), line)
+
+    def get_reference_position_before_variant(self):
+        # Returns the position of the last base pair before the variant starts (will be end of node before variant)
+        # For SNPS, the position is the actual SNP node
+        # FOr deletions, the position is one basepair before the deleted sequence
+        # For insertion, the position is one baseiapr before the inserted sequence
+        # Subtract -1 in the end to make it 0-based
+        if self.type == "SNP":
+            return self.position - 1 - 1
+        else:
+            return self.position - 1
+
+    def get_reference_position_after_variant(self):
+        # Returns the next reference position after the variant is finished
+        start = self.get_reference_position_before_variant()
+        if self.type == "SNP":
+            return start + 2
+        elif self.type == "INSERTION":
+            return start + 1
+        elif self.type == "DELETION":
+            return start + len(self.ref_sequence) - 1 + 1
+
+
 
 
 class GenotypeCalls:
