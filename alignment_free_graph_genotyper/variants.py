@@ -70,6 +70,12 @@ class VariantGenotype:
 
         return False
 
+    def get_deleted_sequence(self):
+        if self.type == "DELETION":
+            return self.ref_sequence[1:]
+
+        raise Exception("Variant %s is not a deletion" % self)
+
     def get_variant_sequence(self):
         if self.type == "DELETION":
             return ""
@@ -201,9 +207,18 @@ class GenotypeCalls:
         return self.variant_genotypes.__next__()
 
     @classmethod
-    def from_vcf(cls, vcf_file_name, skip_index=False, limit_to_n_lines=None, make_generator=False):
+    def from_vcf(cls, vcf_file_name, skip_index=False, limit_to_n_lines=None, make_generator=False, limit_to_chromosome=None):
         logging.info("Reading variants from file")
         variant_genotypes = []
+
+        if limit_to_chromosome is not None:
+            if limit_to_chromosome == "X":
+                limit_to_chromosome = "23"
+            elif limit_to_chromosome == "Y":
+                limit_to_chromosome = "24"
+
+        if limit_to_chromosome is not None:
+            logging.info("Will only read variants from chromsome %s" % limit_to_chromosome)
 
         f = open(vcf_file_name)
 
@@ -211,18 +226,24 @@ class GenotypeCalls:
             logging.info("Returning variant generator")
             return cls((VariantGenotype.from_vcf_line(line) for line in f if not line.startswith("#")), skip_index=skip_index)
 
+        n_variants_added = 0
         for i, line in enumerate(f):
             if line.startswith("#"):
                 continue
 
-            if i % 10000 == 0:
-                logging.info("Read %d variants from file" % i)
+            if i % 1000000 == 0:
+                logging.info("Read %d variants from file. %d variants added" % (i, n_variants_added))
 
             if limit_to_n_lines is not None and i >= limit_to_n_lines:
                 logging.warning("Limited to %d lines" % limit_to_n_lines)
                 break
 
-            variant_genotypes.append(VariantGenotype.from_vcf_line(line))
+            variant = VariantGenotype.from_vcf_line(line)
+            if limit_to_chromosome is not None and variant.chromosome != int(limit_to_chromosome):
+                continue
+
+            n_variants_added += 1
+            variant_genotypes.append(variant)
 
         return cls(variant_genotypes, skip_index)
 

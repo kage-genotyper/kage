@@ -256,7 +256,8 @@ class CythonChainGenotyper(ChainGenotyper):
                 index._modulo,
                 self._max_node_id,
                 self._k,
-                self._reference_kmers
+                self._reference_kmers,
+                5
         )
         self.chain_positions = chain_positions
         self._node_counts = NumpyNodeCounts(node_counts)

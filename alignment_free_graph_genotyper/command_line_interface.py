@@ -393,7 +393,6 @@ def count(args):
 
     #reference_kmers = reference_kmers.astype(np.uint64)
     reads = read_chunks(args.reads, chunk_size=args.chunk_size)
-    max_node_id = 160000000
 
     logging.info("Making pool")
     pool = Pool(args.n_threads)

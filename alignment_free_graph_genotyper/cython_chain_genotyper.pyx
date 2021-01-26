@@ -93,7 +93,8 @@ def run(reads,
         int modulo,
         int max_node_id,
         int k,
-        reference_index
+        reference_index,
+        int max_index_lookup_frequency
         ):
 
     logging.info("Hash modulo is %d" % modulo)
@@ -210,7 +211,7 @@ def run(reads,
                     if index_kmers[index_position + j] != kmers[i]:
                         continue
 
-                    if index_frequencies[index_position + j] > 5:
+                    if index_frequencies[index_position + j] > max_index_lookup_frequency:
                         continue
                     n_total_hits += 1
 
@@ -243,7 +244,7 @@ def run(reads,
                 for j in range(n_local_hits):
                     if index_kmers[index_position + j] != kmers[i]:
                         continue
-                    if index_frequencies[index_position + j] > 5:
+                    if index_frequencies[index_position + j] > max_index_lookup_frequency:
                         continue
                     found_nodes[counter] = nodes[index_position + j]
                     found_ref_offsets[counter] = ref_offsets[index_position + j]
@@ -258,31 +259,31 @@ def run(reads,
             potential_chain_start_positions = found_ref_offsets - found_read_offsets
             sorting = np.argsort(potential_chain_start_positions)
             found_read_offsets = found_read_offsets[sorting]
-            found_nodes = found_nodes[sorting]
+            #found_nodes = found_nodes[sorting]
             potential_chain_start_positions = potential_chain_start_positions[sorting]
 
             current_start = 0
             prev_position = potential_chain_start_positions[0]
-            read_offsets_given_score = set()
+            #read_offsets_given_score = set()
             score = 1
-            read_offsets_given_score.add(found_read_offsets[0])
+            #read_offsets_given_score.add(found_read_offsets[0])
             for i in range(1, potential_chain_start_positions.shape[0]):
                 if potential_chain_start_positions[i] >= prev_position + 2:
                     #score = np.unique(found_read_offsets[current_start:i]).shape[0]
-                    #score = found_read_offsets[current_start:i].shape[0]
-                    forward_and_reverse_chains.append([potential_chain_start_positions[current_start], found_nodes[current_start:i], score, kmers])
+                    score = i - current_start  #found_read_offsets[current_start:i].shape[0]
+                    forward_and_reverse_chains.append([potential_chain_start_positions[current_start], None, score, kmers])
                     current_start = i
                     score = 0
-                    read_offsets_given_score = set()
+                    #read_offsets_given_score = set()
                 prev_position = potential_chain_start_positions[i]
 
-                if found_read_offsets[i] not in read_offsets_given_score:
-                    score += 1
-                    read_offsets_given_score.add(found_read_offsets[i])
+                #if found_read_offsets[i] not in read_offsets_given_score:
+                #    score += 1
+                #    read_offsets_given_score.add(found_read_offsets[i])
 
             #score = np.unique(found_read_offsets[current_start:]).shape[0]
-            #score = found_read_offsets[current_start:].shape[0]
-            forward_and_reverse_chains.append([potential_chain_start_positions[current_start], found_nodes[current_start:], score, kmers])
+            score = found_read_offsets.shape[0] - current_start
+            forward_and_reverse_chains.append([potential_chain_start_positions[current_start], None, score, kmers])
 
             #n_total_chains += len(chains)
 

@@ -132,7 +132,8 @@ class NodeCountModelCreatorFromSimpleChaining:
               index._modulo,
               self._n_nodes,
               self._k,
-              self._reference_index
+              self._reference_index,
+              5
               )
 
         #logging.info("Sum of positions: %d" % np.sum(chain_positions))
