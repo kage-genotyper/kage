@@ -84,14 +84,15 @@ class KmerAnalyser:
                 #else:
                 #logging.warning("Wrong genotype: %s / %s" % (self.truth_genotypes.get(variant), self.predicted_genotypes.get(variant)))
 
-        if False and variant.type == "SNP" and self.predicted_genotypes.has_variant(variant) and self.truth_genotypes.has_variant(variant):
+        if variant.type == "DELETION" and self.predicted_genotypes.has_variant(variant) and self.truth_genotypes.has_variant(variant):
             if self.truth_regions.is_inside_regions(variant.position) and self.predicted_genotypes.get(variant).genotype == "0|0" and self.truth_genotypes.get(variant).genotype != "0|0":
                 logging.warning("----------------------------")
                 logging.warning("False negative genotype!")
-                self.print_info_about_variant(reference_node, variant_node, variant)
+                self.print_info_about_variant(reference_node, variant_node, variant, variant_id)
 
-        if variant.type == "SNP" and self.predicted_genotypes.has_variant(variant) and not self.truth_genotypes.has_variant(variant):
+        if variant.type == "DELETION" and self.predicted_genotypes.has_variant(variant) and not self.truth_genotypes.has_variant(variant):
             if self.truth_regions.is_inside_regions(variant.position) and self.predicted_genotypes.get(variant).genotype != "0|0":
+                logging.warning("----------------------------")
                 logging.warning("False positive genotype!")
                 self.print_info_about_variant(reference_node, variant_node, variant, variant_id)
 
@@ -137,14 +138,11 @@ class KmerAnalyser:
             assert "," not in variant_allele, "Only biallelic variants are allowed. Line is not bialleleic"
 
             try:
-                if variant.type == "SNP":
-                    reference_node, variant_node = self.graph.get_snp_nodes(ref_offset, variant_allele)
-                elif variant.type == "DELETION":
+                reference_node, variant_node = self.graph.get_variant_nodes(variant)
+                if variant.type == "DELETION":
                     self.n_deletions += 1
-                    reference_node, variant_node = self.graph.get_deletion_nodes(ref_offset, len(ref_allele)-1)
                 elif variant.type == "INSERTION":
                     self.n_insertions += 1
-                    reference_node, variant_node = self.graph.get_variant_nodes(variant)
 
                 else:
                     continue
