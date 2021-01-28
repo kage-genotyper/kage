@@ -183,7 +183,7 @@ from graph_kmer_index.logn_hash_map import ModuloHashMap
 test_array = np.zeros(400000000, dtype=np.int64) + 1
 
 
-def count_single_thread(reads):
+def count_single_thread(reads, args):
     logging.info("Startin thread")
     if len(reads) == 0:
         logging.info("Skipping thread, no more reads")
@@ -397,7 +397,7 @@ def count(args):
     logging.info("Making pool")
     pool = Pool(args.n_threads)
     node_counts = np.zeros(max_node_id+1, dtype=float)
-    for result, chain_positions in pool.imap_unordered(count_single_thread, reads):
+    for result, chain_positions in pool.starmap(count_single_thread, zip(reads, repeat(args))):
         if result is not None:
             print("Got result. Length of counts: %d" % len(result.node_counts))
             node_counts += result.node_counts

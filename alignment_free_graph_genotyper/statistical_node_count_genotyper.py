@@ -211,7 +211,7 @@ class StatisticalNodeCountGenotyper:
                 prob_posteriori_homozygous_ref, prob_posteriori_homozygous_alt, prob_posteriori_heterozygous))
             return "0/0"
 
-    def get_allele_frequencies_from_most_similar_previous_variant(self, variant_id, reference_node, variant_node):
+    def get_allele_frequencies_from_most_similar_previous_variant(self, variant_id):
         most_similar = self._most_similar_variant_lookup.get_most_similar_variant(variant_id)
         most_similar_genotype = self._genotypes_called_at_variant[most_similar]
         prob_same_genotype = self._most_similar_variant_lookup.prob_of_having_the_same_genotype_as_most_similar(variant_id)
@@ -271,7 +271,7 @@ class StatisticalNodeCountGenotyper:
 
             # Compute from actual node counts instead (these are from traversing the graph)
             #prob_homo_ref, prob_homo_alt, prob_hetero = self.get_allele_frequencies_from_haplotype_counts(reference_node, variant_node)
-            prob_homo_ref, prob_homo_alt, prob_hetero = self.get_allele_frequencies_from_most_similar_previous_variant(variant_id, reference_node, variant_node)
+            prob_homo_ref, prob_homo_alt, prob_hetero = self.get_allele_frequencies_from_most_similar_previous_variant(variant_id)
 
             """
             prob_homo_ref = self.compute_a_priori_probabilities("0/0", reference_node, variant_node)
