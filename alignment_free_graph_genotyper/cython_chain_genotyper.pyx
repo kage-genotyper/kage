@@ -332,6 +332,10 @@ def run(reads,
                 node_counts[current_node] += 1.0
                 nodes_added.add(current_node)
 
+                #if current_node == 10702 or current_node == 10703:
+                #if current_node == 10947 or current_node == 10950:
+                #    logging.info("\nMatch from read %d against node %d on kmer %d. Sequence is %s" % (read_number, current_node, reference_kmer, read))
+
         # Reset set index
         for c in range(best_chain_kmers.shape[0]):
             kmer_set_index[best_chain_kmers[c] % modulo] = 0

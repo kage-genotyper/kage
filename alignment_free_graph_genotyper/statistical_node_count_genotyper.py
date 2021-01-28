@@ -11,7 +11,7 @@ def parse_vcf_genotype(genotype):
 
 
 class StatisticalNodeCountGenotyper:
-    def __init__(self, node_count_model, vcf_file, graph, node_counts, genotype_frequencies, most_similar_variant_lookup, variant_window_size=500):
+    def __init__(self, node_count_model, vcf_file, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup, variant_window_size=500):
         self._vcf_file = vcf_file
         self._node_count_model = node_count_model
 
@@ -20,7 +20,8 @@ class StatisticalNodeCountGenotyper:
 
         self._genotype_frequencies = genotype_frequencies
         #self._haplotype_counts = haplotype_counts
-        self._graph = graph
+        #self._graph = graph
+        self._variant_to_nodes = variant_to_nodes
         self._node_counts = node_counts
         #self._n_haplotypes = haplotype_counts.nodes.shape[0]
         #logging.info("There are %d haplotypes")
@@ -262,7 +263,9 @@ class StatisticalNodeCountGenotyper:
 
             debug = False
             try:
-                reference_node, variant_node = self._graph.get_variant_nodes(variant)
+                #reference_node, variant_node = self._graph.get_variant_nodes(variant)
+                reference_node = self._variant_to_nodes.ref_nodes[variant_id]
+                variant_node = self._variant_to_nodes.var_nodes[variant_id]
             except VariantNotFoundException:
                 continue
 

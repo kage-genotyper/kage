@@ -163,7 +163,7 @@ class GenotypeCalls:
         out = []
         i = 0
         for variant_number, variant in enumerate(self.variant_genotypes):
-            if variant_number % 1000 == 0:
+            if variant_number % 100000 == 0:
                 logging.info("%d variants read" % variant_number)
             out.append(variant)
             i += 1

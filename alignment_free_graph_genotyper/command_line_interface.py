@@ -838,18 +838,21 @@ def run_argument_parser(args):
         from .statistical_node_count_genotyper import StatisticalNodeCountGenotyper
         from .node_count_model import NodeCountModel
         from obgraph.genotype_matrix import MostSimilarVariantLookup, GenotypeFrequencies
+        from obgraph.variant_to_nodes import VariantToNodes
         genotype_frequencies = GenotypeFrequencies.from_file(args.genotype_frequencies)
         most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
         model = NodeCountModel.from_file(args.model) if args.model is not None else None
-        graph = ObGraph.from_file(args.graph_file_name)
+
+        #graph = ObGraph.from_file(args.graph_file_name)
+        variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
         #variants = GenotypeCalls.from_vcf(args.vcf)
         node_counts = NumpyNodeCounts.from_file(args.counts)
-        genotyper = StatisticalNodeCountGenotyper(model, args.vcf, graph, node_counts, genotype_frequencies, most_similar_variant_lookup)
+        genotyper = StatisticalNodeCountGenotyper(model, args.vcf, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup)
         genotyper.genotype()
 
     subparser = subparsers.add_parser("statistical_node_count_genotyper")
     subparser.add_argument("-c", "--counts", required=True)
-    subparser.add_argument("-g", "--graph_file_name", required=True)
+    subparser.add_argument("-g", "--variant-to-nodes", required=True)
     subparser.add_argument("-v", "--vcf", required=True, help="Vcf to genotype")
     subparser.add_argument("-m", "--model", required=False, help="Node count model")
     subparser.add_argument("-G", "--genotype-frequencies", required=True, help="Genotype frequencies")
