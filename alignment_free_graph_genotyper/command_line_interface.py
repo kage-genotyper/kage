@@ -522,8 +522,7 @@ def run_argument_parser(args):
     subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
     subparser.add_argument("-c", "--chunk-size", type=int, default=10000, required=False, help="Number of reads to process in the same chunk")
     subparser.add_argument("-T", "--truth_alignments", required=False)
-    subparser.add_argument("-g", "--graph", required=True)
-    subparser.add_argument("-R", "--reverse-index", required=True)
+    #subparser.add_argument("-g", "--graph", required=True)
     subparser.add_argument("-Q", "--reference_index", required=True)
     subparser.set_defaults(func=count)
 
