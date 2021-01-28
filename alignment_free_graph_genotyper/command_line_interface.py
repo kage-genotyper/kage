@@ -140,7 +140,7 @@ def genotypev2(args):
 
     genotyper = genotyper_class(graph, sequence_graph, linear_path, reads, kmer_index, args.vcf, k,
                                        truth_alignments, args.write_alignments_to_file, reference_k=args.small_k, max_node_id=4000000,
-                                unique_index=unique_index, reverse_index=align_nodes_to_reads, skip_chaining=args.skip_chaining)
+                                unique_index=unique_index, reverse_index=align_nodes_to_reads, skip_chaining=False)
 
     if args.use_node_counts is not None:
         logging.info("Using node counts from file. Not getting counts.")
@@ -154,27 +154,6 @@ def genotypev2(args):
     genotyper.genotype()
 
 
-# Global numpy arrays used in multithreading, must be defined her to be global
-modulo = None
-hashes_to_index = None
-n_kmers = None
-kmers = None
-nodes = None
-frequencies = None
-ref_offsets = None
-reference_kmers = None
-max_node_id = None
-skip_chaining = False
-small_k = None
-k = None
-graph_edges_indices = None
-graph_edges_values = None
-graph_edges_n_edges = None
-distance_to_node = None
-reverse_index_nodes_to_index_positions = None
-reverse_index_nodes_to_n_hashes = None
-reverse_index_hashes = None
-reverse_index_ref_positions = None
 
 import numpy as np
 from pathos.multiprocessing import Pool
@@ -194,16 +173,9 @@ def count_single_thread(reads, args):
     #kmer_index = CollisionFreeKmerIndex(hashes_to_index, n_kmers, nodes, ref_offsets, kmers, modulo, frequencies)
     kmer_index = from_shared_memory(CollisionFreeKmerIndex, "kmer_index_shared")
 
-    #graph = ObGraph(None, None, None, graph_edges_indices, graph_edges_n_edges, graph_edges_values, None, distance_to_node, None)
-    graph = None  #from_shared_memory(ObGraph, "graph_shared")
-
-    #reverse_index = ReverseKmerIndex(reverse_index_nodes_to_index_positions, reverse_index_nodes_to_n_hashes, reverse_index_hashes, reverse_index_ref_positions)
-    reverse_index = None  #from_shared_memory(ReverseKmerIndex, "reverse_index_shared")
-
-
     logging.info("Got %d lines" % len(reads))
-    genotyper = CythonChainGenotyper(graph, None, None, reads, kmer_index, None, k, None, None, reference_k=small_k, max_node_id=max_node_id,
-                                     reference_kmers=reference_index, reverse_index=reverse_index, skip_reference_kmers=True, skip_chaining=skip_chaining)
+    genotyper = CythonChainGenotyper(None, None, None, reads, kmer_index, None, args.kmer_size, None, None, max_node_id=args.max_node_id,
+                                     reference_kmers=reference_index, reverse_index=None, skip_reference_kmers=True, skip_chaining=False)
     genotyper.get_counts()
     return genotyper._node_counts, genotyper.chain_positions
 
@@ -340,27 +312,6 @@ def run_map(args):
 
 
 def count(args):
-    global hashes_to_index
-    global n_kmers
-    global nodes
-    global ref_offsets
-    global kmers
-    global modulo
-    global reference_kmers
-    global small_k
-    global k
-    global frequencies
-    global graph_edges_indices
-    global graph_edges_values
-    global graph_edges_n_edges
-    global distance_to_node
-    global reverse_index_nodes_to_index_positions
-    global reverse_index_nodes_to_n_hashes
-    global reverse_index_hashes
-    global reverse_index_ref_positions
-    global max_node_id
-    global skip_chaining
-
     truth_positions = None
     if args.truth_alignments is not None:
         truth_alignments = NumpyAlignments.from_file(args.truth_alignments)
@@ -375,12 +326,6 @@ def count(args):
     kmer_index = CollisionFreeKmerIndex.from_file(args.kmer_index)
     to_shared_memory(kmer_index, "kmer_index_shared")
 
-    hashes_to_index = kmer_index._hashes_to_index
-    n_kmers = kmer_index._n_kmers
-    nodes = kmer_index._nodes
-    ref_offsets = kmer_index._ref_offsets
-    kmers = kmer_index._kmers
-    modulo = kmer_index._modulo
     k = args.kmer_size
     frequencies = kmer_index._frequencies
     max_node_id = args.max_node_id
