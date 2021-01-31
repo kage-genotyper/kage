@@ -45,7 +45,7 @@ class ChainGenotyper:
                  truth_alignments=None, write_alignments_to_file=None, reference_k=7,
                  weight_chains_by_probabilities=False, max_node_id=None, reference_kmers=None,
                  unique_index=None, reverse_index=None, graph_edges=None, distance_to_node=None, skip_reference_kmers=False,
-                 skip_chaining=False):
+                 skip_chaining=False, max_index_lookup_frequency=5):
 
         self._max_node_id = max_node_id
         self._reads = reads
@@ -56,6 +56,7 @@ class ChainGenotyper:
         self._vcf_file_name = vcf_file_name
         self._k = k
         self._reference_k = reference_k
+        self._max_index_lookup_frequency = max_index_lookup_frequency
 
         self._truth_alignments = truth_alignments
         self._node_counts = NodeCounts()
@@ -257,7 +258,7 @@ class CythonChainGenotyper(ChainGenotyper):
                 self._max_node_id,
                 self._k,
                 self._reference_kmers,
-                5
+                self._max_index_lookup_frequency
         )
         self.chain_positions = chain_positions
         self._node_counts = NumpyNodeCounts(node_counts)

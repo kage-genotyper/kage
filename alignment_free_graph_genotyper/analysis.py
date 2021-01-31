@@ -7,8 +7,8 @@ from graph_kmer_index import kmer_hash_to_sequence, sequence_to_kmer_hash
 from obgraph import VariantNotFoundException
 
 class KmerAnalyser:
-    def __init__(self, graph, k, variants, kmer_index, reverse_kmer_index, predicted_genotypes, truth_genotypes, truth_regions, node_counts, node_count_model, genotype_frequencies, most_similar_variants):
-        self.graph = graph
+    def __init__(self, variant_nodes, k, variants, kmer_index, reverse_kmer_index, predicted_genotypes, truth_genotypes, truth_regions, node_counts, node_count_model, genotype_frequencies, most_similar_variants):
+        self.variant_nodes= variant_nodes
         self.node_count_model = node_count_model
         self.k = k
         self.variants = variants
@@ -28,6 +28,7 @@ class KmerAnalyser:
         self.node_counts = node_counts
         self.genotype_frequencies = genotype_frequencies
         self.most_similar_variants = most_similar_variants
+        self.n_missing_kmers = 0
 
     def print_report(self):
         for type in ["SNP", "DELETION", "INSERTION"]:
@@ -62,15 +63,14 @@ class KmerAnalyser:
             prev_node_difference = 2
         elif variant.type == "DELETION" or variant.type == "INSERTION":
             prev_node_difference = 1
-        prev_node = self.graph.get_node_at_ref_offset(variant.position - prev_node_difference)
-        next_node = self.graph.get_node_at_ref_offset(
-            variant.position + self.graph.get_node_size(reference_node) + prev_node_difference)
-        logging.warning("Ref nodes in area: %s" % str(
-            [self.graph.get_node_sequence(node) for node in [prev_node, reference_node, next_node]]))
 
     def analyse_variant(self, reference_node, variant_node, variant, variant_id):
         reference_kmers = set(self.reverse_kmer_index.get_node_kmers(reference_node))
         variant_kmers = set(self.reverse_kmer_index.get_node_kmers(variant_node))
+
+        if len(self.reverse_kmer_index.get_node_kmers(reference_node)) == 0 or len(self.reverse_kmer_index.get_node_kmers(variant_node)) == 0:
+            self.n_missing_kmers += 1
+            logging.warning("Node %d or %d does not have kmers, variant %s! %d missing so far" % (reference_node, variant_node, variant, self.n_missing_kmers))
 
         if self.truth_genotypes.has_variant(variant):
             self.n_truth_variants[variant.type] += 1
@@ -84,13 +84,14 @@ class KmerAnalyser:
                 #else:
                 #logging.warning("Wrong genotype: %s / %s" % (self.truth_genotypes.get(variant), self.predicted_genotypes.get(variant)))
 
-        if variant.type == "DELETION" and self.predicted_genotypes.has_variant(variant) and self.truth_genotypes.has_variant(variant):
+        if self.node_count_model.node_counts_following_node[reference_node] == 0 and self.predicted_genotypes.has_variant(variant) and self.truth_genotypes.has_variant(variant):
             if self.truth_regions.is_inside_regions(variant.position) and self.predicted_genotypes.get(variant).genotype == "0|0" and self.truth_genotypes.get(variant).genotype != "0|0":
                 logging.warning("----------------------------")
                 logging.warning("False negative genotype!")
                 self.print_info_about_variant(reference_node, variant_node, variant, variant_id)
 
-        if variant.type == "DELETION" and self.predicted_genotypes.has_variant(variant) and not self.truth_genotypes.has_variant(variant):
+        if self.node_count_model.node_counts_following_node[reference_node] == 0 and self.predicted_genotypes.has_variant(variant) and not self.truth_genotypes.has_variant(variant):
+
             if self.truth_regions.is_inside_regions(variant.position) and self.predicted_genotypes.get(variant).genotype != "0|0":
                 logging.warning("----------------------------")
                 logging.warning("False positive genotype!")
@@ -110,8 +111,6 @@ class KmerAnalyser:
 
             #if variant.type == "DELETION" or variant.type == "INSERTION":
             if variant.type == "SNP":
-                logging.warning("Reference node sequence: %s" % self.graph.get_node_sequence(reference_node))
-                logging.warning("Next reference node sequence: %s" % self.graph.get_node_sequence(self.graph.get_edges(reference_node)[0]))
 
                 self.n_ambiguous += 1
 
@@ -138,14 +137,14 @@ class KmerAnalyser:
             assert "," not in variant_allele, "Only biallelic variants are allowed. Line is not bialleleic"
 
             try:
-                reference_node, variant_node = self.graph.get_variant_nodes(variant)
+                #reference_node, variant_node = self.graph.get_variant_nodes(variant)
+                reference_node = self.variant_nodes.ref_nodes[variant.vcf_line_number]
+                variant_node = self.variant_nodes.var_nodes[variant.vcf_line_number]
                 if variant.type == "DELETION":
                     self.n_deletions += 1
                 elif variant.type == "INSERTION":
                     self.n_insertions += 1
 
-                else:
-                    continue
             except VariantNotFoundException:
                 continue
 

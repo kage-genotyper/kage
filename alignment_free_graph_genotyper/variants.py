@@ -1,4 +1,7 @@
 import logging
+import gzip
+import io
+import time
 
 def get_variant_type(vcf_line):
 
@@ -40,7 +43,7 @@ class TruthRegions:
         return False
 
 class VariantGenotype:
-    def __init__(self, chromosome, position, ref_sequence, variant_sequence, genotype=None, type="", vcf_line=None):
+    def __init__(self, chromosome, position, ref_sequence, variant_sequence, genotype=None, type="", vcf_line=None, vcf_line_number=None):
         self.chromosome = chromosome
         self.position = position
         self.ref_sequence = ref_sequence
@@ -51,6 +54,7 @@ class VariantGenotype:
             self.genotype = "0|1"
 
         self.type = type
+        self.vcf_line_number = vcf_line_number
 
     def id(self):
         return (self.chromosome, self.position, self.ref_sequence, self.variant_sequence)
@@ -108,7 +112,7 @@ class VariantGenotype:
             yield (individual_id, numeric)
 
     @classmethod
-    def from_vcf_line(cls, line):
+    def from_vcf_line(cls, line, vcf_line_number=None):
         l = line.split()
         chromosome = l[0]
         if chromosome == "X":
@@ -126,7 +130,7 @@ class VariantGenotype:
         else:
             genotype = ""
 
-        return cls(chromosome, position, ref_sequence, variant_sequence, genotype, get_variant_type(line), line)
+        return cls(chromosome, position, ref_sequence, variant_sequence, genotype, get_variant_type(line), line, vcf_line_number=vcf_line_number)
 
     def get_reference_position_before_variant(self):
         # Returns the position of the last base pair before the variant starts (will be end of node before variant)
@@ -221,24 +225,48 @@ class GenotypeCalls:
             logging.info("Will only read variants from chromsome %s" % limit_to_chromosome)
 
         f = open(vcf_file_name)
+        is_bgzipped = False
+        if vcf_file_name.endswith(".gz"):
+            logging.info("Assuming gzipped file")
+            is_bgzipped = True
+            gz = gzip.open(vcf_file_name)
+            f = io.BufferedReader(gz, buffer_size=1000 * 1000 * 2)  # 2 GB buffer size?
+            logging.info("Made gz file object")
+
+
 
         if make_generator:
             logging.info("Returning variant generator")
-            return cls((VariantGenotype.from_vcf_line(line) for line in f if not line.startswith("#")), skip_index=skip_index)
+            if is_bgzipped:
+                f = (line for line in f if not line.decode("utf-8").startswith("#"))
+                return cls((VariantGenotype.from_vcf_line(line.decode("utf-8"), vcf_line_number=i) for i, line in enumerate(f) if not line.decode("utf-8").startswith("#")), skip_index=skip_index)
+            else:
+                f = (line for line in f if not line.startswith("#"))
+                return cls((VariantGenotype.from_vcf_line(line, vcf_line_number=i) for i, line in enumerate(f)), skip_index=skip_index)
 
         n_variants_added = 0
+        prev_time = time.time()
+        variant_number = -1
         for i, line in enumerate(f):
+            if is_bgzipped:
+                line = line.decode("utf-8")
+
+
             if line.startswith("#"):
                 continue
 
-            if i % 1000000 == 0:
-                logging.info("Read %d variants from file. %d variants added" % (i, n_variants_added))
+            variant_number += 1
+
+            if i % 50000 == 0:
+                logging.info("Read %d variants from file (time: %.3f). %d variants added" % (i, time.time()-prev_time, n_variants_added))
+                prev_time = time.time()
 
             if limit_to_n_lines is not None and i >= limit_to_n_lines:
                 logging.warning("Limited to %d lines" % limit_to_n_lines)
                 break
 
-            variant = VariantGenotype.from_vcf_line(line)
+
+            variant = VariantGenotype.from_vcf_line(line, vcf_line_number=variant_number)
             if limit_to_chromosome is not None and variant.chromosome != int(limit_to_chromosome):
                 continue
 

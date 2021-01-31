@@ -3,6 +3,7 @@ from Bio.Seq import Seq
 import logging
 from obgraph import Graph, VariantNotFoundException
 from graph_kmer_index import ReverseKmerIndex, KmerIndex
+import time
 
 from alignment_free_graph_genotyper import cython_chain_genotyper
 
@@ -86,13 +87,13 @@ class NodeCountModelCreatorFromNoChaining:
 
 
 class NodeCountModelCreatorFromSimpleChaining:
-    def __init__(self, graph, reference_index, nodes_followed_by_individual, individual_genome_sequence, kmer_index, n_nodes, n_reads_to_simulate=1000, read_length=150,  k=31, skip_chaining=False):
+    def __init__(self, graph, reference_index, nodes_followed_by_individual, individual_genome_sequence, kmer_index, n_nodes, n_reads_to_simulate=1000, read_length=150,  k=31, skip_chaining=False, max_index_lookup_frequency=5):
         self._graph = graph
         self._reference_index = reference_index
         self.kmer_index = kmer_index
         self.nodes_followed_by_individual = nodes_followed_by_individual
         self.genome_sequence = individual_genome_sequence
-        self.reverse_genome_sequence = str(Seq(self.genome_sequence).reverse_complement())
+        #self.reverse_genome_sequence = str(Seq(self.genome_sequence).reverse_complement())
         self._node_counts_following_node = np.zeros(n_nodes+1, dtype=np.float)
         self._node_counts_not_following_node = np.zeros(n_nodes+1, dtype=np.float)
         self.n_reads_to_simulate = n_reads_to_simulate
@@ -101,17 +102,25 @@ class NodeCountModelCreatorFromSimpleChaining:
         self._n_nodes = n_nodes
         self._k = k
         self._skip_chaining = skip_chaining
+        self._max_index_lookup_frequency = max_index_lookup_frequency
 
     def get_simulated_reads(self):
         reads = []
+        prev_time = time.time()
         for i in range(0, self.n_reads_to_simulate):
-            if i % 100000 == 0:
-                logging.info("%d/%d reads simulated" % (i, self.n_reads_to_simulate))
+            if i % 500000 == 0:
+                logging.info("%d/%d reads simulated (time spent on chunk: %.3f)" % (i, self.n_reads_to_simulate, time.time()-prev_time))
+                prev_time = time.time()
+
             pos_start = np.random.randint(0, self.genome_size - self.read_length)
             pos_end = pos_start + self.read_length
 
-            for read in [self.genome_sequence[pos_start:pos_end], self.reverse_genome_sequence[pos_start:pos_end]]:
-                reads.append(read)
+            reads.append(self.genome_sequence[pos_start:pos_end])
+            # Don't actually need to simulate from reverse complement, mapper is anyway reversecomplementing every sequence
+            #for read in [self.genome_sequence[pos_start:pos_end], self.reverse_genome_sequence[pos_start:pos_end]]:
+            #for read in [self.genome_sequence[pos_start:pos_end]]:
+                #yield read
+            #    reads.append(read)
 
         return reads
 
@@ -121,6 +130,8 @@ class NodeCountModelCreatorFromSimpleChaining:
         # increase those node counts
 
         reads = self.get_simulated_reads()
+        # Set to none to not use memory on the sequence anymore
+        self.genome_sequence = None
         index = self.kmer_index
 
         chain_positions, node_counts = cython_chain_genotyper.run(reads, index._hashes_to_index,
@@ -133,7 +144,8 @@ class NodeCountModelCreatorFromSimpleChaining:
               self._n_nodes,
               self._k,
               self._reference_index,
-              5
+              self._max_index_lookup_frequency,
+              True
               )
 
         #logging.info("Sum of positions: %d" % np.sum(chain_positions))

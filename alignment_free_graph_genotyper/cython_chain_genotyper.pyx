@@ -75,6 +75,11 @@ cdef np.ndarray[np.int64_t, ndim=1] letter_sequence_to_numeric(np.ndarray[np.int
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
+def np_letter_sequence_to_numeric(letter_sequence):
+    return letter_sequence_to_numeric(letter_sequence.astype("|S1").view(np.int8)).astype(np.uint8)
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
 cdef np.ndarray[np.int64_t] get_kmers(np.ndarray[np.int64_t] numeric_read, np.ndarray[np.int64_t] power_array):
 #def get_kmers(np.ndarray[np.int64_t] numeric_read, np.ndarray[np.int64_t] power_array):
     return np.convolve(numeric_read, power_array, mode='valid')
@@ -94,10 +99,11 @@ def run(reads,
         int max_node_id,
         int k,
         reference_index,
-        int max_index_lookup_frequency
+        int max_index_lookup_frequency,
+        reads_are_numeric=False
         ):
 
-    logging.info("Hash modulo is %d" % modulo)
+    logging.info("Hash modulo is %d. Max index lookup frequency is %d" % (modulo, max_index_lookup_frequency))
 
 
     logging.info("k=%d" % k)
@@ -164,6 +170,10 @@ def run(reads,
     cdef set read_offsets_given_score
     cdef set nodes_added
 
+    cdef int reads_are_numeric_flag = 0
+    if reads_are_numeric:
+        reads_are_numeric_flag = 1
+
 
     logging.info("Starting cython chaining. N reads: %d" % len(reads))
     prev_time = time.time()
@@ -173,14 +183,18 @@ def run(reads,
     for read_index in range(len(reads)):
         read = reads[read_index]
         got_index_hits = 0
-        if read_number % 20000 == 0:
+        if read_number % 100000 == 0:
             logging.info("%d reads processed in %.5f sec. N total chains so far: %d" % (read_number, time.time() - prev_time, n_total_chains))
             prev_time = time.time()
 
         read_number += 1
 
 
-        numeric_read = letter_sequence_to_numeric(np.array(list(read), dtype="|S1").view(np.int8))
+        if reads_are_numeric_flag == 0:
+            numeric_read = letter_sequence_to_numeric(np.array(list(read), dtype="|S1").view(np.int8))
+        else:
+            numeric_read = read.astype(np.int64)
+
         reverse_read = complement_of_numeric_read(numeric_read[::-1])
         forward_and_reverse_chains = []
 

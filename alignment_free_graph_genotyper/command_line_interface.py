@@ -12,7 +12,7 @@ from pyfaidx import Fasta
 import argparse
 import time
 import os
-from graph_kmer_index.shared_mem import from_shared_memory, to_shared_memory
+from graph_kmer_index.shared_mem import from_shared_memory, to_shared_memory, remove_shared_memory
 
 from offsetbasedgraph import Graph, SequenceGraph, NumpyIndexedInterval
 from obgraph import Graph as ObGraph
@@ -175,7 +175,7 @@ def count_single_thread(reads, args):
 
     logging.info("Got %d lines" % len(reads))
     genotyper = CythonChainGenotyper(None, None, None, reads, kmer_index, None, args.kmer_size, None, None, max_node_id=args.max_node_id,
-                                     reference_kmers=reference_index, reverse_index=None, skip_reference_kmers=True, skip_chaining=False)
+                                     reference_kmers=reference_index, reverse_index=None, skip_reference_kmers=True, skip_chaining=False, max_index_lookup_frequency=args.max_index_lookup_frequency)
     genotyper.get_counts()
     return genotyper._node_counts, genotyper.chain_positions
 
@@ -318,11 +318,12 @@ def count(args):
         truth_positions = truth_alignments.positions
         logging.info("Read numpy alignments")
 
-    logging.info("Reading from file")
+    logging.info("Reading reference index from file")
     reference_index = ReferenceKmerIndex.from_file(args.reference_index)
     to_shared_memory(reference_index, "reference_index_shared")
 
 
+    logging.info("Reading kmer index from file")
     kmer_index = CollisionFreeKmerIndex.from_file(args.kmer_index)
     to_shared_memory(kmer_index, "kmer_index_shared")
 
@@ -469,6 +470,7 @@ def run_argument_parser(args):
     subparser.add_argument("-T", "--truth_alignments", required=False)
     #subparser.add_argument("-g", "--graph", required=True)
     subparser.add_argument("-Q", "--reference_index", required=True)
+    subparser.add_argument("-I", "--max-index-lookup-frequency", required=False, type=int, default=5)
     subparser.set_defaults(func=count)
 
     subparser = subparsers.add_parser("count_using_unique_index")
@@ -558,19 +560,21 @@ def run_argument_parser(args):
     def analyse_variants(args):
         from .node_count_model import NodeCountModel
         from obgraph.genotype_matrix import MostSimilarVariantLookup
+        from obgraph.variant_to_nodes import VariantToNodes
         most_similar_variants = MostSimilarVariantLookup.from_file(args.most_similar_variants)
-        graph = ObGraph.from_file(args.graph_file_name)
+        #graph = ObGraph.from_file(args.graph_file_name)
+        variant_nodes = VariantToNodes.from_file(args.variant_nodes)
         kmer_index = KmerIndex.from_file(args.kmer_index)
         reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
         node_count_model = NodeCountModel.from_file(args.node_count_model)
 
-        analyser = KmerAnalyser(graph, args.kmer_size, GenotypeCalls.from_vcf(args.vcf), kmer_index, reverse_index, GenotypeCalls.from_vcf(args.predicted_vcf),
+        analyser = KmerAnalyser(variant_nodes, args.kmer_size, GenotypeCalls.from_vcf(args.vcf), kmer_index, reverse_index, GenotypeCalls.from_vcf(args.predicted_vcf),
                                 GenotypeCalls.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NumpyNodeCounts.from_file(args.node_counts),
                                 node_count_model, GenotypeFrequencies.from_file(args.genotype_frequencies), most_similar_variants)
         analyser.analyse_unique_kmers_on_variants()
 
     subparser = subparsers.add_parser("analyse_variants")
-    subparser.add_argument("-g", "--graph_file_name", required=True)
+    subparser.add_argument("-g", "--variant-nodes", required=True)
     subparser.add_argument("-i", "--kmer-index", required=True)
     subparser.add_argument("-k", "--kmer-size", required=True, type=int)
     subparser.add_argument("-R", "--reverse-index", required=True)
@@ -587,66 +591,51 @@ def run_argument_parser(args):
     def model_kmers_from_haplotype_nodes_single_thread(haplotype, args):
         from .node_count_model import NodeCountModelCreatorFromSimpleChaining
         from obgraph.haplotype_nodes import HaplotypeToNodes
-        reference_index = ReferenceKmerIndex.from_file(args.reference_index)
-        kmer_index = KmerIndex.from_file(args.kmer_index)
-        nodes = HaplotypeToNodes.from_file(args.haplotype_nodes)
+        #reference_index = ReferenceKmerIndex.from_file(args.reference_index)
+        #kmer_index = KmerIndex.from_file(args.kmer_index)
+        reference_index = from_shared_memory(ReferenceKmerIndex, "reference_index_shared")
+        kmer_index = from_shared_memory(KmerIndex, "kmer_index_shared")
+
+        nodes = from_shared_memory(HaplotypeToNodes, "haplotype_nodes_shared")
         nodes = nodes.get_nodes(haplotype)
-        graph = ObGraph.from_file(args.graph_file_name)
-        sequence_forward = graph.get_nodes_sequence(nodes)
+        #graph = ObGraph.from_file(args.graph_file_name)
+        graph = from_shared_memory(ObGraph, "graph_shared")
+
+        logging.info("Getting haplotype sequence for haplotype %d" % haplotype)
+        time_start = time.time()
+        sequence_forward = graph.get_numeric_node_sequences(nodes)
+        logging.info("Sequence type: %s" % type(sequence_forward))
+        logging.info("Done getting sequence (took %.3f sec)" % (time.time()-time_start))
         #nodes_set = set(nodes[haplotype])
-        creator = NodeCountModelCreatorFromSimpleChaining(graph, reference_index, nodes, sequence_forward, kmer_index, args.max_node_id, n_reads_to_simulate=args.n_reads, skip_chaining=args.skip_chaining)
+        creator = NodeCountModelCreatorFromSimpleChaining(graph, reference_index, nodes, sequence_forward, kmer_index, args.max_node_id, n_reads_to_simulate=args.n_reads, skip_chaining=args.skip_chaining, max_index_lookup_frequency=args.max_index_lookup_frequency)
         following, not_following = creator.get_node_counts()
         logging.info("Done with haplotype %d" % haplotype)
         return following, not_following
 
-        """
-        expected_node_counts_not_following_node = np.zeros(max_node_id)
-        n_individuals_not_following_node = np.zeros(max_node_id)
-        expected_node_counts_following_node = np.zeros(max_node_id)
-        n_individuals_following_node = np.zeros(max_node_id)
-
-        logging.info("Analysing haplotype %d" % haplotype)
-        power_array = get_power_array(args.kmer_size)
-        graph = ObGraph.from_file(args.graph_file_name)
-        kmer_index = KmerIndex.from_file(args.kmer_index)
-        from obgraph.haplotype_nodes import HaplotypeNodes
-        nodes = HaplotypeNodes.from_file(args.haplotype_nodes).nodes
-        logging.info("Done reading haplotype nodes for haplotype %d" % haplotype)
-        #nodes = nodes[haplotype]
-
-        # Increase count for how many individuals follow and do not follow nodes
-        n_individuals_following_node[nodes[haplotype]] += 1
-        indexes = np.ones(max_node_id)
-        indexes[nodes[haplotype]] = 0
-        n_individuals_not_following_node[np.nonzero(indexes)] += 1
-
-        nodes_set = set(nodes[haplotype])
-        logging.info("Getting forward and reverse haplotype sequence")
-        sequence_forward = graph.get_nodes_sequence(nodes[haplotype])
-        sequence_reverse = str(Seq(sequence_forward).reverse_complement())
-        for sequence in (sequence_forward, sequence_reverse):
-            logging.info("Getting read kmers for haplotype %d" % haplotype)
-            kmers = read_kmers(sequence, power_array)
-            logging.info("Getting kmer hits")
-            node_hits = kmer_index.get_nodes_from_multiple_kmers(kmers)
-
-            logging.info("Increasing node counts")
-            for node in node_hits:
-                if node in nodes_set:
-                    expected_node_counts_following_node[node] += 1
-                else:
-                    expected_node_counts_not_following_node[node] += 1
-
-        return expected_node_counts_following_node, expected_node_counts_not_following_node
-        """
-
     def model_kmers_from_haplotype_nodes(args):
         from obgraph.haplotype_nodes import HaplotypeNodes
-        haplotypes = list(range(args.n_haplotypes))
+        haplotypes = list(range(args.n_haplotypes)) * args.run_n_times
+        logging.info("Haplotypes that will be given to jobs and run in parallel: %s" % haplotypes)
 
         max_node_id = args.max_node_id
         expected_node_counts_not_following_node = np.zeros(max_node_id+1, dtype=np.float)
         expected_node_counts_following_node = np.zeros(max_node_id+1, dtype=np.float)
+
+        logging.info("Reading haplotypenodes")
+        nodes = HaplotypeToNodes.from_file(args.haplotype_nodes)
+        to_shared_memory(nodes, "haplotype_nodes_shared")
+
+        logging.info("Reading graph")
+        graph = ObGraph.from_file(args.graph_file_name)
+        to_shared_memory(graph, "graph_shared")
+
+        logging.info("Reading reference index from file")
+        reference_index = ReferenceKmerIndex.from_file(args.reference_index)
+        to_shared_memory(reference_index, "reference_index_shared")
+
+        logging.info("Reading kmer index from file")
+        kmer_index = CollisionFreeKmerIndex.from_file(args.kmer_index)
+        to_shared_memory(kmer_index, "kmer_index_shared")
 
         n_chunks_in_each_pool = args.n_threads
         pool = Pool(args.n_threads)
@@ -694,6 +683,9 @@ def run_argument_parser(args):
     subparser.add_argument("-N", "--n-reads", type=int, required=True, help="N reads to simulate per genome")
     subparser.add_argument("-s", "--skip-chaining", type=bool, default=False, required=False)
     subparser.add_argument("-Q", "--reference_index", required=True)
+    subparser.add_argument("-I", "--max-index-lookup-frequency", required=False, type=int, default=5)
+    subparser.add_argument("-T", "--run-n-times", required=False, help="Run the whole simulation N times. Useful when wanting to use more threads than number of haplotypes since multiple haplotypes then can be procesed in parallel.", default=1, type=int)
+
     subparser.set_defaults(func=model_kmers_from_haplotype_nodes)
 
     def model_using_kmer_index(args):
@@ -803,6 +795,11 @@ def run_argument_parser(args):
     subparser.add_argument("-G", "--genotype-frequencies", required=True, help="Genotype frequencies")
     subparser.add_argument("-M", "--most_similar_variant_lookup", required=True, help="Most similar variant lookup")
     subparser.set_defaults(func=statistical_node_count_genotyper)
+
+    def remove_shared_memory_command_line(args):
+        remove_shared_memory()
+    subparser = subparsers.add_parser("remove_shared_memory")
+    subparser.set_defaults(func=remove_shared_memory_command_line)
 
 
     if len(args) == 0:
