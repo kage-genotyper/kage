@@ -87,7 +87,7 @@ class NodeCountModelCreatorFromNoChaining:
 
 
 class NodeCountModelCreatorFromSimpleChaining:
-    def __init__(self, graph, reference_index, nodes_followed_by_individual, individual_genome_sequence, kmer_index, n_nodes, n_reads_to_simulate=1000, read_length=150,  k=31, skip_chaining=False, max_index_lookup_frequency=5):
+    def __init__(self, graph, reference_index, nodes_followed_by_individual, individual_genome_sequence, kmer_index, n_nodes, n_reads_to_simulate=1000, read_length=150,  k=31, skip_chaining=False, max_index_lookup_frequency=5, reference_index_scoring=None):
         self._graph = graph
         self._reference_index = reference_index
         self.kmer_index = kmer_index
@@ -103,6 +103,7 @@ class NodeCountModelCreatorFromSimpleChaining:
         self._k = k
         self._skip_chaining = skip_chaining
         self._max_index_lookup_frequency = max_index_lookup_frequency
+        self._reference_index_scoring = reference_index_scoring
 
     def get_simulated_reads(self):
         reads = []
@@ -145,7 +146,8 @@ class NodeCountModelCreatorFromSimpleChaining:
               self._k,
               self._reference_index,
               self._max_index_lookup_frequency,
-              True
+              True,
+              self._reference_index_scoring
               )
 
         #logging.info("Sum of positions: %d" % np.sum(chain_positions))
