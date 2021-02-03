@@ -87,7 +87,7 @@ class NodeCountModelCreatorFromNoChaining:
 
 
 class NodeCountModelCreatorFromSimpleChaining:
-    def __init__(self, graph, reference_index, nodes_followed_by_individual, individual_genome_sequence, kmer_index, n_nodes, n_reads_to_simulate=1000, read_length=150,  k=31, skip_chaining=False, max_index_lookup_frequency=5, reference_index_scoring=None):
+    def __init__(self, graph, reference_index, nodes_followed_by_individual, individual_genome_sequence, kmer_index, n_nodes, n_reads_to_simulate=1000, read_length=150,  k=31, skip_chaining=False, max_index_lookup_frequency=5, reference_index_scoring=None, seed=None):
         self._graph = graph
         self._reference_index = reference_index
         self.kmer_index = kmer_index
@@ -104,17 +104,26 @@ class NodeCountModelCreatorFromSimpleChaining:
         self._skip_chaining = skip_chaining
         self._max_index_lookup_frequency = max_index_lookup_frequency
         self._reference_index_scoring = reference_index_scoring
+        self._seed = seed
+        if self._seed is None:
+            self._seed = np.random.randint(0, 1000)
 
     def get_simulated_reads(self):
+        np.random.seed(self._seed)
         reads = []
         prev_time = time.time()
+        read_positions_debug = []
         for i in range(0, self.n_reads_to_simulate):
             if i % 500000 == 0:
                 logging.info("%d/%d reads simulated (time spent on chunk: %.3f)" % (i, self.n_reads_to_simulate, time.time()-prev_time))
                 prev_time = time.time()
 
+
             pos_start = np.random.randint(0, self.genome_size - self.read_length)
             pos_end = pos_start + self.read_length
+
+            if i < 20:
+                read_positions_debug.append(pos_start)
 
             reads.append(self.genome_sequence[pos_start:pos_end])
             # Don't actually need to simulate from reverse complement, mapper is anyway reversecomplementing every sequence
@@ -122,6 +131,8 @@ class NodeCountModelCreatorFromSimpleChaining:
             #for read in [self.genome_sequence[pos_start:pos_end]]:
                 #yield read
             #    reads.append(read)
+
+        logging.info("First 20 read positions: %s" % read_positions_debug)
 
         return reads
 

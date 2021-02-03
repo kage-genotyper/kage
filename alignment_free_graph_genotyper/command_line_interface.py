@@ -592,7 +592,7 @@ def run_argument_parser(args):
     subparser.add_argument("-M", "--most-similar-variants", required=True)
     subparser.set_defaults(func=analyse_variants)
 
-    def model_kmers_from_haplotype_nodes_single_thread(haplotype, args):
+    def model_kmers_from_haplotype_nodes_single_thread(haplotype, random_seed, args):
         from .node_count_model import NodeCountModelCreatorFromSimpleChaining
         from obgraph.haplotype_nodes import HaplotypeToNodes
         #reference_index = ReferenceKmerIndex.from_file(args.reference_index)
@@ -612,7 +612,7 @@ def run_argument_parser(args):
         logging.info("Sequence type: %s" % type(sequence_forward))
         logging.info("Done getting sequence (took %.3f sec)" % (time.time()-time_start))
         #nodes_set = set(nodes[haplotype])
-        creator = NodeCountModelCreatorFromSimpleChaining(graph, reference_index, nodes, sequence_forward, kmer_index, args.max_node_id, n_reads_to_simulate=args.n_reads, skip_chaining=args.skip_chaining, max_index_lookup_frequency=args.max_index_lookup_frequency, reference_index_scoring=reference_index_scoring)
+        creator = NodeCountModelCreatorFromSimpleChaining(graph, reference_index, nodes, sequence_forward, kmer_index, args.max_node_id, n_reads_to_simulate=args.n_reads, skip_chaining=args.skip_chaining, max_index_lookup_frequency=args.max_index_lookup_frequency, reference_index_scoring=reference_index_scoring, seed=random_seed)
         following, not_following = creator.get_node_counts()
         logging.info("Done with haplotype %d" % haplotype)
         return following, not_following
@@ -647,7 +647,8 @@ def run_argument_parser(args):
 
         n_chunks_in_each_pool = args.n_threads
         pool = Pool(args.n_threads)
-        data_to_process = zip(haplotypes, repeat(args))
+        random_seeds = list(range(0, len(haplotypes)))
+        data_to_process = zip(haplotypes, random_seeds, repeat(args))
         while True:
             results = pool.starmap(model_kmers_from_haplotype_nodes_single_thread, itertools.islice(data_to_process, n_chunks_in_each_pool))
             if results:
