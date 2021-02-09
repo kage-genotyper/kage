@@ -30,6 +30,7 @@ def test_from_fasta():
             f.write(">read\n" + read + "\n")
     k = 31
     readkmers = list(ReadKmers.from_fasta_file("tmp.fasta", k=31))
+
     assert readkmers[0][20] == kmer_to_hash_fast(letter_sequence_to_numeric(reads[0][20:20+k]), k)
 
 test_from_fasta()
