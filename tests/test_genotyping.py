@@ -6,7 +6,7 @@ from alignment_free_graph_genotyper.node_count_model import NodeCountModel
 from alignment_free_graph_genotyper.variants import GenotypeCalls, VariantGenotype
 from alignment_free_graph_genotyper.statistical_node_count_genotyper import StatisticalNodeCountGenotyper
 
-def simple_test():
+def test_simple():
     variant_to_nodes = VariantToNodes(np.array([1, 2, 3, 4]), np.array([5, 6, 7, 8]))
     frequencies = np.array([1/3] * 4)
     genotype_frequencies = GenotypeFrequencies(frequencies, frequencies, frequencies)
@@ -50,4 +50,4 @@ def simple_test():
     for variant in input_variants:
         assert variant.genotype == "0/0"
 
-simple_test()
+test_simple()
