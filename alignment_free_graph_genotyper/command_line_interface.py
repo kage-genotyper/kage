@@ -800,10 +800,12 @@ def run_argument_parser(args):
 
         #graph = ObGraph.from_file(args.graph_file_name)
         variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
-        #variants = GenotypeCalls.from_vcf(args.vcf)
+
+        variants = GenotypeCalls.from_vcf(args.vcf)
         node_counts = NumpyNodeCounts.from_file(args.counts)
-        genotyper = StatisticalNodeCountGenotyper(model, args.vcf, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup)
+        genotyper = StatisticalNodeCountGenotyper(model, variants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup)
         genotyper.genotype()
+        variants.to_vcf_file(args.out_file_name)
 
     subparser = subparsers.add_parser("statistical_node_count_genotyper")
     subparser.add_argument("-c", "--counts", required=True)
@@ -812,6 +814,7 @@ def run_argument_parser(args):
     subparser.add_argument("-m", "--model", required=False, help="Node count model")
     subparser.add_argument("-G", "--genotype-frequencies", required=True, help="Genotype frequencies")
     subparser.add_argument("-M", "--most_similar_variant_lookup", required=True, help="Most similar variant lookup")
+    subparser.add_argument("-o", "--out-file-name", required=True, help="Will write genotyped variants to this file")
     subparser.set_defaults(func=statistical_node_count_genotyper)
 
     def remove_shared_memory_command_line(args):

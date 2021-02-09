@@ -56,8 +56,14 @@ class VariantGenotype:
         self.type = type
         self.vcf_line_number = vcf_line_number
 
+    def set_genotype(self, genotype):
+        self.genotype = genotype
+
     def id(self):
         return (self.chromosome, self.position, self.ref_sequence, self.variant_sequence)
+
+    def get_vcf_line(self):
+        return "%d\t%d\t.\t%s\t%s\t.\tPASS\t.\tGT\t%s\n"  % (self.chromosome, self.position, self.ref_sequence, self.variant_sequence, self.genotype if self.genotype is not None else ".")
 
     def __str__(self):
         return "chr%d:%d %s/%s %s %s" % (self.chromosome, self.position, self.ref_sequence, self.variant_sequence, self.genotype, self.type)
@@ -155,9 +161,9 @@ class VariantGenotype:
 
 
 
-
 class GenotypeCalls:
-    def __init__(self, variant_genotypes, skip_index=False):
+    def __init__(self, variant_genotypes, skip_index=False, header_lines=""):
+        self._header_lines = header_lines
         self.variant_genotypes = variant_genotypes
         self._index = {}
         if not skip_index:
@@ -210,6 +216,22 @@ class GenotypeCalls:
     def __next__(self):
         return self.variant_genotypes.__next__()
 
+    def to_vcf_file(self, file_name, add_individual_to_header="DONOR"):
+        logging.info("Writing to file %s" % file_name)
+        with open(file_name, "w") as f:
+            #f.write(self._header_lines)
+            for header_line in self._header_lines.split("\n")[0:-1]:  # last element is empty
+                if header_line.startswith("#CHROM"):
+                    header_line += "\tDONOR"
+                f.writelines([header_line + "\n"])
+
+            for i, variant in enumerate(self):
+                if i % 10000 == 0:
+                    logging.info("%d variants written")
+
+                f.writelines([variant.get_vcf_line()])
+
+
     @classmethod
     def from_vcf(cls, vcf_file_name, skip_index=False, limit_to_n_lines=None, make_generator=False, limit_to_chromosome=None):
         logging.info("Reading variants from file")
@@ -233,8 +255,6 @@ class GenotypeCalls:
             f = io.BufferedReader(gz, buffer_size=1000 * 1000 * 2)  # 2 GB buffer size?
             logging.info("Made gz file object")
 
-
-
         if make_generator:
             logging.info("Returning variant generator")
             if is_bgzipped:
@@ -244,6 +264,7 @@ class GenotypeCalls:
                 f = (line for line in f if not line.startswith("#"))
                 return cls((VariantGenotype.from_vcf_line(line, vcf_line_number=i) for i, line in enumerate(f)), skip_index=skip_index)
 
+        header_lines = ""
         n_variants_added = 0
         prev_time = time.time()
         variant_number = -1
@@ -253,6 +274,7 @@ class GenotypeCalls:
 
 
             if line.startswith("#"):
+                header_lines += line
                 continue
 
             variant_number += 1
@@ -273,5 +295,10 @@ class GenotypeCalls:
             n_variants_added += 1
             variant_genotypes.append(variant)
 
-        return cls(variant_genotypes, skip_index)
+        return cls(variant_genotypes, skip_index, header_lines)
 
+    def __str__(self):
+        return str(list(self))
+
+    def __repr__(self):
+        return self.__str__()

@@ -1,6 +1,6 @@
 import logging
 from scipy.special import comb
-from .variants import VariantGenotype
+from .variants import VariantGenotype, GenotypeCalls
 from collections import defaultdict
 import numpy as np
 from scipy.stats import poisson, binom
@@ -11,8 +11,8 @@ def parse_vcf_genotype(genotype):
 
 
 class StatisticalNodeCountGenotyper:
-    def __init__(self, node_count_model, vcf_file, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup, variant_window_size=500):
-        self._vcf_file = vcf_file
+    def __init__(self, node_count_model, variants: GenotypeCalls, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup, variant_window_size=500, ):
+        self._variants = variants
         self._node_count_model = node_count_model
 
         if self._node_count_model is None:
@@ -145,25 +145,6 @@ class StatisticalNodeCountGenotyper:
         # logging.info("Genotyping biallelic SNP with nodes %d/%d and allele frequency %.5f" % (reference_node, variant_node, allele_frequency))
         allele_counts = [int(self.get_node_count(reference_node)), int(self.get_node_count(variant_node))]
 
-        """
-        tot_counts = sum(allele_counts)
-        e = self.expected_read_error_rate
-        # Simple when we have bialleleic. Formula for multiallelic given in malva supplmentary
-        p_counts_given_homozygous_alt = comb(tot_counts, allele_counts[1]) * (1 - e) ** allele_counts[1] * e ** (
-                tot_counts - allele_counts[1])
-        p_counts_given_homozygous_ref = comb(tot_counts, allele_counts[0]) * (1 - e) ** allele_counts[0] * e ** (
-                tot_counts - allele_counts[0])
-        # p_counts_given_heterozygous = 1 - p_counts_given_homozygous_alt - p_counts_given_homozygous_ref
-        p_counts_given_heterozygous = 1 * comb(tot_counts, allele_counts[0]) * ((1 - e) / 2) ** allele_counts[0] * (
-                (1 - e) / 2) ** allele_counts[1]
-        """
-
-        """
-        p_counts_given_homozygous_ref = self.prob_count_on_node_given_not_follwing_node(variant_node, allele_counts[1]) * self.prob_count_on_node_given_follwing_node(reference_node, allele_counts[0])
-        p_counts_given_homozygous_alt = self.prob_count_on_node_given_not_follwing_node(reference_node, allele_counts[0]) * self.prob_count_on_node_given_follwing_node(variant_node, allele_counts[1])
-        p_counts_given_heterozygous = self.prob_count_on_node_given_follwing_node(reference_node, allele_counts[0]) * self.prob_count_on_node_given_follwing_node(variant_node, allele_counts[1])
-        """
-
         p_counts_given_homozygous_ref = self.prob_counts_given_homo_ref(reference_node, variant_node, allele_counts[0], allele_counts[1])
         p_counts_given_homozygous_alt = self.prob_counts_given_homo_alt(reference_node, variant_node, allele_counts[0], allele_counts[1])
         p_counts_given_heterozygous = self.prob_counts_given_hetero(reference_node, variant_node, allele_counts[0], allele_counts[1])
@@ -239,27 +220,16 @@ class StatisticalNodeCountGenotyper:
 
     def genotype(self):
         variant_id = -1
-        for i, line in enumerate(open(self._vcf_file)):
+        for i, variant in enumerate(self._variants):
             if i % 1000 == 0:
                 logging.info("%d lines processed" % i)
-
-            if line.startswith("#"):
-                if line.startswith("#CHROM"):
-                    self._n_haplotypes = (len(line.split()) - 9) * 2
-                    logging.info("There are %d haplotypes in this file" % self._n_haplotypes)
-                    print("\t".join(line.split()[0:9]).strip() + "\tDONOR")
-                else:
-                    print(line.strip())
-
-                continue
 
             variant_id += 1
             self._genotypes_called_at_variant.append(0)
 
-            variant = VariantGenotype.from_vcf_line(line)
+            #variant = VariantGenotype.from_vcf_line(line)
             assert "," not in variant.variant_sequence, "Only biallelic variants are allowed. Line is not bialleleic"
-            l = variant.vcf_line.split()
-
+            l = variant.get_vcf_line().split()
 
             debug = False
             try:
@@ -283,7 +253,8 @@ class StatisticalNodeCountGenotyper:
                                                               prob_hetero, debug)
             #self.add_individuals_with_genotype(predicted_genotype, reference_node, variant_node)
 
-            print("%s\t%s" % ("\t".join(l[0:9]), predicted_genotype))
+            #print("%s\t%s" % ("\t".join(l[0:9]), predicted_genotype))
+            variant.set_genotype(predicted_genotype)
 
             numeric_genotype = 0
             if predicted_genotype == "0/0":
