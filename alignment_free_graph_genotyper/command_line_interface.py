@@ -169,7 +169,10 @@ def count_single_thread(reads, args):
         return None, None
 
     reference_index = from_shared_memory(ReferenceKmerIndex, "reference_index_shared")
-    reference_index_scoring = from_shared_memory(ReferenceKmerIndex, "reference_index_scoring_shared")
+
+    reference_index_scoring = None
+    if args.reference_index_scoring is not None:
+        reference_index_scoring = from_shared_memory(ReferenceKmerIndex, "reference_index_scoring_shared")
 
     #kmer_index = CollisionFreeKmerIndex(hashes_to_index, n_kmers, nodes, ref_offsets, kmers, modulo, frequencies)
     kmer_index = from_shared_memory(CollisionFreeKmerIndex, "kmer_index_shared")
@@ -323,8 +326,9 @@ def count(args):
     reference_index = ReferenceKmerIndex.from_file(args.reference_index)
     to_shared_memory(reference_index, "reference_index_shared")
 
-    reference_index_scoring = ReferenceKmerIndex.from_file(args.reference_index_scoring)
-    to_shared_memory(reference_index_scoring, "reference_index_scoring_shared")
+    if args.reference_index_scoring is not None:
+        reference_index_scoring = ReferenceKmerIndex.from_file(args.reference_index_scoring)
+        to_shared_memory(reference_index_scoring, "reference_index_scoring_shared")
 
     logging.info("Reading kmer index from file")
     kmer_index = CollisionFreeKmerIndex.from_file(args.kmer_index)
@@ -558,7 +562,7 @@ def run_argument_parser(args):
     subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
     subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
     subparser.add_argument("-c", "--chunk-size", type=int, default=10000, required=False, help="Number of reads to process in the same chunk")
-    subparser.add_argument("-R", "--reverse-index", required=True)
+    subparser.add_argument("-R", "--reverse-index", required=False)
     subparser.set_defaults(func=run_map_multiprocess)
 
     def analyse_variants(args):
@@ -598,7 +602,10 @@ def run_argument_parser(args):
         #reference_index = ReferenceKmerIndex.from_file(args.reference_index)
         #kmer_index = KmerIndex.from_file(args.kmer_index)
         reference_index = from_shared_memory(ReferenceKmerIndex, "reference_index_shared")
-        reference_index_scoring = from_shared_memory(ReferenceKmerIndex, "reference_index_scoring_shared")
+        reference_index_scoring = None
+        if args.reference_index_scoring is not None:
+            reference_index_scoring = from_shared_memory(ReferenceKmerIndex, "reference_index_scoring_shared")
+
         kmer_index = from_shared_memory(KmerIndex, "kmer_index_shared")
 
         nodes = from_shared_memory(HaplotypeToNodes, "haplotype_nodes_shared")
@@ -630,8 +637,9 @@ def run_argument_parser(args):
         nodes = HaplotypeToNodes.from_file(args.haplotype_nodes)
         to_shared_memory(nodes, "haplotype_nodes_shared")
 
-        reference_index_scoring = ReferenceKmerIndex.from_file(args.reference_index_scoring)
-        to_shared_memory(reference_index_scoring, "reference_index_scoring_shared")
+        if args.reference_index_scoring is not None:
+            reference_index_scoring = ReferenceKmerIndex.from_file(args.reference_index_scoring)
+            to_shared_memory(reference_index_scoring, "reference_index_scoring_shared")
 
         logging.info("Reading graph")
         graph = ObGraph.from_file(args.graph_file_name)

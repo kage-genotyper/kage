@@ -29,6 +29,7 @@ class KmerAnalyser:
         self.genotype_frequencies = genotype_frequencies
         self.most_similar_variants = most_similar_variants
         self.n_missing_kmers = 0
+        self.n_ref_nodes_zero_in_model = 0
 
     def print_report(self):
         for type in ["SNP", "DELETION", "INSERTION"]:
@@ -83,14 +84,16 @@ class KmerAnalyser:
                     self.n_correct_genotypes[variant.type] += 1
                 #else:
                 #logging.warning("Wrong genotype: %s / %s" % (self.truth_genotypes.get(variant), self.predicted_genotypes.get(variant)))
+        if self.node_count_model.node_counts_following_node[reference_node] == 0:
+            self.n_ref_nodes_zero_in_model += 1
 
-        if self.node_count_model.node_counts_following_node[reference_node] == 0 and self.predicted_genotypes.has_variant(variant) and self.truth_genotypes.has_variant(variant):
+        if self.predicted_genotypes.has_variant(variant) and self.truth_genotypes.has_variant(variant):
             if self.truth_regions.is_inside_regions(variant.position) and self.predicted_genotypes.get(variant).genotype == "0|0" and self.truth_genotypes.get(variant).genotype != "0|0":
                 logging.warning("----------------------------")
                 logging.warning("False negative genotype!")
                 self.print_info_about_variant(reference_node, variant_node, variant, variant_id)
 
-        if self.node_count_model.node_counts_following_node[reference_node] == 0 and self.predicted_genotypes.has_variant(variant) and not self.truth_genotypes.has_variant(variant):
+        if self.predicted_genotypes.has_variant(variant) and not self.truth_genotypes.has_variant(variant):
 
             if self.truth_regions.is_inside_regions(variant.position) and self.predicted_genotypes.get(variant).genotype != "0|0":
                 logging.warning("----------------------------")
@@ -150,6 +153,7 @@ class KmerAnalyser:
 
             self.analyse_variant(reference_node, variant_node, variant, i)
 
+        logging.info("Reference nodes that are zero in model: %d" % self.n_ref_nodes_zero_in_model)
         logging.info("N insertions: %d" % self.n_insertions)
         logging.info("N deletions: %d" % self.n_deletions)
         logging.info("N ambiguous deletions/insertions: %d" % self.n_ambiguous)

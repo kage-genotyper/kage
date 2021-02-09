@@ -116,8 +116,14 @@ def run(reads,
     cdef unsigned int reference_kmers_index_end
 
     # Reference index scoring
-    cdef unsigned int[:] reference_index_scoring_position_to_index = reference_index_scoring.ref_position_to_index
-    cdef unsigned long[:] reference_index_scoring_kmers = reference_index_scoring.kmers
+    #cdef unsigned int[:] reference_index_scoring_position_to_index = reference_index_scoring.ref_position_to_index
+    cdef unsigned int[:] reference_index_scoring_kmers
+    cdef int do_scoring = 0
+    if reference_index_scoring is not None:
+        reference_index_scoring_kmers = reference_index_scoring.kmers
+        do_scoring = 1
+    else:
+        logging.warning("Skipping scoring against reference kmers")
 
 
     cdef np.ndarray[np.float_t] node_counts = np.zeros(max_node_id+1, dtype=np.float)
@@ -149,7 +155,7 @@ def run(reads,
     cdef long ref_start, ref_end
     cdef int approx_read_length = 150
     #cdef np.ndarray[np.int64_t] local_reference_kmers
-    cdef unsigned long[:] local_reference_kmers
+    cdef unsigned int[:] local_reference_kmers
     cdef set short_kmers_set
     cdef float best_score = 0
     #cdef list best_chain
@@ -213,13 +219,16 @@ def run(reads,
         for l in range(2):
             if l == 0:
                 kmers = get_kmers(numeric_read, power_array)
-                short_kmers = get_kmers(numeric_read, power_array_short)
+                if do_scoring == 1:
+                    short_kmers = get_kmers(numeric_read, power_array_short)
             else:
                 kmers = get_kmers(reverse_read, power_array)
-                short_kmers = get_kmers(reverse_read, power_array_short)
+                if do_scoring == 1:
+                    short_kmers = get_kmers(reverse_read, power_array_short)
 
-            for c in range(short_kmers.shape[0]):
-                short_kmer_set_index[short_kmers[c] % modulo] = 1
+            if do_scoring == 1:
+                for c in range(short_kmers.shape[0]):
+                    short_kmer_set_index[short_kmers[c] % modulo] = 1
 
             #short_kmers_set = set(short_kmers)
             kmer_hashes = np.mod(kmers, modulo)
@@ -296,51 +305,53 @@ def run(reads,
 
             current_start = 0
             prev_position = potential_chain_start_positions[0]
-            #read_offsets_given_score = set()
+            read_offsets_given_score = set()
             score = 1
             chains = []
-            #read_offsets_given_score.add(found_read_offsets[0])
+            read_offsets_given_score.add(found_read_offsets[0])
             for i in range(1, potential_chain_start_positions.shape[0]):
                 if potential_chain_start_positions[i] >= prev_position + 2:
                     #score = np.unique(found_read_offsets[current_start:i]).shape[0]
-                    score = i - current_start  #found_read_offsets[current_start:i].shape[0]
+                    #score = i - current_start  #found_read_offsets[current_start:i].shape[0]
                     chains.append([potential_chain_start_positions[current_start], None, score, kmers])
                     current_start = i
                     score = 0
-                    #read_offsets_given_score = set()
+                    read_offsets_given_score = set()
                 prev_position = potential_chain_start_positions[i]
 
-                #if found_read_offsets[i] not in read_offsets_given_score:
-                #    score += 1
-                #    read_offsets_given_score.add(found_read_offsets[i])
+                if found_read_offsets[i] not in read_offsets_given_score:
+                    score += 1
+                    read_offsets_given_score.add(found_read_offsets[i])
 
             #score = np.unique(found_read_offsets[current_start:]).shape[0]
-            score = found_read_offsets.shape[0] - current_start
+            #score = found_read_offsets.shape[0] - current_start
             chains.append([potential_chain_start_positions[current_start], None, score, kmers])
 
             # Score chains
-            for c in range(len(chains)):
-                ##short_kmers_set = chains[c][4]
-                ref_start = chains[c][0] - 5
-                ref_end = ref_start + approx_read_length + 5 - k_short
+            if do_scoring == 1:
+                for c in range(len(chains)):
+                    ##short_kmers_set = chains[c][4]
+                    ref_start = chains[c][0] - 5
+                    ref_end = ref_start + approx_read_length + 5 - k_short
 
-                # Get kmers from graph in this area
-                #local_reference_kmers = reference_index_scoring.get_between(ref_start, ref_end)
-                local_reference_kmers = reference_index_scoring_kmers[reference_index_scoring_position_to_index[ref_start]:reference_index_scoring_position_to_index[ref_end]]
-                score = 0
-                for i in range(local_reference_kmers.shape[0]):
-                    if short_kmer_set_index[local_reference_kmers[i] % modulo] == 1:
-                        score += 1
-                        # don't count same kmer twice:
-                        short_kmer_set_index[local_reference_kmers[i] % modulo] = 0
+                    # Get kmers from graph in this area
+                    #local_reference_kmers = reference_index_scoring.get_between(ref_start, ref_end)
+                    #local_reference_kmers = reference_index_scoring_kmers[reference_index_scoring_position_to_index[ref_start]:reference_index_scoring_position_to_index[ref_end]]
+                    local_reference_kmers = reference_index_scoring_kmers[ref_start:ref_end]  #reference_index_scoring_position_to_index[ref_start]:reference_index_scoring_position_to_index[ref_end]]
+                    score = 0
+                    for i in range(local_reference_kmers.shape[0]):
+                        if short_kmer_set_index[local_reference_kmers[i] % modulo] == 1:
+                            score += 1
+                            # don't count same kmer twice:
+                            short_kmer_set_index[local_reference_kmers[i] % modulo] = 0
 
-                chains[c][2] = score  # len(short_kmers_set.intersection(local_reference_kmers))
+                    chains[c][2] = score  # len(short_kmers_set.intersection(local_reference_kmers))
+
+                    for c in range(short_kmers.shape[0]):
+                        short_kmer_set_index[short_kmers[c] % modulo] = 1
 
                 for c in range(short_kmers.shape[0]):
-                    short_kmer_set_index[short_kmers[c] % modulo] = 1
-
-            for c in range(short_kmers.shape[0]):
-                short_kmer_set_index[short_kmers[c] % modulo] = 0
+                    short_kmer_set_index[short_kmers[c] % modulo] = 0
 
             forward_and_reverse_chains.extend(chains)
 
@@ -355,6 +366,7 @@ def run(reads,
 
 
 
+
         # Find best chain
         best_chain_kmers = None
         best_chain = None
@@ -364,10 +376,13 @@ def run(reads,
                 best_chain = forward_and_reverse_chains[c]
 
         if best_chain is None:
+            best_score = 0
             continue
 
         chain_positions[read_number] = best_chain[0]
-        best_score = 0
+
+
+
 
 
         # Align nodes in area of best chain to the kmers (a reverse lookup)
@@ -402,6 +417,10 @@ def run(reads,
         # Reset set index
         for c in range(best_chain_kmers.shape[0]):
             kmer_set_index[best_chain_kmers[c] % modulo] = 0
+
+
+
+        best_score = 0
 
     return chain_positions, node_counts
 
