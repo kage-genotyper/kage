@@ -1,6 +1,6 @@
-from setuptools import setup
-from distutils.extension import Extension
-from Cython.Distutils import build_ext
+from setuptools import setup, Extension
+#from distutils.extension import Extension
+#from Cython.Distutils import build_ext
 
 ext_modules=[
       Extension("alignment_free_graph_genotyper.cython_chain_genotyper",
@@ -19,7 +19,10 @@ setup(name='alignment_free_graph_genotyper',
       license='MIT',
       packages=["alignment_free_graph_genotyper"],
       zip_safe=False,
-      install_requires=['numpy', 'tqdm', 'pyfaidx', 'pathos'],
+      install_requires=['numpy', 'tqdm', 'pyfaidx', 'pathos', 'cython', 'scipy',
+                        'obgraph @ git+ssh://git@github.com/ivargr/obgraph@master#egg=obgraph',
+                        'graph_kmer_index @ git+ssh://git@github.com/ivargr/graph_kmer_index@master#egg=graph_kmer_index'
+                        ],
       include_dirs=["."],
       classifiers=[
             'Programming Language :: Python :: 3'
@@ -27,6 +30,6 @@ setup(name='alignment_free_graph_genotyper',
       entry_points={
             'console_scripts': ['alignment_free_graph_genotyper=alignment_free_graph_genotyper.command_line_interface:main']
       },
-      cmdclass = {"build_ext": build_ext},
+      #cmdclass = {"build_ext": build_ext},
       ext_modules = ext_modules
 )
