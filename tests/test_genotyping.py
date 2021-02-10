@@ -4,7 +4,7 @@ import numpy as np
 from alignment_free_graph_genotyper import NodeCounts
 from alignment_free_graph_genotyper.node_count_model import NodeCountModel
 from alignment_free_graph_genotyper.variants import VcfVariants, VcfVariant
-from alignment_free_graph_genotyper.statistical_node_count_genotyper import StatisticalNodeCountGenotyper
+from alignment_free_graph_genotyper.genotyper import Genotyper
 
 def test_simple():
     variant_to_nodes = VariantToNodes(np.array([1, 2, 3, 4]), np.array([5, 6, 7, 8]))
@@ -25,8 +25,8 @@ def test_simple():
 
     # Case 1
     node_counts = NodeCounts(np.array([0.0] + [0.0] * 4 + [3.0] * 4))
-    genotyper = StatisticalNodeCountGenotyper(node_count_model, input_variants, variant_to_nodes, node_counts,
-                                              genotype_frequencies, most_simliar_variant_lookup)
+    genotyper = Genotyper(node_count_model, input_variants, variant_to_nodes, node_counts,
+                          genotype_frequencies, most_simliar_variant_lookup)
 
     genotyper.genotype()
     for variant in input_variants:
@@ -34,8 +34,8 @@ def test_simple():
 
     # Case 2
     node_counts = NodeCounts(np.array([0.0] + [3.0] * 4 + [3.0] * 4))
-    genotyper = StatisticalNodeCountGenotyper(node_count_model, input_variants, variant_to_nodes, node_counts,
-                                              genotype_frequencies, most_simliar_variant_lookup)
+    genotyper = Genotyper(node_count_model, input_variants, variant_to_nodes, node_counts,
+                          genotype_frequencies, most_simliar_variant_lookup)
 
     genotyper.genotype()
     for variant in input_variants:
@@ -43,8 +43,8 @@ def test_simple():
 
     # Case 3
     node_counts = NodeCounts(np.array([0.0] + [3.0] * 4 + [0.0] * 4))
-    genotyper = StatisticalNodeCountGenotyper(node_count_model, input_variants, variant_to_nodes, node_counts,
-                                              genotype_frequencies, most_simliar_variant_lookup)
+    genotyper = Genotyper(node_count_model, input_variants, variant_to_nodes, node_counts,
+                          genotype_frequencies, most_simliar_variant_lookup)
 
     genotyper.genotype()
     for variant in input_variants:

@@ -19,7 +19,7 @@ setup(name='alignment_free_graph_genotyper',
       license='MIT',
       packages=["alignment_free_graph_genotyper"],
       zip_safe=False,
-      install_requires=['numpy', 'tqdm', 'pyfaidx', 'numpy_alignments'],
+      install_requires=['numpy', 'tqdm', 'pyfaidx', 'pathos'],
       include_dirs=["."],
       classifiers=[
             'Programming Language :: Python :: 3'

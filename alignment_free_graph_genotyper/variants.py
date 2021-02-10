@@ -58,6 +58,7 @@ class VcfVariant:
         self.vcf_line_number = vcf_line_number
 
     def set_genotype(self, genotype):
+        assert genotype in ["0|0", "0/0", "0|1", "0/1", "1/1", "1|1"], "Invalid genotype %s" % genotype
         self.genotype = genotype
 
     def id(self):
@@ -227,7 +228,7 @@ class VcfVariants:
 
             for i, variant in enumerate(self):
                 if i % 10000 == 0:
-                    logging.info("%d variants written")
+                    logging.info("%d variants written to file" % i)
 
                 f.writelines([variant.get_vcf_line()])
 

@@ -127,7 +127,6 @@ def run(reads,
     else:
         logging.warning("Skipping scoring against reference kmers")
 
-
     cdef np.ndarray[np.float_t] node_counts = np.zeros(max_node_id+1, dtype=np.float)
     cdef np.ndarray[np.int64_t] power_array = np.power(4, np.arange(0, k))
     cdef int k_short = 15;
