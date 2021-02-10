@@ -42,7 +42,8 @@ class TruthRegions:
                 return True
         return False
 
-class VariantGenotype:
+
+class VcfVariant:
     def __init__(self, chromosome, position, ref_sequence, variant_sequence, genotype=None, type="", vcf_line=None, vcf_line_number=None):
         self.chromosome = chromosome
         self.position = position
@@ -160,8 +161,7 @@ class VariantGenotype:
             return start + len(self.ref_sequence) - 1 + 1
 
 
-
-class GenotypeCalls:
+class VcfVariants:
     def __init__(self, variant_genotypes, skip_index=False, header_lines=""):
         self._header_lines = header_lines
         self.variant_genotypes = variant_genotypes
@@ -259,10 +259,10 @@ class GenotypeCalls:
             logging.info("Returning variant generator")
             if is_bgzipped:
                 f = (line for line in f if not line.decode("utf-8").startswith("#"))
-                return cls((VariantGenotype.from_vcf_line(line.decode("utf-8"), vcf_line_number=i) for i, line in enumerate(f) if not line.decode("utf-8").startswith("#")), skip_index=skip_index)
+                return cls((VcfVariant.from_vcf_line(line.decode("utf-8"), vcf_line_number=i) for i, line in enumerate(f) if not line.decode("utf-8").startswith("#")), skip_index=skip_index)
             else:
                 f = (line for line in f if not line.startswith("#"))
-                return cls((VariantGenotype.from_vcf_line(line, vcf_line_number=i) for i, line in enumerate(f)), skip_index=skip_index)
+                return cls((VcfVariant.from_vcf_line(line, vcf_line_number=i) for i, line in enumerate(f)), skip_index=skip_index)
 
         header_lines = ""
         n_variants_added = 0
@@ -288,7 +288,7 @@ class GenotypeCalls:
                 break
 
 
-            variant = VariantGenotype.from_vcf_line(line, vcf_line_number=variant_number)
+            variant = VcfVariant.from_vcf_line(line, vcf_line_number=variant_number)
             if limit_to_chromosome is not None and variant.chromosome != int(limit_to_chromosome):
                 continue
 

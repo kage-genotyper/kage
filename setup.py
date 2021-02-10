@@ -1,4 +1,14 @@
 from setuptools import setup
+from distutils.extension import Extension
+from Cython.Distutils import build_ext
+
+ext_modules=[
+      Extension("alignment_free_graph_genotyper.cython_chain_genotyper",
+                ["alignment_free_graph_genotyper/cython_chain_genotyper.pyx"],
+                libraries=["m"],
+                extra_compile_args = ["-O3", "-ffast-math", "-march=native", "-fopenmp" ],
+                extra_link_args=['-fopenmp']
+                )]
 
 setup(name='alignment_free_graph_genotyper',
       version='0.0.1',
@@ -9,12 +19,14 @@ setup(name='alignment_free_graph_genotyper',
       license='MIT',
       packages=["alignment_free_graph_genotyper"],
       zip_safe=False,
-      install_requires=['numpy', 'tqdm', 'pyfaidx'],
+      install_requires=['numpy', 'tqdm', 'pyfaidx', 'numpy_alignments'],
       include_dirs=["."],
       classifiers=[
             'Programming Language :: Python :: 3'
       ],
       entry_points={
             'console_scripts': ['alignment_free_graph_genotyper=alignment_free_graph_genotyper.command_line_interface:main']
-      }
+      },
+      cmdclass = {"build_ext": build_ext},
+      ext_modules = ext_modules
 )

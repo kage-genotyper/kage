@@ -1,6 +1,6 @@
 import logging
 from scipy.special import comb
-from .variants import VariantGenotype, GenotypeCalls
+from .variants import VcfVariant, VcfVariants
 from collections import defaultdict
 import numpy as np
 from scipy.stats import poisson, binom
@@ -11,7 +11,7 @@ def parse_vcf_genotype(genotype):
 
 
 class StatisticalNodeCountGenotyper:
-    def __init__(self, node_count_model, variants: GenotypeCalls, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup, variant_window_size=500, ):
+    def __init__(self, node_count_model, variants: VcfVariants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup, variant_window_size=500, ):
         self._variants = variants
         self._node_count_model = node_count_model
 

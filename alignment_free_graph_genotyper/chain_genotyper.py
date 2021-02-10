@@ -4,7 +4,7 @@ import time
 from pyfaidx import Fasta
 from graph_kmer_index import ReadKmers
 
-from .genotyper import NodeCounts
+from .node_counts import NodeCounts
 import pyximport; pyximport.install(language_level=3)
 #from graph_kmer_index.cython_kmer_index import get_nodes_and_ref_offsets_from_multiple_kmers as cython_index_lookup
 from .chaining import chain, chain_with_score

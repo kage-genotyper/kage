@@ -3,7 +3,7 @@ from obgraph import GenotypeFrequencies, MostSimilarVariantLookup
 import numpy as np
 from alignment_free_graph_genotyper import NodeCounts
 from alignment_free_graph_genotyper.node_count_model import NodeCountModel
-from alignment_free_graph_genotyper.variants import GenotypeCalls, VariantGenotype
+from alignment_free_graph_genotyper.variants import VcfVariants, VcfVariant
 from alignment_free_graph_genotyper.statistical_node_count_genotyper import StatisticalNodeCountGenotyper
 
 def test_simple():
@@ -14,12 +14,12 @@ def test_simple():
 
     node_count_model = NodeCountModel(np.array([0.0] + [3.0] * 8), np.array([0.0] * 9))
 
-    input_variants = GenotypeCalls(
+    input_variants = VcfVariants(
         [
-            VariantGenotype(1, 1, "A", "T", type="SNP"),
-            VariantGenotype(1, 2, "A", "T", type="SNP"),
-            VariantGenotype(1, 3, "A", "T", type="SNP"),
-            VariantGenotype(1, 4, "A", "T", type="SNP"),
+            VcfVariant(1, 1, "A", "T", type="SNP"),
+            VcfVariant(1, 2, "A", "T", type="SNP"),
+            VcfVariant(1, 3, "A", "T", type="SNP"),
+            VcfVariant(1, 4, "A", "T", type="SNP"),
         ]
     )
 

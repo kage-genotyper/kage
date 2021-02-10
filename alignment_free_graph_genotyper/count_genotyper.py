@@ -1,6 +1,6 @@
 import logging
 from scipy.special import comb
-from .variants import VariantGenotype
+from .variants import VcfVariant
 from collections import defaultdict
 import numpy as np
 
@@ -165,7 +165,7 @@ class CountGenotyper:
                 continue
 
             l = line.split()
-            variant = VariantGenotype.from_vcf_line(line)
+            variant = VcfVariant.from_vcf_line(line)
             assert "," not in variant.variant_sequence, "Only biallelic variants are allowed. Line is not bialleleic"
 
             prob_homo_ref = self.compute_a_priori_probabilities("0/0", l)

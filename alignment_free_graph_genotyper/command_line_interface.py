@@ -1,38 +1,22 @@
 import gzip
 import itertools
 import logging
+logging.basicConfig(level=logging.INFO)
 
-from obgraph.genotype_matrix import GenotypeFrequencies
 from alignment_free_graph_genotyper import cython_chain_genotyper
-
-logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s %Y-%m-%d %H:%M:%S')
-
 from itertools import repeat
-import sys
-from pyfaidx import Fasta
-import argparse
-import time
-import os
+import sys, argparse, time
 from graph_kmer_index.shared_mem import from_shared_memory, to_shared_memory, remove_shared_memory
 
-from offsetbasedgraph import Graph, SequenceGraph, NumpyIndexedInterval
 from obgraph import Graph as ObGraph
-from graph_kmer_index import KmerIndex
-from .genotyper import IndependentKmerGenotyper, ReadKmers, BestChainGenotyper, NodeCounts
-from numpy_alignments import NumpyAlignments
-from graph_kmer_index import ReverseKmerIndex, CollisionFreeKmerIndex, UniqueKmerIndex
-from .reads import Reads
-from .chain_genotyper import ChainGenotyper, CythonChainGenotyper, NodeCounts, UniqueKmerGenotyper
-from graph_kmer_index.cython_kmer_index import CythonKmerIndex
-from graph_kmer_index.cython_reference_kmer_index import CythonReferenceKmerIndex
-from .reference_kmers import ReferenceKmers
-from .cython_mapper import map
+from graph_kmer_index import KmerIndex, ReverseKmerIndex
+from .chain_genotyper import CythonChainGenotyper, NodeCounts
 from graph_kmer_index import ReferenceKmerIndex
 from .analysis import KmerAnalyser
-from .variants import GenotypeCalls, TruthRegions
-from obgraph.haplotype_nodes import HaplotypeNodes
+from .variants import VcfVariants, TruthRegions
 from obgraph.genotype_matrix import GenotypeFrequencies
 from obgraph.haplotype_nodes import HaplotypeToNodes
+from .reads import read_chunks_from_fasta
 
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
 import numpy as np
@@ -47,8 +31,6 @@ def main():
 
 import numpy as np
 from pathos.multiprocessing import Pool
-from pathos.pools import ProcessPool
-from graph_kmer_index.logn_hash_map import ModuloHashMap
 
 
 def count_single_thread(reads, args):
@@ -77,34 +59,13 @@ def count_single_thread(reads, args):
                                                               reference_index_scoring)
     logging.info("Time spent on getting node counts: %.5f" % (time.time()-start_time))
     return NodeCounts(node_counts), chain_positions
-    #return genotyper._node_counts, genotyper.chain_positions
 
-
-def read_chunks(fasta_file_name, chunk_size=10):
-    logging.info("Read chunks")
-    # yields chunks of reads
-    file = open(fasta_file_name)
-    out = []
-    i = 0
-    for line in file:
-        if line.startswith(">"):
-            continue
-
-        if i % 500000 == 0:
-            logging.info("Read %d lines" % i)
-
-        out.append(line.strip())
-        i += 1
-        if i >= chunk_size and chunk_size > 0:
-            yield out
-            out = []
-            i = 0
-    yield out
 
 
 def count(args):
     truth_positions = None
     if args.truth_alignments is not None:
+        from numpy_alignments import NumpyAlignments
         truth_alignments = NumpyAlignments.from_file(args.truth_alignments)
         truth_positions = truth_alignments.positions
         logging.info("Read numpy alignments")
@@ -121,18 +82,8 @@ def count(args):
     kmer_index = CollisionFreeKmerIndex.from_file(args.kmer_index)
     to_shared_memory(kmer_index, "kmer_index_shared")
 
-    k = args.kmer_size
-    frequencies = kmer_index._frequencies
     max_node_id = args.max_node_id
-
-    #graph = ObGraph.from_file(args.graph)
-    #to_shared_memory(graph, "graph_shared")
-
-    #reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
-    #to_shared_memory(reverse_index, "reverse_index_shared")
-
-    #reference_kmers = reference_kmers.astype(np.uint64)
-    reads = read_chunks(args.reads, chunk_size=args.chunk_size)
+    reads = read_chunks_from_fasta(args.reads, chunk_size=args.chunk_size)
 
     logging.info("Making pool")
     pool = Pool(args.n_threads)
@@ -154,24 +105,11 @@ def count(args):
 def genotype_from_counts(args):
     counts = NodeCounts.from_file(args.counts)
     graph = ObGraph.from_file(args.graph_file_name)
-    sequence_graph =  None  #SequenceGraph.from_file(args.graph_file_name + ".sequences")
-    linear_path = None  # NumpyIndexedInterval.from_file(args.linear_path_file_name)
-
-    genotyper = CythonChainGenotyper(graph, sequence_graph, linear_path, None, None, args.vcf, None,
+    genotyper = CythonChainGenotyper(graph, None, None, None, None, args.vcf, None,
                                        None, skip_reference_kmers=True)
 
     genotyper._node_counts = counts
     genotyper.genotype()
-
-
-def count_using_unique_index(args):
-    unique_index = UniqueKmerIndex.from_file(args.unique_kmer_index)
-    k = args.kmer_size
-    reads = read_chunks(args.reads, -1).__next__()
-    genotyper = UniqueKmerGenotyper(unique_index, reads, k)
-    genotyper.get_counts()
-    genotyper._node_counts.to_file(args.node_counts_out_file_name)
-
 
 def run_argument_parser(args):
     parser = argparse.ArgumentParser(
@@ -206,8 +144,8 @@ def run_argument_parser(args):
         reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
         node_count_model = NodeCountModel.from_file(args.node_count_model)
 
-        analyser = KmerAnalyser(variant_nodes, args.kmer_size, GenotypeCalls.from_vcf(args.vcf), kmer_index, reverse_index, GenotypeCalls.from_vcf(args.predicted_vcf),
-                                GenotypeCalls.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NodeCounts.from_file(args.node_counts),
+        analyser = KmerAnalyser(variant_nodes, args.kmer_size, VcfVariants.from_vcf(args.vcf), kmer_index, reverse_index, VcfVariants.from_vcf(args.predicted_vcf),
+                                VcfVariants.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NodeCounts.from_file(args.node_counts),
                                 node_count_model, GenotypeFrequencies.from_file(args.genotype_frequencies), most_similar_variants)
         analyser.analyse_unique_kmers_on_variants()
 
@@ -347,7 +285,7 @@ def run_argument_parser(args):
         #graph = ObGraph.from_file(args.graph_file_name)
         variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
 
-        variants = GenotypeCalls.from_vcf(args.vcf)
+        variants = VcfVariants.from_vcf(args.vcf)
         node_counts = NodeCounts.from_file(args.counts)
         genotyper = StatisticalNodeCountGenotyper(model, variants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup)
         genotyper.genotype()

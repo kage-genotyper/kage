@@ -5,6 +5,7 @@ cimport cython
 import time
 
 
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef list chain(np.ndarray[np.int64_t] ref_offsets, np.ndarray[np.int64_t] read_offsets, np.ndarray[np.int64_t] nodes, np.ndarray[np.int64_t] kmers):
