@@ -144,15 +144,8 @@ class NodeCountModelCreatorFromSimpleChaining:
         reads = self.get_simulated_reads()
         # Set to none to not use memory on the sequence anymore
         self.genome_sequence = None
-        index = self.kmer_index
 
-        chain_positions, node_counts = cython_chain_genotyper.run(reads, index._hashes_to_index,
-              index._n_kmers,
-              index._nodes,
-              index._ref_offsets,
-              index._kmers,
-              index._frequencies,
-              index._modulo,
+        chain_positions, node_counts = cython_chain_genotyper.run(reads, self.kmer_index,
               self._n_nodes,
               self._k,
               self._reference_index,

@@ -89,13 +89,7 @@ cdef np.ndarray[np.int64_t] get_kmers(np.ndarray[np.int64_t] numeric_read, np.nd
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def run(reads,
-        np.int64_t[:] hashes_to_index,
-        np.uint32_t[:] n_kmers,
-        np.uint32_t[:] nodes,
-        np.uint64_t[:] ref_offsets,
-        np.uint64_t[:] index_kmers,
-        np.uint16_t[:] index_frequencies,
-        int modulo,
+        index,
         int max_node_id,
         int k,
         reference_index,
@@ -104,8 +98,15 @@ def run(reads,
         reference_index_scoring=None
         ):
 
-    logging.info("Hash modulo is %d. Max index lookup frequency is %d" % (modulo, max_index_lookup_frequency))
 
+    cdef np.int64_t[:] hashes_to_index = index._hashes_to_index
+    cdef np.uint32_t[:] n_kmers = index._n_kmers
+    cdef np.uint32_t[:] nodes = index._nodes
+    cdef np.uint64_t[:] ref_offsets = index._ref_offsets
+    cdef np.uint64_t[:] index_kmers = index._kmers
+    cdef np.uint16_t[:] index_frequencies = index._frequencies
+    cdef int modulo = index._modulo
+    logging.info("Hash modulo is %d. Max index lookup frequency is %d. k=%d" % (modulo, max_index_lookup_frequency, k))
 
     logging.info("k=%d" % k)
     # Reference index

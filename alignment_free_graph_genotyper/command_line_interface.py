@@ -44,122 +44,10 @@ def main():
     run_argument_parser(sys.argv[1:])
 
 
-def genotype(args):
-    logging.info("Reading graphs")
-    graph = Graph.from_file(args.graph_file_name)
-    sequence_graph = SequenceGraph.from_file(args.graph_file_name + ".sequences")
-    kmer_index = KmerIndex.from_file(args.kmer_index)
-    linear_path = NumpyIndexedInterval.from_file(args.linear_path_file_name)
-    k = args.kmer_size
-
-    logging.info("Initializing readkmers")
-    read_kmers = ReadKmers.from_fasta_file(args.reads, k, args.small_k)
-    logging.info("Starting genotyper")
-
-    logging.info("Method chosen: %s" % args.method)
-
-    truth_alignments = None
-    if args.truth_alignments is not None:
-        truth_alignments = NumpyAlignments.from_file(args.truth_alignments)
-        logging.info("Read numpy alignments")
-
-    if args.use_node_counts is not None:
-        args.write_alignments_to_file = None
-
-    remap_best_chain_to = None
-    if args.remap_best_chain_to is not None:
-        logging.info("Best chain will be remapped to index: %s" % args.remap_best_chain_to)
-        remap_best_chain_to = KmerIndex.from_file(args.remap_best_chain_to)
-
-    align_nodes_to_reads = None
-    if args.align_nodes_to_reads is not None:
-        logging.info("Variant nodes will be realigned to reads using Reverse Kmer Index")
-        align_nodes_to_reads = ReverseKmerIndex.from_file(args.align_nodes_to_reads)
-
-
-    if args.method == "all_kmers":
-        genotyper = IndependentKmerGenotyper(graph, sequence_graph, linear_path, read_kmers, kmer_index, args.vcf, k)
-    elif args.method == "best_chain":
-        genotyper = BestChainGenotyper(graph, sequence_graph, linear_path, read_kmers, kmer_index, args.vcf, k,
-                                       truth_alignments, args.write_alignments_to_file, reference_k=args.small_k,
-                                       weight_chains_by_probabilities=args.weight_chains_by_probabilities,
-                                       remap_best_chain_to=remap_best_chain_to,
-                                       align_nodes_to_reads=align_nodes_to_reads)
-    else:
-        logging.error("Invalid method chosen.")
-        return
-
-    if args.use_node_counts is not None:
-        logging.info("Using node counts from file. Not getting counts.")
-        genotyper._node_counts = NodeCounts.from_file(args.use_node_counts)
-    else:
-        genotyper.get_counts()
-        if args.node_counts_out_file_name:
-            logging.info("Writing node counts to file: %s" % args.node_counts_out_file_name)
-            genotyper._node_counts.to_file(args.node_counts_out_file_name)
-
-    genotyper.genotype()
-
-
-def genotypev2(args):
-    logging.info("Reading graphs")
-    graph = Graph.from_file(args.graph_file_name)
-    sequence_graph = SequenceGraph.from_file(args.graph_file_name + ".sequences")
-    #kmer_index = KmerIndex.from_file(args.kmer_index)
-    kmer_index = CollisionFreeKmerIndex.from_file(args.kmer_index)
-    linear_path = NumpyIndexedInterval.from_file(args.linear_path_file_name)
-    k = args.kmer_size
-
-    reads = Reads.from_fasta(args.reads)
-
-    truth_alignments = None
-    if args.truth_alignments is not None:
-        truth_alignments = NumpyAlignments.from_file(args.truth_alignments)
-        logging.info("Read numpy alignments")
-
-    if args.use_node_counts is not None:
-        args.write_alignments_to_file = None
-
-    genotyper_class = ChainGenotyper
-    node_counts_class = NodeCounts
-    if args.use_cython:
-        node_counts_class = NumpyNodeCounts
-        reads = args.reads
-        genotyper_class = CythonChainGenotyper
-        logging.info("Will use the cython genotyper")
-
-    unique_index = None
-    if args.unique_index is not None:
-        logging.info("Using unique index")
-        unique_index = UniqueKmerIndex.from_file(args.unique_index)
-
-    align_nodes_to_reads = None
-    if args.align_nodes_to_reads is not None:
-        logging.info("Variant nodes will be realigned to reads using Reverse Kmer Index")
-        align_nodes_to_reads = ReverseKmerIndex.from_file(args.align_nodes_to_reads)
-
-    genotyper = genotyper_class(graph, sequence_graph, linear_path, reads, kmer_index, args.vcf, k,
-                                       truth_alignments, args.write_alignments_to_file, reference_k=args.small_k, max_node_id=4000000,
-                                unique_index=unique_index, reverse_index=align_nodes_to_reads, skip_chaining=False)
-
-    if args.use_node_counts is not None:
-        logging.info("Using node counts from file. Not getting counts.")
-        genotyper._node_counts = node_counts_class.from_file(args.use_node_counts)
-    else:
-        genotyper.get_counts()
-        if args.node_counts_out_file_name:
-            logging.info("Writing node counts to file: %s" % args.node_counts_out_file_name)
-            genotyper._node_counts.to_file(args.node_counts_out_file_name)
-
-    genotyper.genotype()
-
-
-
 import numpy as np
 from pathos.multiprocessing import Pool
 from pathos.pools import ProcessPool
 from graph_kmer_index.logn_hash_map import ModuloHashMap
-test_array = np.zeros(400000000, dtype=np.int64) + 1
 
 
 def count_single_thread(reads, args):
@@ -174,7 +62,6 @@ def count_single_thread(reads, args):
     if args.reference_index_scoring is not None:
         reference_index_scoring = from_shared_memory(ReferenceKmerIndex, "reference_index_scoring_shared")
 
-    #kmer_index = CollisionFreeKmerIndex(hashes_to_index, n_kmers, nodes, ref_offsets, kmers, modulo, frequencies)
     kmer_index = from_shared_memory(CollisionFreeKmerIndex, "kmer_index_shared")
 
     logging.info("Got %d lines" % len(reads))
@@ -182,7 +69,6 @@ def count_single_thread(reads, args):
                                      reference_kmers=reference_index, reverse_index=None, skip_reference_kmers=True, skip_chaining=False, max_index_lookup_frequency=args.max_index_lookup_frequency, reference_index_scoring=reference_index_scoring)
     genotyper.get_counts()
     return genotyper._node_counts, genotyper.chain_positions
-
 
 
 def read_chunks(fasta_file_name, chunk_size=10):
@@ -205,114 +91,6 @@ def read_chunks(fasta_file_name, chunk_size=10):
             out = []
             i = 0
     yield out
-
-
-def run_map_single_thread(reads, args):
-    logging.info("Running single thread on %d reads" % len(reads))
-    logging.info("Args: %s" % args)
-    logging.info("Reading reverse index")
-    reverse_index = ReferenceKmerIndex.from_file(args.reverse_index)
-    logging.info("Done reading reverse index")
-    logging.info("Reading kmerindex from file")
-    #index = KmerIndex.from_file(args.kmer_index)
-
-    #index = from_shared_memory(KmerIndex, "kmerindex1")
-    index = KmerIndex.from_file(args.kmer_index)
-    logging.info("Done reading KmerIndex. Now making CythonKmerIndex.")
-    cython_index = CythonKmerIndex(index)
-    logging.info("Made CythonKmerIndex")
-    k = args.kmer_size
-    short_k = args.short_kmer_size
-    logging.info("Reading reference kmer index")
-    reference_kmers = ReferenceKmerIndex.from_file(args.reference_kmer_index)
-    #reference_kmers = CythonReferenceKmerIndex(reference_kmers)
-    #ref_index_index = reference_kmers.ref_position_to_index
-    ref_index_kmers = reference_kmers.kmers
-
-
-    from .cython_mapper import map
-    positions, counts = map(reads, cython_index, reference_kmers, k, short_k, args.max_node_id, ref_index_kmers, reverse_index)
-
-    truth_positions = None
-    if args.truth_alignments is not None:
-        truth_alignments = NumpyAlignments.from_file(args.truth_alignments)
-        truth_positions = truth_alignments.positions
-        logging.info("Read numpy alignments")
-
-    if truth_positions is not None:
-        n_correct = len(np.where(np.abs(truth_positions - positions) <= 150)[0])
-        n_correct_and_mapped = len(np.where((np.abs(truth_positions - positions) <= 150) & (np.array(positions) > 0))[0])
-        logging.info("N correct chains: %d" % n_correct)
-        n_reads = len(truth_positions)
-        logging.info("Ratio correct among those that were mapped: %.3f" % (n_correct_and_mapped / len(np.where(np.array(positions)[0:n_reads] > 0)[0])))
-
-    return np.array(counts)
-
-def run_map_multiprocess(args):
-    reads = read_chunks(args.reads, chunk_size=args.chunk_size)
-    max_node_id = args.max_node_id
-    logging.info("Making pool with %d workers" % args.n_threads)
-    pool = Pool(args.n_threads)
-    logging.info("Allocating node counts array")
-    node_counts = np.zeros(max_node_id, dtype=np.uint16)
-    logging.info("Done allocating")
-    index = KmerIndex.from_file(args.kmer_index)
-    logging.info("Testing to create a cython kmer index")
-    logging.info("Done creating cython kmer index")
-    to_shared_memory(index, "kmerindex1")
-
-    n_chunks_in_each_pool = args.n_threads * 3
-    data_to_process = zip(reads, repeat(args))
-    n_reads_processed = 0
-    while True:
-        results = pool.starmap(run_map_single_thread, itertools.islice(data_to_process, n_chunks_in_each_pool))
-        if results:
-            for counts in results:
-                n_reads_processed += args.chunk_size
-                logging.info("-------- %d reads processed in total ------" % n_reads_processed)
-                node_counts += counts
-        else:
-            logging.info("No results, breaking")
-            break
-    """
-    for counts in pool.starmap(run_map_single_thread, zip(reads, repeat(args))):
-        node_counts += counts
-    """
-
-
-    counts = NumpyNodeCounts(node_counts)
-    counts.to_file(args.node_counts_out_file_name)
-    logging.info("Wrote node counts to file %s" % args.node_counts_out_file_name)
-
-
-
-def run_map(args):
-    index = KmerIndex.from_file(args.kmer_index)
-    cython_index = CythonKmerIndex(index)
-    k = args.kmer_size
-    short_k = args.short_kmer_size
-    reference_kmers = ReferenceKmers(args.reference_fasta_file, args.reference_name, short_k, allow_cache=True)
-
-    with open(args.reads) as f:
-        reads = [line.strip() for line in f if not line.startswith(">")]
-
-    positions, node_counts = map(reads, cython_index, reference_kmers, k, short_k, args.max_node_id)
-
-    truth_positions = None
-    if args.truth_alignments is not None:
-        truth_alignments = NumpyAlignments.from_file(args.truth_alignments)
-        truth_positions = truth_alignments.positions
-        logging.info("Read numpy alignments")
-
-    if args.node_counts_out_file_name:
-        logging.info("Writing node counts to file: %s" % args.node_counts_out_file_name)
-
-        counts = NumpyNodeCounts(node_counts)
-        counts.to_file(args.node_counts_out_file_name)
-
-    if truth_positions is not None:
-        n_correct = len(np.where(np.abs(truth_positions - positions) <= 150)[0])
-        logging.info("N correct chains: %d" % n_correct)
 
 
 def count(args):
@@ -386,44 +164,6 @@ def count_using_unique_index(args):
     genotyper._node_counts.to_file(args.node_counts_out_file_name)
 
 
-def vcfdiff(args):
-    allowed = ["0/0", "0/1", "1/1"]
-    assert args.truth_vcf.endswith(".gz"), "Assumes gz for now"
-    assert args.genotype in allowed
-    truth_positions = set()
-    genotype = args.genotype
-    truth = gzip.open(args.truth_vcf)
-    for i, line in enumerate(truth):
-        if i % 1000 == 0:
-            logging.info("Reading truth, %d lines" % i)
-
-        line = line.decode("utf-8")
-        if line.startswith("#"):
-            continue
-
-        l = line.split()
-        field = l[9]
-        if genotype == "0/1":
-            if "0/1" in field or "0|1" in field or "1/0" in field or "1|0" in field:
-                truth_positions.add(line.split()[1])
-        elif genotype == "1/1":
-            if "1/1" in field or "1|1":
-                truth_positions.add(line.split()[1])
-
-
-    vcf = open(args.vcf)
-    for line in vcf:
-        if line.startswith("#"):
-            continue
-
-        if genotype in line:
-            pos = line.split()[1]
-            if pos not in truth_positions:
-                print("False positive: %s" % line.strip())
-
-
-
-
 def run_argument_parser(args):
     parser = argparse.ArgumentParser(
         description='Alignment free graph genotyper',
@@ -431,41 +171,6 @@ def run_argument_parser(args):
         formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=50, width=100))
 
     subparsers = parser.add_subparsers()
-    subparser = subparsers.add_parser("genotype")
-    subparser.add_argument("-g", "--graph_file_name", required=True)
-    subparser.add_argument("-i", "--kmer_index", required=True)
-    subparser.add_argument("-l", "--linear_path_file_name", required=True)
-    subparser.add_argument("-r", "--reads", required=True)
-    subparser.add_argument("-v", "--vcf", required=True, help="Vcf to genotype")
-    subparser.add_argument("-k", "--kmer_size", required=False, type=int, default=32)
-    subparser.add_argument("-m", "--method", required=False, default='all_kmers')
-    subparser.add_argument("-t", "--truth_alignments", required=False)
-    subparser.add_argument("-o", "--write_alignments_to_file", required=False)
-    subparser.add_argument("-w", "--small-k", required=False, type=int, default=16)
-    subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
-    subparser.add_argument("-u", "--use_node_counts", required=False)
-    subparser.add_argument("-W", "--weight_chains_by_probabilities", required=False, type=bool, default=False)
-    subparser.add_argument("-R", "--remap-best-chain-to", required=False, help="Kmerindex that best chains will be remapped to for higher accuracy")
-    subparser.add_argument("-L", "--align-nodes-to-reads", required=False, help="Reverse Kmer Index that will be used to check for support of variant nodes in reads")
-    subparser.set_defaults(func=genotype)
-
-    subparser = subparsers.add_parser("genotypev2")
-    subparser.add_argument("-g", "--graph_file_name", required=True)
-    subparser.add_argument("-i", "--kmer_index", required=True)
-    subparser.add_argument("-l", "--linear_path_file_name", required=True)
-    subparser.add_argument("-r", "--reads", required=True)
-    subparser.add_argument("-v", "--vcf", required=True, help="Vcf to genotype")
-    subparser.add_argument("-k", "--kmer_size", required=False, type=int, default=32)
-    subparser.add_argument("-t", "--truth_alignments", required=False)
-    subparser.add_argument("-o", "--write_alignments_to_file", required=False)
-    subparser.add_argument("-w", "--small-k", required=False, type=int, default=16)
-    subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
-    subparser.add_argument("-u", "--use_node_counts", required=False)
-    subparser.add_argument("-c", "--use_cython", required=False, type=bool, default=False)
-    subparser.add_argument("-U", "--unique_index", required=False, default=None)
-    subparser.add_argument("-L", "--align-nodes-to-reads", required=False, help="Reverse Kmer Index that will be used to check for support of variant nodes in reads")
-    subparser.set_defaults(func=genotypev2)
-
     subparser = subparsers.add_parser("count")
     subparser.add_argument("-i", "--kmer_index", required=True)
     subparser.add_argument("-r", "--reads", required=True)
@@ -475,95 +180,11 @@ def run_argument_parser(args):
     subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
     subparser.add_argument("-c", "--chunk-size", type=int, default=10000, required=False, help="Number of reads to process in the same chunk")
     subparser.add_argument("-T", "--truth_alignments", required=False)
-    #subparser.add_argument("-g", "--graph", required=True)
     subparser.add_argument("-Q", "--reference_index", required=True)
     subparser.add_argument("-R", "--reference_index_scoring", required=False)
     subparser.add_argument("-I", "--max-index-lookup-frequency", required=False, type=int, default=5)
     subparser.set_defaults(func=count)
 
-    subparser = subparsers.add_parser("count_using_unique_index")
-    subparser.add_argument("-i", "--unique_kmer_index", required=True)
-    subparser.add_argument("-r", "--reads", required=True)
-    subparser.add_argument("-k", "--kmer_size", required=False, type=int, default=31)
-    subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
-    subparser.add_argument("-T", "--truth_alignments", required=False)
-    subparser.set_defaults(func=count_using_unique_index)
-
-
-    subparser = subparsers.add_parser("genotype_from_counts")
-    subparser.add_argument("-c", "--counts", required=True)
-    subparser.add_argument("-g", "--graph_file_name", required=True)
-    subparser.add_argument("-v", "--vcf", required=True, help="Vcf to genotype")
-    subparser.set_defaults(func=genotype_from_counts)
-
-    subparser = subparsers.add_parser("vcfdiff")
-    subparser.add_argument("-v", "--vcf", required=True)
-    subparser.add_argument("-t", "--truth-vcf", required=True)
-    subparser.add_argument("-g", "--genotype", required=True)
-    subparser.set_defaults(func=vcfdiff)
-
-
-    def run_map_using_python(args):
-        logging.info("Reading graphs")
-        graph = ObGraph.from_file(args.graph)
-        ref_kmers = ReferenceKmerIndex.from_file(args.ref_kmers)
-        kmer_index = KmerIndex.from_file(args.kmer_index)
-        k = args.kmer_size
-
-        reads = Reads.from_fasta(args.reads)
-
-        logging.info("Variant nodes will be realigned to reads using Reverse Kmer Index")
-        reverse_kmer_index = ReverseKmerIndex.from_file(args.reverse_index)
-
-        from .chain_mapper import ChainMapper
-        mapper = ChainMapper(graph, reads, kmer_index, reverse_kmer_index, k, max_node_id=4000000, max_reads=1000000, linear_reference_kmers=ref_kmers)
-        node_counts, positions = mapper.get_counts()
-        print(positions)
-
-        node_counts = NumpyNodeCounts(node_counts)
-        node_counts.to_file(args.node_counts_out_file_name)
-        logging.info("Wrote node counts to file: %s" % args.node_counts_out_file_name)
-
-        truth_positions = None
-        if args.truth_alignments is not None:
-            truth_alignments = NumpyAlignments.from_file(args.truth_alignments)
-            truth_positions = truth_alignments.positions
-            logging.info("Read numpy alignments")
-            positions = positions[0:len(truth_positions)]
-            n_correct = len(np.where(np.abs(truth_positions - positions) <= 150)[0])
-            n_correct_and_mapped = len(np.where((np.abs(truth_positions - positions) <= 150) & (np.array(positions) > 0))[0])
-            logging.info("N correct chains: %d" % n_correct)
-            n_reads = len(truth_positions)
-            logging.info("Ratio correct among those that were mapped: %.3f" % (n_correct_and_mapped / len(np.where(np.array(positions)[0:n_reads] > 0)[0])))
-
-    subparser = subparsers.add_parser("map_using_python")
-    subparser.add_argument("-g", "--graph", required=True)
-    subparser.add_argument("-r", "--reads", required=True)
-    subparser.add_argument("-i", "--kmer-index", required=True)
-    subparser.add_argument("-k", "--kmer-size", required=True, type=int)
-    subparser.add_argument("-T", "--truth_alignments", required=False)
-    subparser.add_argument("-M", "--max_node_id", type=int, default=2000000, required=False)
-    subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
-    subparser.add_argument("-R", "--reverse-index", required=True)
-    subparser.add_argument("-l", "--ref-kmers", required=True)
-    subparser.set_defaults(func=run_map_using_python)
-
-
-    subparser = subparsers.add_parser("map")
-    subparser.add_argument("-r", "--reads", required=True)
-    subparser.add_argument("-i", "--kmer-index", required=True)
-    subparser.add_argument("-k", "--kmer-size", required=True, type=int)
-    subparser.add_argument("-s", "--short-kmer-size", type=int, default=16, required=False)
-    #subparser.add_argument("-F", "--reference-fasta-file", required=True)
-    subparser.add_argument("-F", "--reference-kmer-index", required=True)
-    subparser.add_argument("-y", "--reference-name", required=False, default="1")
-    subparser.add_argument("-T", "--truth_alignments", required=False)
-    subparser.add_argument("-M", "--max_node_id", type=int, default=2000000, required=False)
-    subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
-    subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
-    subparser.add_argument("-c", "--chunk-size", type=int, default=10000, required=False, help="Number of reads to process in the same chunk")
-    subparser.add_argument("-R", "--reverse-index", required=False)
-    subparser.set_defaults(func=run_map_multiprocess)
 
     def analyse_variants(args):
         from .node_count_model import NodeCountModel
@@ -703,91 +324,7 @@ def run_argument_parser(args):
     subparser.add_argument("-I", "--max-index-lookup-frequency", required=False, type=int, default=5)
     subparser.add_argument("-T", "--run-n-times", required=False, help="Run the whole simulation N times. Useful when wanting to use more threads than number of haplotypes since multiple haplotypes then can be procesed in parallel.", default=1, type=int)
     subparser.add_argument("-R", "--reference_index_scoring", required=False)
-
     subparser.set_defaults(func=model_kmers_from_haplotype_nodes)
-
-    def model_using_kmer_index(args):
-        from .node_count_model import NodeCountModelCreatorFromNoChaining, NodeCountModel
-        index = KmerIndex.from_file(args.kmer_index)
-        graph = ObGraph.from_file(args.graph_file_name)
-        reverse_index = ReverseKmerIndex.from_file(args.reverse_node_kmer_index)
-        variants = GenotypeCalls.from_vcf(args.vcf)
-
-        model_creator = NodeCountModelCreatorFromNoChaining(index, reverse_index, graph, variants, args.max_node_id)
-        counts_following, counts_not_following = model_creator.get_node_counts()
-        model = NodeCountModel(counts_following, counts_not_following)
-        model.to_file(args.out_file_name)
-
-
-    subparser = subparsers.add_parser("model_using_kmer_index")
-    subparser.add_argument("-g", "--graph_file_name", required=True)
-    subparser.add_argument("-k", "--kmer-size", required=True, type=int)
-    subparser.add_argument("-i", "--kmer-index", required=True)
-    subparser.add_argument("-o", "--out-file-name", required=True)
-    subparser.add_argument("-m", "--max-node-id", type=int, required=True)
-    subparser.add_argument("-r", "--reverse_node_kmer_index", required=True)
-    subparser.add_argument("-v", "--vcf", required=True)
-    subparser.set_defaults(func=model_using_kmer_index)
-
-
-    def no_chain_map_single_process(reads, args):
-        from .no_chain_mapper import NoChainMapper
-        #kmer_index = from_shared_memory(KmerIndex, "kmerindex1")
-        # more memory usage, faster access
-        kmer_index = KmerIndex.from_file(args.kmer_index)
-        k = args.kmer_size
-        mapper = NoChainMapper(reads, kmer_index, k, args.max_node_id)
-        node_counts = mapper.get_counts()
-        return node_counts
-
-    def no_chain_map_multiprocess(args):
-        reads = read_chunks(args.reads, chunk_size=args.chunk_size)
-        max_node_id = args.max_node_id
-        logging.info("Making pool with %d workers" % args.n_threads)
-        pool = Pool(args.n_threads)
-        logging.info("Allocating node counts array")
-        node_counts = np.zeros(max_node_id+1, dtype=np.uint16)
-        index = KmerIndex.from_file(args.kmer_index)
-        to_shared_memory(index, "kmerindex1")
-
-        n_chunks_in_each_pool = args.n_threads
-        data_to_process = zip(reads, repeat(args))
-        n_reads_processed = 0
-        while True:
-            results = pool.starmap(no_chain_map_single_process, itertools.islice(data_to_process, n_chunks_in_each_pool))
-            if results:
-                for counts in results:
-                    n_reads_processed += args.chunk_size
-                    logging.info("-------- %d reads processed in total ------" % n_reads_processed)
-                    node_counts += counts
-            else:
-                logging.info("No results, breaking")
-                break
-
-        node_counts = NumpyNodeCounts(node_counts)
-        node_counts.to_file(args.node_counts_out_file_name)
-        logging.info("Wrote node counts to file: %s" % args.node_counts_out_file_name)
-
-    def no_chain_map(args):
-        from .no_chain_mapper import NoChainMapper
-        kmer_index = KmerIndex.from_file(args.kmer_index)
-        k = args.kmer_size
-        reads = Reads.from_fasta(args.reads)
-        mapper = NoChainMapper(reads, kmer_index, k, args.max_node_id)
-        node_counts= mapper.get_counts()
-        node_counts = NumpyNodeCounts(node_counts)
-        node_counts.to_file(args.node_counts_out_file_name)
-        logging.info("Wrote node counts to file: %s" % args.node_counts_out_file_name)
-
-    subparser = subparsers.add_parser("no_chain_map")
-    subparser.add_argument("-k", "--kmer-size", required=True, type=int)
-    subparser.add_argument("-i", "--kmer-index", required=True)
-    subparser.add_argument("-r", "--reads", required=True)
-    subparser.add_argument("-M", "--max_node_id", type=int, default=2000000, required=False)
-    subparser.add_argument("-n", "--node_counts_out_file_name", required=False)
-    subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
-    subparser.add_argument("-c", "--chunk-size", type=int, default=10000, required=False, help="Number of reads to process in the same chunk")
-    subparser.set_defaults(func=no_chain_map_multiprocess)
 
     def statistical_node_count_genotyper(args):
         from .statistical_node_count_genotyper import StatisticalNodeCountGenotyper
@@ -821,7 +358,6 @@ def run_argument_parser(args):
         remove_shared_memory()
     subparser = subparsers.add_parser("remove_shared_memory")
     subparser.set_defaults(func=remove_shared_memory_command_line)
-
 
     if len(args) == 0:
         parser.print_help()
