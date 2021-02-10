@@ -3,6 +3,7 @@ import itertools
 import logging
 
 from obgraph.genotype_matrix import GenotypeFrequencies
+from alignment_free_graph_genotyper import cython_chain_genotyper
 
 logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s %Y-%m-%d %H:%M:%S')
 
@@ -21,7 +22,7 @@ from .genotyper import IndependentKmerGenotyper, ReadKmers, BestChainGenotyper, 
 from numpy_alignments import NumpyAlignments
 from graph_kmer_index import ReverseKmerIndex, CollisionFreeKmerIndex, UniqueKmerIndex
 from .reads import Reads
-from .chain_genotyper import ChainGenotyper, CythonChainGenotyper, NumpyNodeCounts, UniqueKmerGenotyper
+from .chain_genotyper import ChainGenotyper, CythonChainGenotyper, NodeCounts, UniqueKmerGenotyper
 from graph_kmer_index.cython_kmer_index import CythonKmerIndex
 from graph_kmer_index.cython_reference_kmer_index import CythonReferenceKmerIndex
 from .reference_kmers import ReferenceKmers
@@ -65,10 +66,18 @@ def count_single_thread(reads, args):
     kmer_index = from_shared_memory(CollisionFreeKmerIndex, "kmer_index_shared")
 
     logging.info("Got %d lines" % len(reads))
-    genotyper = CythonChainGenotyper(None, None, None, reads, kmer_index, None, args.kmer_size, None, None, max_node_id=args.max_node_id,
-                                     reference_kmers=reference_index, reverse_index=None, skip_reference_kmers=True, skip_chaining=False, max_index_lookup_frequency=args.max_index_lookup_frequency, reference_index_scoring=reference_index_scoring)
-    genotyper.get_counts()
-    return genotyper._node_counts, genotyper.chain_positions
+    start_time = time.time()
+    chain_positions, node_counts = cython_chain_genotyper.run(reads,
+                                                              kmer_index,
+                                                              args.max_node_id,
+                                                              args.kmer_size,
+                                                              reference_index,
+                                                              args.max_index_lookup_frequency,
+                                                              0,
+                                                              reference_index_scoring)
+    logging.info("Time spent on getting node counts: %.5f" % (time.time()-start_time))
+    return NodeCounts(node_counts), chain_positions
+    #return genotyper._node_counts, genotyper.chain_positions
 
 
 def read_chunks(fasta_file_name, chunk_size=10):
@@ -138,12 +147,12 @@ def count(args):
         else:
             logging.info("No results")
 
-    counts = NumpyNodeCounts(node_counts)
+    counts = NodeCounts(node_counts)
     counts.to_file(args.node_counts_out_file_name)
 
 
 def genotype_from_counts(args):
-    counts = NumpyNodeCounts.from_file(args.counts)
+    counts = NodeCounts.from_file(args.counts)
     graph = ObGraph.from_file(args.graph_file_name)
     sequence_graph =  None  #SequenceGraph.from_file(args.graph_file_name + ".sequences")
     linear_path = None  # NumpyIndexedInterval.from_file(args.linear_path_file_name)
@@ -198,7 +207,7 @@ def run_argument_parser(args):
         node_count_model = NodeCountModel.from_file(args.node_count_model)
 
         analyser = KmerAnalyser(variant_nodes, args.kmer_size, GenotypeCalls.from_vcf(args.vcf), kmer_index, reverse_index, GenotypeCalls.from_vcf(args.predicted_vcf),
-                                GenotypeCalls.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NumpyNodeCounts.from_file(args.node_counts),
+                                GenotypeCalls.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NodeCounts.from_file(args.node_counts),
                                 node_count_model, GenotypeFrequencies.from_file(args.genotype_frequencies), most_similar_variants)
         analyser.analyse_unique_kmers_on_variants()
 
@@ -339,7 +348,7 @@ def run_argument_parser(args):
         variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
 
         variants = GenotypeCalls.from_vcf(args.vcf)
-        node_counts = NumpyNodeCounts.from_file(args.counts)
+        node_counts = NodeCounts.from_file(args.counts)
         genotyper = StatisticalNodeCountGenotyper(model, variants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup)
         genotyper.genotype()
         variants.to_vcf_file(args.out_file_name)

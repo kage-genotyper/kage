@@ -22,22 +22,6 @@ def read_kmers(read, power_array):
     return np.convolve(numeric, power_array, mode='valid')  # % 452930477
 
 
-class NumpyNodeCounts:
-    def __init__(self, node_counts):
-        self.node_counts = node_counts
-
-    def to_file(self, file_name):
-        np.save(file_name, self.node_counts)
-
-    @classmethod
-    def from_file(cls, file_name):
-        try:
-            data = np.load(file_name + ".npy")
-        except FileNotFoundError:
-            data = np.load(file_name)
-
-        return cls(data)
-
 
 
 class ChainGenotyper:
@@ -259,7 +243,7 @@ class CythonChainGenotyper(ChainGenotyper):
 
         )
         self.chain_positions = chain_positions
-        self._node_counts = NumpyNodeCounts(node_counts)
+        self._node_counts = NodeCounts(node_counts)
 
         end_time = time.time()
         logging.info("Time spent on getting node counts: %.5f" % (end_time - start_time))
@@ -278,7 +262,7 @@ class UniqueKmerGenotyper:
         self._reads = reads
         self._k = k
         self._power_array = np.power(4, np.arange(0, self._k))
-        self._node_counts = NumpyNodeCounts(np.zeros(max_node))
+        self._node_counts = NodeCounts(np.zeros(max_node))
 
     def get_counts(self):
         n_reads_hit = 0

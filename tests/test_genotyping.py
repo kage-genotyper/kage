@@ -1,7 +1,7 @@
 from obgraph.variant_to_nodes import VariantToNodes
 from obgraph import GenotypeFrequencies, MostSimilarVariantLookup
 import numpy as np
-from alignment_free_graph_genotyper import NumpyNodeCounts
+from alignment_free_graph_genotyper import NodeCounts
 from alignment_free_graph_genotyper.node_count_model import NodeCountModel
 from alignment_free_graph_genotyper.variants import GenotypeCalls, VariantGenotype
 from alignment_free_graph_genotyper.statistical_node_count_genotyper import StatisticalNodeCountGenotyper
@@ -24,7 +24,7 @@ def test_simple():
     )
 
     # Case 1
-    node_counts = NumpyNodeCounts(np.array([0.0] + [0.0] * 4 + [3.0] * 4))
+    node_counts = NodeCounts(np.array([0.0] + [0.0] * 4 + [3.0] * 4))
     genotyper = StatisticalNodeCountGenotyper(node_count_model, input_variants, variant_to_nodes, node_counts,
                                               genotype_frequencies, most_simliar_variant_lookup)
 
@@ -33,7 +33,7 @@ def test_simple():
         assert variant.genotype == "1/1"
 
     # Case 2
-    node_counts = NumpyNodeCounts(np.array([0.0] + [3.0] * 4 + [3.0] * 4))
+    node_counts = NodeCounts(np.array([0.0] + [3.0] * 4 + [3.0] * 4))
     genotyper = StatisticalNodeCountGenotyper(node_count_model, input_variants, variant_to_nodes, node_counts,
                                               genotype_frequencies, most_simliar_variant_lookup)
 
@@ -42,7 +42,7 @@ def test_simple():
         assert variant.genotype == "0/1"
 
     # Case 3
-    node_counts = NumpyNodeCounts(np.array([0.0] + [3.0] * 4 + [0.0] * 4))
+    node_counts = NodeCounts(np.array([0.0] + [3.0] * 4 + [0.0] * 4))
     genotyper = StatisticalNodeCountGenotyper(node_count_model, input_variants, variant_to_nodes, node_counts,
                                               genotype_frequencies, most_simliar_variant_lookup)
 

@@ -4,7 +4,6 @@ import logging
 from obgraph import Graph, VariantNotFoundException
 from graph_kmer_index import ReverseKmerIndex, KmerIndex
 import time
-
 from alignment_free_graph_genotyper import cython_chain_genotyper
 
 class NodeCountModel:

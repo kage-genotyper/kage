@@ -10,6 +10,7 @@ setup(name='alignment_free_graph_genotyper',
       packages=["alignment_free_graph_genotyper"],
       zip_safe=False,
       install_requires=['numpy', 'tqdm', 'pyfaidx'],
+      include_dirs=["."],
       classifiers=[
             'Programming Language :: Python :: 3'
       ],

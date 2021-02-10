@@ -16,34 +16,6 @@ import pickle
 
 CHAR_VALUES = {"a": 0, "g": 1, "c": 2, "t": 3, "n": 0, "A": 0, "G": 1, "C": 2, "T": 3, "N": 0}
 
-
-
-class NodeCounts:
-    def __init__(self):
-        self._node_counts = defaultdict(float)
-
-    def to_file(self, file_name):
-        with open(file_name, "wb") as f:
-            pickle.dump(self._node_counts, f)
-
-    @classmethod
-    def from_file(cls, file_name):
-        f = open(file_name, "rb")
-        counts = pickle.load(f)
-        object = cls()
-        object._node_counts = counts
-        return object
-
-    def add_count(self, node):
-        self._node_counts[node] += 1
-
-    def __setitem__(self, key, value):
-        self._node_counts[key] = value
-
-    def __getitem__(self, item):
-        return self._node_counts[item]
-
-
 class BaseGenotyper:
     def __init__(self, graph, sequence_graph, linear_path, read_kmers, kmer_index, vcf_file_name, k, reference_k=7):
         self._graph = graph

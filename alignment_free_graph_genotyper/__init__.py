@@ -1,1 +1,1 @@
-from .chain_genotyper import NumpyNodeCounts, NodeCounts
+from .node_counts import NodeCounts
