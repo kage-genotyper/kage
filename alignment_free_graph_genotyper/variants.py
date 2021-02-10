@@ -57,6 +57,9 @@ class VcfVariant:
         self.type = type
         self.vcf_line_number = vcf_line_number
 
+    def copy(self):
+        return VcfVariant(self.chromosome, self.position, self.ref_sequence, self.variant_sequence, self.genotype, self.type, self.vcf_line, self.vcf_line_number)
+
     def set_genotype(self, genotype):
         assert genotype in ["0|0", "0/0", "0|1", "0/1", "1/1", "1|1"], "Invalid genotype %s" % genotype
         self.genotype = genotype
@@ -303,3 +306,15 @@ class VcfVariants:
 
     def __repr__(self):
         return self.__str__()
+
+    def copy(self):
+        return VcfVariants([v.copy() for v in self])
+
+    def compute_similarity_to_other_variants(self, other_variants):
+        n_identical = 0
+        for variant, other_variant in zip(self, other_variants):
+            assert variant.position == other_variant.position
+            if variant.genotype == other_variant.genotype:
+                n_identical += 1
+
+        return n_identical / len(self)

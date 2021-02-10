@@ -280,9 +280,19 @@ def run_argument_parser(args):
     subparser.add_argument("-C", "--genotyper", required=False, default="Genotyper", help="Genotyper to use")
     subparser.set_defaults(func=genotype)
 
+
+    def run_tests(args):
+        from .simulation import run_genotyper_on_simualated_data
+        np.random.seed(args.random_seed)
+        genotyper = globals()[args.genotyper]
+        run_genotyper_on_simualated_data(genotyper, args.n_variants, args.average_coverage, args.coverage_std)
+
     subparser = subparsers.add_parser("test")
     subparser.add_argument("-g", "--genotyper", required=True, help="Classname of genotyper")
-    subparser.add_argument("-n", "--n_variants", required=True, help="Number of variants to test on")
+    subparser.add_argument("-n", "--n_variants", required=False, type=int, default=100, help="Number of variants to test on")
+    subparser.add_argument("-r", "--random_seed", required=False, type=int, default=1, help="Random seed")
+    subparser.add_argument("-c", "--average_coverage", required=False, type=int, default=8, help="Average coverage")
+    subparser.add_argument("-s", "--coverage_std", required=False, type=int, default=2, help="Coverage std")
     subparser.set_defaults(func=run_tests)
 
 
