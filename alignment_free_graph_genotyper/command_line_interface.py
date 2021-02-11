@@ -184,12 +184,15 @@ def model_kmers_from_haplotype_nodes(args):
     n_individuals_not_following_node = np.zeros(len(n_individuals_following_node)) + n_individuals_tot - n_individuals_following_node
 
 
-    nonzero = np.where(expected_node_counts_following_node != 0)[0]
-    expected_node_counts_following_node[nonzero] = expected_node_counts_following_node[nonzero] / \
-                                                   n_individuals_following_node[nonzero]
-    nonzero = np.where(expected_node_counts_not_following_node != 0)[0]
-    expected_node_counts_not_following_node[nonzero] = expected_node_counts_not_following_node[nonzero] / \
-                                                       n_individuals_not_following_node[nonzero]
+    if not args.skip_normalization:
+        nonzero = np.where(expected_node_counts_following_node != 0)[0]
+        expected_node_counts_following_node[nonzero] = expected_node_counts_following_node[nonzero] / \
+                                                       n_individuals_following_node[nonzero]
+        nonzero = np.where(expected_node_counts_not_following_node != 0)[0]
+        expected_node_counts_not_following_node[nonzero] = expected_node_counts_not_following_node[nonzero] / \
+                                                           n_individuals_not_following_node[nonzero]
+    else:
+        logging.info("Did not divide by number of individuals on each node")
 
     assert np.min(expected_node_counts_not_following_node) >= 0
     np.savez(args.out_file_name, node_counts_following_node=expected_node_counts_following_node,
@@ -266,6 +269,7 @@ def run_argument_parser(args):
     subparser.add_argument("-I", "--max-index-lookup-frequency", required=False, type=int, default=5)
     subparser.add_argument("-T", "--run-n-times", required=False, help="Run the whole simulation N times. Useful when wanting to use more threads than number of haplotypes since multiple haplotypes then can be procesed in parallel.", default=1, type=int)
     subparser.add_argument("-R", "--reference_index_scoring", required=False)
+    subparser.add_argument("-S", "--skip-normalization", required=False, default=False, type=bool, help="Do not divide by number of individuals")
     subparser.set_defaults(func=model_kmers_from_haplotype_nodes)
 
 
@@ -289,7 +293,7 @@ def run_argument_parser(args):
             run_genotyper_on_simualated_data(genotyper, args.n_variants, args.average_coverage, args.coverage_std)
         else:
             node_counts = NodeCounts.from_file("tests/testdata_genotyping/node_counts")
-            model = NodeCountModel.from_file("tests/testdata_genotyping/model.npz")
+            model = NodeCountModel.from_file("tests/testdata_genotyping/model_no_normalization.npz")
             variant_to_nodes = VariantToNodes.from_file("tests/testdata_genotyping/variant_to_nodes")
             genotype_frequencies = GenotypeFrequencies.from_file("tests/testdata_genotyping/genotype_frequencies")
             most_similar_variant_lookup = MostSimilarVariantLookup.from_file("tests/testdata_genotyping/most_similar_variant_lookup.npz")
