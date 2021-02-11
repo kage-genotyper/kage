@@ -17,7 +17,8 @@ def run_genotyper_on_simualated_data(genotyper, n_variants, average_coverage, co
 
     truth_variants.compute_similarity_to_other_variants(variants)
 
-    print(truth_variants.compute_similarity_to_other_variants(variants))
+    print("")
+    print("Gentyping accuracy: %.4f " % truth_variants.compute_similarity_to_other_variants(variants))
 
 
 class GenotypingDataSimulator:
