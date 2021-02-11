@@ -6,6 +6,41 @@ from graph_kmer_index import kmer_hash_to_sequence, sequence_to_kmer_hash
 
 from obgraph import VariantNotFoundException
 
+class SimpleRecallPrecisionAnalyser:
+    def __init__(self, predicted_variants, truth_variants, truth_regions):
+        self.predicted_variants = predicted_variants
+        self.truth_variants = truth_variants
+        self.truth_regions = truth_regions
+
+        self._n_truth = defaultdict(int)
+        self._true_positive = defaultdict(int)
+        self._false_negative = defaultdict(int)
+        self._false_positive = defaultdict(int)
+
+    def analyse(self):
+        for truth in self.truth_variants:
+            self._n_truth[truth.type] += 1
+            if self.predicted_variants.has_variant(truth):
+                if self.predicted_variants.get(truth).get_genotype() == truth.get_genotype():
+                    self._true_positive[truth.type] += 1
+
+            if not self.predicted_variants.has_variant(truth) or (self.predicted_variants.has_variant(truth) and self.predicted_variants.get(truth).get_genotype() == "0/0"):
+                self._false_negative[truth.type] += 1
+
+        for variant in self.predicted_variants:
+
+            if self.truth_regions.is_inside_regions(variant.position):
+                if variant.get_genotype() != "0/0" and not self.truth_variants.has_variant(variant):
+                    self._false_positive[variant.type] += 1
+
+
+        print("--- REPORT ---")
+        for type in ["SNP", "DELETION", "INSERTION"]:
+            precision = self._true_positive[type] / (self._true_positive[type] + self._false_positive[type])
+            recall = self._true_positive[type] / (self._true_positive[type] + self._false_negative[type])
+            print("%s. Recall: %.4f, Precision: %.4f" % (type, recall, precision))
+
+
 class KmerAnalyser:
     def __init__(self, variant_nodes, k, variants, kmer_index, reverse_kmer_index, predicted_genotypes, truth_genotypes, truth_regions, node_counts, node_count_model, genotype_frequencies, most_similar_variants):
         self.variant_nodes= variant_nodes

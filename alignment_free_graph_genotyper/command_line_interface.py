@@ -285,7 +285,23 @@ def run_argument_parser(args):
         from .simulation import run_genotyper_on_simualated_data
         np.random.seed(args.random_seed)
         genotyper = globals()[args.genotyper]
-        run_genotyper_on_simualated_data(genotyper, args.n_variants, args.average_coverage, args.coverage_std)
+        if args.type == "simulated":
+            run_genotyper_on_simualated_data(genotyper, args.n_variants, args.average_coverage, args.coverage_std)
+        else:
+            node_counts = NodeCounts.from_file("tests/testdata_genotyping/node_counts")
+            model = NodeCountModel.from_file("tests/testdata_genotyping/model.npz")
+            variant_to_nodes = VariantToNodes.from_file("tests/testdata_genotyping/variant_to_nodes")
+            genotype_frequencies = GenotypeFrequencies.from_file("tests/testdata_genotyping/genotype_frequencies")
+            most_similar_variant_lookup = MostSimilarVariantLookup.from_file("tests/testdata_genotyping/most_similar_variant_lookup.npz")
+            variants = VcfVariants.from_vcf("tests/testdata_genotyping/variants_no_genotypes.vcf")
+            truth_variants = VcfVariants.from_vcf("tests/testdata_genotyping/truth.vcf")
+            truth_regions = TruthRegions("tests/testdata_genotyping/truth_regions.bed")
+            g = genotyper(model, variants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup)
+            g.genotype()
+
+            from .analysis import SimpleRecallPrecisionAnalyser
+            analyser = SimpleRecallPrecisionAnalyser(variants, truth_variants, truth_regions)
+            analyser.analyse()
 
     subparser = subparsers.add_parser("test")
     subparser.add_argument("-g", "--genotyper", required=True, help="Classname of genotyper")
@@ -293,7 +309,9 @@ def run_argument_parser(args):
     subparser.add_argument("-r", "--random_seed", required=False, type=int, default=1, help="Random seed")
     subparser.add_argument("-c", "--average_coverage", required=False, type=int, default=8, help="Average coverage")
     subparser.add_argument("-s", "--coverage_std", required=False, type=int, default=2, help="Coverage std")
+    subparser.add_argument("-T", "--type", required=False, default="simulated")
     subparser.set_defaults(func=run_tests)
+
 
 
     def remove_shared_memory_command_line(args):

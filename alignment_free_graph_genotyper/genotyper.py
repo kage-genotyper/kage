@@ -128,7 +128,7 @@ class Genotyper:
         variant_id = -1
         for i, variant in enumerate(self._variants):
             if i % 1000 == 0:
-                logging.info("%d lines processed" % i)
+                logging.info("%d variants genotyped" % i)
 
             variant_id += 1
             self._genotypes_called_at_variant.append(0)

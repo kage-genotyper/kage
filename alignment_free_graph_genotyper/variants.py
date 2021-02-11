@@ -57,6 +57,10 @@ class VcfVariant:
         self.type = type
         self.vcf_line_number = vcf_line_number
 
+
+    def get_genotype(self):
+        return self.genotype.replace("|", "/").replace("1/0", "0/1")
+
     def copy(self):
         return VcfVariant(self.chromosome, self.position, self.ref_sequence, self.variant_sequence, self.genotype, self.type, self.vcf_line, self.vcf_line_number)
 
