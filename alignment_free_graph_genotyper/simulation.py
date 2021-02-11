@@ -9,6 +9,8 @@ from .variants import VcfVariant, VcfVariants
 def run_genotyper_on_simualated_data(genotyper, n_variants, average_coverage, coverage_std):
     simulator = GenotypingDataSimulator(n_variants, average_coverage, coverage_std)
     variants, node_counts, model, genotype_frequencies, most_similar_variant_lookup, variant_to_nodes = simulator.run()
+    print(model.node_counts_following_node)
+    print(model.node_counts_not_following_node)
 
     truth_variants = variants.copy()
 
@@ -65,10 +67,11 @@ class GenotypingDataSimulator:
 
                 if haplotype == "1":
                     var_count += real_reads_on_haplotype
-                    self._expected_counts_following_node[self._variant_nodes[i]] += self._average_coverage
                 else:
                     ref_count += real_reads_on_haplotype
-                    self._expected_counts_following_node[self._reference_nodes[i]] += self._average_coverage
+
+                self._expected_counts_following_node[self._reference_nodes[i]] += self._average_coverage
+                self._expected_counts_following_node[self._variant_nodes[i]] += self._average_coverage
 
                 if np.random.random() < 0.1:
                     n_duplicate_areas = np.random.randint(0, 3)
