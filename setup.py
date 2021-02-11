@@ -20,8 +20,8 @@ setup(name='alignment_free_graph_genotyper',
       packages=["alignment_free_graph_genotyper"],
       zip_safe=False,
       install_requires=['numpy', 'tqdm', 'pyfaidx', 'pathos', 'cython', 'scipy',
-                        'obgraph @ git+ssh://git@github.com/ivargr/obgraph@master#egg=obgraph',
-                        'graph_kmer_index @ git+ssh://git@github.com/ivargr/graph_kmer_index@master#egg=graph_kmer_index'
+                        'obgraph @ git+https://git@github.com/ivargr/obgraph@master#egg=obgraph',
+                        'graph_kmer_index @ git+https://git@github.com/ivargr/graph_kmer_index@master#egg=graph_kmer_index'
                         ],
       include_dirs=["."],
       classifiers=[
