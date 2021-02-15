@@ -17,7 +17,7 @@ import platform
 from pathos.multiprocessing import Pool
 import numpy as np
 from .node_counts import NodeCounts
-from .node_count_model import NodeCountModel
+from .node_count_model import NodeCountModel, GenotypeNodeCountModel
 from obgraph.genotype_matrix import MostSimilarVariantLookup, GenotypeFrequencies
 from obgraph.variant_to_nodes import VariantToNodes
 from .genotyper import Genotyper
@@ -206,7 +206,7 @@ def genotype(args):
 
     genotype_frequencies = GenotypeFrequencies.from_file(args.genotype_frequencies)
     most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
-    model = NodeCountModel.from_file(args.model) if args.model is not None else None
+    model = GenotypeNodeCountModel.from_file(args.model) if args.model is not None else None
     variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
 
     variants = VcfVariants.from_vcf(args.vcf)
@@ -293,7 +293,7 @@ def run_argument_parser(args):
             run_genotyper_on_simualated_data(genotyper, args.n_variants, args.average_coverage, args.coverage_std)
         else:
             node_counts = NodeCounts.from_file("tests/testdata_genotyping/node_counts")
-            model = NodeCountModel.from_file("tests/testdata_genotyping/model_no_normalization.npz")
+            model = GenotypeNodeCountModel.from_file("tests/testdata_genotyping/genotype_model.npz")
             variant_to_nodes = VariantToNodes.from_file("tests/testdata_genotyping/variant_to_nodes")
             genotype_frequencies = GenotypeFrequencies.from_file("tests/testdata_genotyping/genotype_frequencies")
             most_similar_variant_lookup = MostSimilarVariantLookup.from_file("tests/testdata_genotyping/most_similar_variant_lookup.npz")
@@ -316,7 +316,17 @@ def run_argument_parser(args):
     subparser.add_argument("-T", "--type", required=False, default="simulated")
     subparser.set_defaults(func=run_tests)
 
+    def make_genotype_model(args):
+        node_counts = NodeCountModel.from_file(args.node_count_model)
+        variant_nodes = VariantToNodes.from_file(args.variant_to_nodes)
+        genotype_model = GenotypeNodeCountModel.from_node_count_model(node_counts, variant_nodes)
+        genotype_model.to_file(args.out_file_name)
 
+    subparser = subparsers.add_parser("make_genotype_model")
+    subparser.add_argument("-n", "--node-count-model", required=True)
+    subparser.add_argument("-v", "--variant-to-nodes", required=True)
+    subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.set_defaults(func=make_genotype_model)
 
     def remove_shared_memory_command_line(args):
         remove_shared_memory()

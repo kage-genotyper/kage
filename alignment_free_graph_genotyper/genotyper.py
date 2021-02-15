@@ -55,18 +55,16 @@ class Genotyper:
         variant_count = self.get_node_count(variant_node)
 
         if genotype == "1/1":
-            expected_count_alt = self.expected_count_following_node(variant_node) * 2  # double because both haplotype follow node
-            expected_count_ref = self.expected_count_not_following_node(ref_node) * 2
+            counts = self._node_count_model.counts_homo_alt
         elif genotype == "0/0":
-            expected_count_alt = self.expected_count_not_following_node(variant_node) * 2
-            expected_count_ref = self.expected_count_following_node(ref_node) * 2
+            counts = self._node_count_model.counts_homo_ref
         elif genotype == "0/1":
-            expected_count_alt = self.expected_count_following_node(variant_node) + \
-                                 self.expected_count_not_following_node(variant_node)
-            expected_count_ref = self.expected_count_following_node(ref_node) + \
-                                 self.expected_count_not_following_node(ref_node)
+            counts = self._node_count_model.counts_hetero
         else:
             raise Exception("Unsupported genotype %s" % genotype)
+
+        expected_count_alt = counts[variant_node] + 0.5
+        expected_count_ref = counts[ref_node] + 0.5
 
         if type == "binomial":
             p = expected_count_ref / (expected_count_alt + expected_count_ref)

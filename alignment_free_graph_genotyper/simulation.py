@@ -1,7 +1,7 @@
 from .node_counts import NodeCounts
 from obgraph.variant_to_nodes import VariantToNodes
 from obgraph import GenotypeFrequencies, MostSimilarVariantLookup
-from .node_count_model import NodeCountModel
+from .node_count_model import NodeCountModel, GenotypeNodeCountModel
 import numpy as np
 from .variants import VcfVariant, VcfVariants
 from collections import defaultdict
@@ -10,10 +10,6 @@ from collections import defaultdict
 def run_genotyper_on_simualated_data(genotyper, n_variants, average_coverage, coverage_std):
     simulator = GenotypingDataSimulator(n_variants, average_coverage, coverage_std)
     variants, node_counts, model, genotype_frequencies, most_similar_variant_lookup, variant_to_nodes = simulator.run()
-    print(model.node_counts_following_node)
-    print(model.node_counts_not_following_node)
-    print(node_counts.node_counts)
-    print(variants)
     truth_variants = variants.copy()
 
     g = genotyper(model, variants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup)
@@ -49,7 +45,8 @@ class GenotypingDataSimulator:
 
         self._simulate_variants()
 
-        return self._variants, NodeCounts(self._node_counts), NodeCountModel(self._expected_counts_following_node, self._expected_counts_not_following_node), \
+        return self._variants, NodeCounts(self._node_counts), \
+               GenotypeNodeCountModel.from_node_count_model(NodeCountModel(self._expected_counts_following_node, self._expected_counts_not_following_node), variant_to_nodes), \
                 genotype_frequencies, most_simliar_variant_lookup, variant_to_nodes
 
 

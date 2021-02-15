@@ -6,6 +6,47 @@ from graph_kmer_index import ReverseKmerIndex, KmerIndex
 import time
 from alignment_free_graph_genotyper import cython_chain_genotyper
 
+class GenotypeNodeCountModel:
+    def __init__(self, counts_homo_ref, counts_homo_alt, counts_hetero):
+        self.counts_homo_ref = counts_homo_ref
+        self.counts_homo_alt = counts_homo_alt
+        self.counts_hetero = counts_hetero
+
+    @classmethod
+    def from_node_count_model(cls, model, variant_nodes):
+        ref_nodes = variant_nodes.ref_nodes
+        var_nodes = variant_nodes.var_nodes
+
+        n = len(model.node_counts_following_node)
+        counts_homo_ref = np.zeros(n)
+        counts_homo_alt = np.zeros(n)
+        counts_hetero = np.zeros(n)
+
+        counts_homo_ref[ref_nodes] = model.node_counts_following_node[ref_nodes] * 2
+        counts_homo_ref[var_nodes] = model.node_counts_not_following_node[var_nodes] * 2
+
+        counts_homo_alt[var_nodes] = model.node_counts_following_node[var_nodes] * 2
+        counts_homo_alt[ref_nodes] = model.node_counts_not_following_node[ref_nodes] * 2
+
+        counts_hetero[var_nodes] = model.node_counts_following_node[var_nodes] + model.node_counts_not_following_node[var_nodes]
+        counts_hetero[ref_nodes] = model.node_counts_following_node[ref_nodes] + model.node_counts_not_following_node[ref_nodes]
+
+        return cls(counts_homo_ref, counts_homo_alt, counts_hetero)
+
+    @classmethod
+    def from_file(cls, file_name):
+        try:
+            data = np.load(file_name + ".npy")
+        except FileNotFoundError:
+            data = np.load(file_name)
+
+        return cls(data["counts_homo_ref"], data["counts_homo_alt"], data["counts_hetero"])
+
+    def to_file(self, file_name):
+        np.savez(file_name, counts_homo_ref=self.counts_homo_ref, counts_homo_alt=self.counts_homo_alt,
+                 counts_hetero=self.counts_hetero)
+
+
 class NodeCountModel:
     def __init__(self, node_counts_following_node, node_counts_not_following_node, average_coverage=1):
         self.node_counts_following_node = node_counts_following_node
