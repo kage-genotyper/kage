@@ -99,12 +99,12 @@ class GenotypingDataSimulator:
         # Add observed counts from duplicates
         for variant_id, n_duplications in n_duplications_per_variant_ref.items():
             for i in range(n_duplications):
-                self._node_counts[self._reference_nodes[variant_id]] += np.random.normal(self._average_coverage, self._coverage_std)
+                self._node_counts[self._reference_nodes[variant_id]] += int(np.random.normal(self._average_coverage, self._coverage_std))
 
         for variant_id, n_duplications in n_duplications_per_variant_variant.items():
             for i in range(n_duplications):
-                self._node_counts[self._variant_nodes[variant_id]] += np.random.normal(self._average_coverage,
-                                                                                         self._coverage_std)
+                self._node_counts[self._variant_nodes[variant_id]] += int(np.random.normal(self._average_coverage,
+                                                                                         self._coverage_std))
 
         # non-duplicate counts, from actual variant
         for i in range(self._n_variants):
