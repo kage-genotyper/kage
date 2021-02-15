@@ -22,6 +22,7 @@ from obgraph.genotype_matrix import MostSimilarVariantLookup, GenotypeFrequencie
 from obgraph.variant_to_nodes import VariantToNodes
 from .genotyper import Genotyper
 from .numpy_genotyper import NumpyGenotyper
+from .bayes_genotyper import NewBayesGenotyper
 
 np.random.seed(1)
 
