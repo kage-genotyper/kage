@@ -398,6 +398,28 @@ def run_argument_parser(args):
     subparser.add_argument("-g", "--variant-to-nodes", required=True)
     subparser.set_defaults(func=analyse_kmer_index)
 
+    def model_using_kmer_index(args):
+        from .node_count_model import NodeCountModelCreatorFromNoChaining, NodeCountModel
+        index = KmerIndex.from_file(args.kmer_index)
+        graph = ObGraph.from_file(args.graph_file_name)
+        reverse_index = ReverseKmerIndex.from_file(args.reverse_node_kmer_index)
+        variants = GenotypeCalls.from_vcf(args.vcf)
+
+        model_creator = NodeCountModelCreatorFromNoChaining(index, reverse_index, graph, variants, args.max_node_id)
+        counts_following, counts_not_following = model_creator.get_node_counts()
+        model = NodeCountModel(counts_following, counts_not_following)
+        model.to_file(args.out_file_name)
+
+    subparser = subparsers.add_parser("model_using_kmer_index")
+    subparser.add_argument("-g", "--graph_file_name", required=True)
+    subparser.add_argument("-k", "--kmer-size", required=True, type=int)
+    subparser.add_argument("-i", "--kmer-index", required=True)
+    subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.add_argument("-m", "--max-node-id", type=int, required=True)
+    subparser.add_argument("-r", "--reverse_node_kmer_index", required=True)
+    subparser.add_argument("-v", "--vcf", required=True)
+    subparser.set_defaults(func=model_using_kmer_index)
+
 
     if len(args) == 0:
         parser.print_help()
