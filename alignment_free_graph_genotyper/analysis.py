@@ -81,12 +81,16 @@ class KmerAnalyser:
         logging.warning("Node counts on %d/%d:             %d/%d" % (
         reference_node, variant_node, self.node_counts.node_counts[reference_node],
         self.node_counts.node_counts[variant_node]))
-        logging.warning("Model counts following nodes:     %.3f/%.3f" % (
-        self.node_count_model.node_counts_following_node[reference_node],
-        self.node_count_model.node_counts_following_node[variant_node]))
-        logging.warning("Model counts not following nodes: %.3f/%.3f" % (
-        self.node_count_model.node_counts_not_following_node[reference_node],
-        self.node_count_model.node_counts_not_following_node[variant_node]))
+
+        logging.info("Model counts ref node (homo ref, homo alt, hetero): %d/%d/%d" % (self.node_count_model.counts_homo_ref[reference_node], self.node_count_model.counts_homo_alt[reference_node], self.node_count_model.counts_hetero[reference_node]))
+        logging.info("Model counts alt node (homo ref, homo alt, hetero): %d/%d/%d" % (self.node_count_model.counts_homo_ref[variant_node], self.node_count_model.counts_homo_alt[variant_node], self.node_count_model.counts_hetero[variant_node]))
+
+        #logging.warning("Model counts following nodes:     %.3f/%.3f" % (
+        #self.node_count_model.node_counts_following_node[reference_node],
+        #self.node_count_model.node_counts_following_node[variant_node]))
+        #logging.warning("Model counts not following nodes: %.3f/%.3f" % (
+        #self.node_count_model.node_counts_not_following_node[reference_node],
+        #self.node_count_model.node_counts_not_following_node[variant_node]))
         most_similar = self.most_similar_variants.get_most_similar_variant(variant_id)
         logging.warning("Most similar to variant %d with similarity %.4f and call %s" % (most_similar, self.most_similar_variants.prob_of_having_the_same_genotype_as_most_similar(variant_id), self.predicted_genotypes[most_similar]))
         logging.warning("Genotype frequencies: %.3f/%.3f/%.3f" % self.genotype_frequencies.get_frequencies_for_variant(variant_id))
@@ -119,16 +123,16 @@ class KmerAnalyser:
                     self.n_correct_genotypes[variant.type] += 1
                 #else:
                 #logging.warning("Wrong genotype: %s / %s" % (self.truth_genotypes.get(variant), self.predicted_genotypes.get(variant)))
-        if self.node_count_model.node_counts_following_node[reference_node] == 0:
-            self.n_ref_nodes_zero_in_model += 1
+        #if self.node_count_model.node_counts_following_node[reference_node] == 0:
+        #    self.n_ref_nodes_zero_in_model += 1
 
         if self.predicted_genotypes.has_variant(variant) and self.truth_genotypes.has_variant(variant):
-            if self.truth_regions.is_inside_regions(variant.position) and self.predicted_genotypes.get(variant).genotype == "0|0" and self.truth_genotypes.get(variant).genotype != "0|0":
+            if self.truth_regions.is_inside_regions(variant.position) and self.predicted_genotypes.get(variant).genotype == "0|0" and self.truth_genotypes.get(variant).genotype != "0|0" and self.truth_genotypes.get(variant).genotype != self.predicted_genotypes.get(variant).genotype:
                 logging.warning("----------------------------")
                 logging.warning("False negative genotype!")
                 self.print_info_about_variant(reference_node, variant_node, variant, variant_id)
 
-        if self.predicted_genotypes.has_variant(variant) and not self.truth_genotypes.has_variant(variant):
+        if False and self.predicted_genotypes.has_variant(variant) and not self.truth_genotypes.has_variant(variant):
 
             if self.truth_regions.is_inside_regions(variant.position) and self.predicted_genotypes.get(variant).genotype != "0|0":
                 logging.warning("----------------------------")

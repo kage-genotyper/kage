@@ -2,6 +2,7 @@ import logging
 import gzip
 import io
 import time
+import numpy as np
 
 def get_variant_type(vcf_line):
 
@@ -44,7 +45,7 @@ class TruthRegions:
 
 
 class VcfVariant:
-    def __init__(self, chromosome, position, ref_sequence, variant_sequence, genotype=None, type="", vcf_line=None, vcf_line_number=None):
+    def __init__(self, chromosome, position, ref_sequence="", variant_sequence="", genotype=None, type="", vcf_line=None, vcf_line_number=None):
         self.chromosome = chromosome
         self.position = position
         self.ref_sequence = ref_sequence
@@ -69,6 +70,7 @@ class VcfVariant:
         self.genotype = genotype
 
     def id(self):
+        #return (self.chromosome, self.position)
         return (self.chromosome, self.position, self.ref_sequence, self.variant_sequence)
 
     def get_vcf_line(self):
@@ -76,6 +78,14 @@ class VcfVariant:
 
     def __str__(self):
         return "chr%d:%d %s/%s %s %s" % (self.chromosome, self.position, self.ref_sequence, self.variant_sequence, self.genotype, self.type)
+
+    def length(self):
+        if self.type == "SNP":
+            return 1
+        elif self.type == "DELETION":
+            return len(self.get_deleted_sequence())
+        elif self.type == "INSERTION":
+            return len(self.variant_sequence) - 1
 
     def __repr__(self):
         return self.__str__()
@@ -174,6 +184,7 @@ class VcfVariants:
         self._header_lines = header_lines
         self.variant_genotypes = variant_genotypes
         self._index = {}
+        self._position_index = {}
         if not skip_index:
             self.make_index()
 
@@ -196,6 +207,55 @@ class VcfVariants:
         for variant in self.variant_genotypes:
             self._index[variant.id()] = variant
         logging.info("Done making vcf index")
+
+    def apply_on_sequence(self, sequence, chromosome, sequence_start, sequence_end):
+        assert self._position_index is not None, "Must create position index first"
+
+        variants = self.get_variants_in_region(chromosome, sequence_start+1, sequence_end)
+
+        sequence = list(sequence)
+        n_changed = 0
+        for variant in variants:
+            if variant.get_genotype() == "0/1" or variant.get_genotype() == "1/1":
+                if variant.type == "SNP":
+                    position = variant.position - sequence_start - 1
+                    assert sequence[position].lower() == variant.ref_sequence.lower(), "Variant %s does not match sequence %s. Position %s. Sequence at position: %s" % (variant, sequence, position, sequence[position-1:position+2])
+                    sequence[position] = variant.variant_sequence
+                    n_changed += 1
+
+        #logging.info("Sequence changed %d times" % n_changed)
+        return ''.join(sequence)
+
+    def make_position_index(self):
+        logging.info("Finding unique chromosomes")
+        unique_chromosomes = np.unique([variant.chromosome for variant in self])
+
+        logging.info("Making index")
+        self._position_index = {chromosome: [] for chromosome in unique_chromosomes}
+        self._variants_by_chromosome = {chromosome: [] for chromosome in unique_chromosomes}
+
+        for variant in self:
+            self._position_index[variant.chromosome].append(variant.position)
+            self._variants_by_chromosome[variant.chromosome].append(variant)
+
+        logging.info("Converting to numpy")
+        for chrom in unique_chromosomes:
+            self._position_index[chrom] = np.array(self._position_index[chrom])
+        """
+        for chrom in unique_chromosomes:
+            logging.info("Making for chromosome %s" % chrom)
+            self._position_index[chrom] = np.array([variant.position for variant in self if variant.chromosome == chrom])
+            self._variants_by_chromosome[chrom] = [variant for variant in self if variant.chromosome == chrom]
+        """
+
+    def get_variants_in_region(self, chromosome, start, end):
+        chromosome = int(chromosome)
+        if chromosome not in self._variants_by_chromosome:
+            #logging.info("Invalid chromosome %s of type %s. Possible chromosomes are %s" % (chromosome, type(chromosome), self._variants_by_chromosome.keys()))
+            return []
+        start_index = np.searchsorted(self._position_index[chromosome], start)
+        end_index = np.searchsorted(self._position_index[chromosome], end)
+        return self._variants_by_chromosome[chromosome][start_index:end_index]
 
     def has_variant(self, variant_genotype):
         if variant_genotype.id() in self._index:
@@ -224,7 +284,7 @@ class VcfVariants:
     def __next__(self):
         return self.variant_genotypes.__next__()
 
-    def to_vcf_file(self, file_name, add_individual_to_header="DONOR"):
+    def to_vcf_file(self, file_name, add_individual_to_header="DONOR", ignore_homo_ref=False):
         logging.info("Writing to file %s" % file_name)
         with open(file_name, "w") as f:
             #f.write(self._header_lines)
@@ -234,8 +294,11 @@ class VcfVariants:
                 f.writelines([header_line + "\n"])
 
             for i, variant in enumerate(self):
-                if i % 10000 == 0:
+                if i % 1000000 == 0:
                     logging.info("%d variants written to file" % i)
+
+                if ignore_homo_ref and (variant.get_genotype() == "0/0" or variant.get_genotype() == ""):
+                    continue
 
                 f.writelines([variant.get_vcf_line()])
 
@@ -287,7 +350,7 @@ class VcfVariants:
 
             variant_number += 1
 
-            if i % 50000 == 0:
+            if i % 5000000 == 0:
                 logging.info("Read %d variants from file (time: %.3f). %d variants added" % (i, time.time()-prev_time, n_variants_added))
                 prev_time = time.time()
 
@@ -313,6 +376,18 @@ class VcfVariants:
 
     def copy(self):
         return VcfVariants([v.copy() for v in self])
+
+    def print_variants_not_in_other(self, other):
+        for variant in self:
+            if not other.has_variant(variant):
+                print("Only in set 1: %s" % variant)
+
+    def print_diff(self, other):
+        for variant in self:
+            if not other.has_variant(variant):
+                print("Only in set 1: %s" % variant)
+            elif not other.has_variant_genotype(variant):
+                print("Genotype mismatch between %s and %s" % (variant, other.get(variant)))
 
     def compute_similarity_to_other_variants(self, other_variants):
         n_identical = 0

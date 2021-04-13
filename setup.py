@@ -7,7 +7,7 @@ ext_modules=[
                 ["alignment_free_graph_genotyper/cython_chain_genotyper.pyx"],
                 libraries=["m"],
                 extra_compile_args = ["-O3", "-ffast-math", "-march=native", "-fopenmp" ],
-                extra_link_args=['-fopenmp']
+                extra_link_args=['-fopenmp'],
                 )]
 
 setup(name='alignment_free_graph_genotyper',

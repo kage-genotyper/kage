@@ -87,8 +87,8 @@ cdef np.ndarray[np.int64_t] get_kmers(np.ndarray[np.int64_t] numeric_read, np.nd
 
 
 
-@cython.boundscheck(False)
-@cython.wraparound(False)
+#@cython.boundscheck(False)
+#@cython.wraparound(False)
 def run(reads,
         index,
         int max_node_id,
@@ -186,6 +186,7 @@ def run(reads,
     cdef int prev_position
     cdef set read_offsets_given_score
     cdef set nodes_added
+    cdef long pos
 
     cdef int reads_are_numeric_flag = 0
     if reads_are_numeric:
@@ -200,7 +201,7 @@ def run(reads,
     for read_index in range(len(reads)):
         read = reads[read_index]
         got_index_hits = 0
-        if read_number % 100000 == 0:
+        if read_number % 5000 == 0:
             logging.info("%d reads processed in %.5f sec. N total chains so far: %d" % (read_number, time.time() - prev_time, n_total_chains))
             prev_time = time.time()
 
@@ -288,6 +289,7 @@ def run(reads,
                         continue
                     if index_frequencies[index_position + j] > max_index_lookup_frequency:
                         continue
+                    #print(kmers[i])
                     found_nodes[counter] = nodes[index_position + j]
                     found_ref_offsets[counter] = ref_offsets[index_position + j]
                     found_read_offsets[counter] = i
@@ -360,7 +362,7 @@ def run(reads,
             #n_total_chains += len(chains)
 
             #forward_and_reverse_chains.extend(chains)
-            #print(chains)
+            #print([(f[0], f[2]) for f in forward_and_reverse_chains])
 
         #if len(forward_and_reverse_chains) == 0:
         #continue
@@ -376,6 +378,7 @@ def run(reads,
                 best_score = forward_and_reverse_chains[c][2]
                 best_chain = forward_and_reverse_chains[c]
 
+        #print("Chose best chain %d with score %d" % (best_chain[0], best_chain[2]))
         if best_chain is None:
             best_score = 0
             continue
@@ -399,8 +402,12 @@ def run(reads,
         for c in range(best_chain_kmers.shape[0]):
             kmer_set_index[best_chain_kmers[c] % modulo] = 1
 
-        reference_kmers_index_start = reference_index_position_to_index[best_chain[0]-10]
-        reference_kmers_index_end = reference_index_position_to_index[best_chain[0] + 150 + 10]
+
+
+
+        pos = best_chain[0]
+        reference_kmers_index_start = reference_index_position_to_index[min(max(0, pos-10), reference_index_position_to_index.shape[0]-1)]
+        reference_kmers_index_end = reference_index_position_to_index[min(reference_index_position_to_index.shape[0]-1, pos + 150 + 10)]
         nodes_added = set()
 
         for c in range(reference_kmers_index_start, reference_kmers_index_end):
@@ -412,8 +419,8 @@ def run(reads,
                 nodes_added.add(current_node)
 
                 #if current_node == 10702 or current_node == 10703:
-                #if current_node == 10947 or current_node == 10950:
-                #    logging.info("\nMatch from read %d against node %d on kmer %d. Sequence is %s" % (read_number, current_node, reference_kmer, read))
+                if current_node == 2186273:
+                    logging.info("\nMatch from read %d against node %d on kmer %d. Sequence is %s" % (read_number, current_node, reference_kmer, read))
 
         # Reset set index
         for c in range(best_chain_kmers.shape[0]):

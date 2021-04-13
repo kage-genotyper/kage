@@ -103,7 +103,10 @@ def analyse_variants(args):
     variant_nodes = VariantToNodes.from_file(args.variant_nodes)
     kmer_index = KmerIndex.from_file(args.kmer_index)
     reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
-    node_count_model = NodeCountModel.from_file(args.node_count_model)
+    try:
+        node_count_model = GenotypeNodeCountModel.from_file(args.node_count_model)
+    except KeyError:
+        node_count_model = NodeCountModel.from_file(args.node_count_model)
 
     analyser = KmerAnalyser(variant_nodes, args.kmer_size, VcfVariants.from_vcf(args.vcf), kmer_index, reverse_index, VcfVariants.from_vcf(args.predicted_vcf),
                             VcfVariants.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NodeCounts.from_file(args.node_counts),
@@ -207,7 +210,11 @@ def genotype(args):
 
     genotype_frequencies = GenotypeFrequencies.from_file(args.genotype_frequencies)
     most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
-    model = GenotypeNodeCountModel.from_file(args.model) if args.model is not None else None
+    try:
+        model = GenotypeNodeCountModel.from_file(args.model) if args.model is not None else None
+    except KeyError:
+        model = NodeCountModel.from_file(args.model)
+
     variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
 
     variants = VcfVariants.from_vcf(args.vcf)
@@ -334,6 +341,63 @@ def run_argument_parser(args):
 
     subparser = subparsers.add_parser("remove_shared_memory")
     subparser.set_defaults(func=remove_shared_memory_command_line)
+
+    def filter_variants(args):
+        from .variants import VcfVariant
+        f = open(args.vcf)
+        n_snps_filtered = 0
+        n_indels_filtered = 0
+        for line in f:
+            if line.startswith("#"):
+                print(line.strip())
+                continue
+
+            variant = VcfVariant.from_vcf_line(line)
+            if args.skip_snps and variant.type == "SNP":
+                n_snps_filtered += 1
+                continue
+
+            if variant.type == "DELETION" or variant.type == "INSERTION":
+                if variant.length() < args.minimum_indel_length:
+                    n_indels_filtered += 1
+                    continue
+
+            print(line.strip())
+
+        logging.info("%d snps filtered" % n_snps_filtered)
+        logging.info("%d indels filtered" % n_indels_filtered)
+
+
+    subparser = subparsers.add_parser("filter_variants")
+    subparser.add_argument("-v", "--vcf", required=True, help="Vcf to filter")
+    subparser.add_argument("-l", "--minimum-indel-length", required=False, type=int, default=0)
+    subparser.add_argument("-s", "--skip-snps", required=False, type=bool, default=False)
+    subparser.set_defaults(func=filter_variants)
+
+    def analyse_kmer_index(args):
+
+        reverse_kmers = ReverseKmerIndex.from_file(args.reverse_kmer_index)
+        index = KmerIndex.from_file(args.kmer_index)
+        variants = VcfVariants.from_vcf(args.vcf, skip_index=True)
+        variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
+
+        from .variant_kmer_analyser import VariantKmerAnalyser
+        analyser = VariantKmerAnalyser(reverse_kmers, index, variants, variant_to_nodes)
+        analyser.analyse()
+
+
+        logging.info("Done")
+
+
+
+    # Analyse variant kmers
+    subparser = subparsers.add_parser("analyse_kmer_index")
+    subparser.add_argument("-r", "--reverse-kmer-index", required=True)
+    subparser.add_argument("-i", "--kmer-index", required=True)
+    subparser.add_argument("-v", "--vcf", required=True)
+    subparser.add_argument("-g", "--variant-to-nodes", required=True)
+    subparser.set_defaults(func=analyse_kmer_index)
+
 
     if len(args) == 0:
         parser.print_help()
