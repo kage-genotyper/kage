@@ -1,23 +1,67 @@
 import logging
 from scipy.special import comb
+
+from .node_count_model import GenotypeNodeCountModel
 from .variants import VcfVariant, VcfVariants
 from collections import defaultdict
 import numpy as np
 from scipy.stats import poisson, binom
 from obgraph import VariantNotFoundException
-
+from .kmers import read_kmers
+from Bio.Seq import Seq
+from .node_counts import NodeCounts
 
 def parse_vcf_genotype(genotype):
     return genotype.replace("|", "/").replace("1/0", "1/0")
 
 
+class LocalGenotyper:
+    def __init__(self, reads, reverse_kmer_index, variants, variant_to_nodes, max_node_id, genotype_frequencies, node_count_array):
+        self.reads = reads
+        self.reverse_index = reverse_kmer_index
+        self._genotype_frequencies = genotype_frequencies
+        self._k = 31
+        self._power_array = np.power(4, np.arange(0, self._k))
+        self._variants = variants
+        self._variant_to_nodes = variant_to_nodes
+        self._max_node_id = max_node_id
+        self._node_counts = node_count_array
+
+    def genotype(self):
+        self._node_counts = np.zeros(self._max_node_id)
+        for read in self.reads:
+            assert read is not None
+            self._get_node_counts(read)
+
+        #logging.info("Sum of node counts: %d" % np.sum(self._node_counts))
+        genotyper = Genotyper(None, self._variants, self._variant_to_nodes, NodeCounts(self._node_counts), self._genotype_frequencies, None)
+        genotyper.genotype()
+
+    def _get_node_counts(self, read):
+        sequence, position = read
+
+        for variant in self._variants:
+            ref_node = self._variant_to_nodes.ref_nodes[variant.vcf_line_number]
+            var_node = self._variant_to_nodes.var_nodes[variant.vcf_line_number]
+
+            ref_node_kmers = self.reverse_index.get_node_kmers(ref_node)
+            var_node_kmers = self.reverse_index.get_node_kmers(var_node)
+
+            kmers = read_kmers(sequence, self._power_array)
+            if len([kmer for kmer in kmers if kmer in ref_node_kmers]) > 0:
+                self._node_counts[ref_node] += 1
+            elif len([kmer for kmer in kmers if kmer in var_node_kmers]) > 0:
+                self._node_counts[var_node] += 1
+
+
+
 class Genotyper:
-    def __init__(self, node_count_model, variants: VcfVariants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup, variant_window_size=500, ):
+    def __init__(self, node_count_model, variants: VcfVariants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup, variant_window_size=500):
         self._variants = variants
         self._node_count_model = node_count_model
 
-        if self._node_count_model is None:
-            logging.warning("No node count model specified: Will use pseudocounts")
+        #if self._node_count_model is None:
+        #    logging.warning("No node count model specified: Will use pseudocounts")
 
         self._genotype_frequencies = genotype_frequencies
         self._variant_to_nodes = variant_to_nodes
@@ -54,17 +98,44 @@ class Genotyper:
         ref_count = self.get_node_count(ref_node)
         variant_count = self.get_node_count(variant_node)
 
-        if genotype == "1/1":
-            counts = self._node_count_model.counts_homo_alt
-        elif genotype == "0/0":
-            counts = self._node_count_model.counts_homo_ref
-        elif genotype == "0/1":
-            counts = self._node_count_model.counts_hetero
-        else:
-            raise Exception("Unsupported genotype %s" % genotype)
+        if isinstance(self._node_count_model, GenotypeNodeCountModel):
+            if genotype == "1/1":
+                counts = self._node_count_model.counts_homo_alt
+            elif genotype == "0/0":
+                counts = self._node_count_model.counts_homo_ref
+            elif genotype == "0/1":
+                counts = self._node_count_model.counts_hetero
+            else:
+                raise Exception("Unsupported genotype %s" % genotype)
 
-        expected_count_alt = counts[variant_node] + 0.5
-        expected_count_ref = counts[ref_node] + 0.5
+            expected_count_alt = counts[variant_node]
+            expected_count_ref = counts[ref_node]
+
+            # Add dummy counts
+            if genotype == "1/1":
+                expected_count_alt = max(2, expected_count_alt)
+                expected_count_ref += max(0.01, expected_count_ref)
+            elif genotype == "0/0":
+                expected_count_ref += max(2, expected_count_ref)
+                expected_count_alt += max(0.01, expected_count_alt)
+            elif genotype == "0/1":
+                expected_count_ref += max(1, expected_count_ref)
+                expected_count_alt += max(1, expected_count_alt)
+        else:
+            # Haplotype node count model
+            if genotype == "1/1":
+                expected_count_ref = self.expected_count_not_following_node(ref_node) * 2
+                expected_count_alt = self.expected_count_following_node(variant_node) * 2
+            elif genotype == "0/0":
+                expected_count_ref = self.expected_count_following_node(ref_node) * 2
+                expected_count_alt = self.expected_count_not_following_node(variant_node) * 2
+            elif genotype == "0/1":
+                expected_count_ref = self.expected_count_following_node(ref_node) + self.expected_count_not_following_node(ref_node)
+                expected_count_alt = self.expected_count_not_following_node(variant_node) + self.expected_count_following_node(variant_node)
+            else:
+                raise Exception("Unsupported genotype %s" % genotype)
+
+
 
         if type == "binomial":
             p = expected_count_ref / (expected_count_alt + expected_count_ref)
@@ -102,11 +173,15 @@ class Genotyper:
             return "0/0"
 
     def get_allele_frequencies_from_most_similar_previous_variant(self, variant_id):
+
+        orig_prob_homo_ref, orig_prob_homo_alt, orig_prob_hetero = self._genotype_frequencies.get_frequencies_for_variant(variant_id)
+        if self._most_similar_variant_lookup is None:
+            return orig_prob_homo_ref, orig_prob_homo_alt, orig_prob_hetero
+
         most_similar = self._most_similar_variant_lookup.get_most_similar_variant(variant_id)
         most_similar_genotype = self._genotypes_called_at_variant[most_similar]
         prob_same_genotype = self._most_similar_variant_lookup.prob_of_having_the_same_genotype_as_most_similar(variant_id)
         prob_same_genotype = min(0.999, max(prob_same_genotype, 0.001)) * 0.92
-        orig_prob_homo_ref, orig_prob_homo_alt, orig_prob_hetero = self._genotype_frequencies.get_frequencies_for_variant(variant_id)
 
         # First init probs for having genotypes and not having same genotypes as most similar
         prob_homo_ref = (1 - prob_same_genotype) * orig_prob_homo_ref
@@ -125,10 +200,11 @@ class Genotyper:
     def genotype(self):
         variant_id = -1
         for i, variant in enumerate(self._variants):
-            if i % 1000 == 0:
+            if i % 1000 == 0 and i > 0:
                 logging.info("%d variants genotyped" % i)
 
             variant_id += 1
+            variant_id = variant.vcf_line_number
             self._genotypes_called_at_variant.append(0)
             assert "," not in variant.variant_sequence, "Only biallelic variants are allowed. Line is not bialleleic"
 
@@ -158,4 +234,5 @@ class Genotyper:
             elif predicted_genotype == "0/1":
                 numeric_genotype = 3
 
-            self._genotypes_called_at_variant[variant_id] = numeric_genotype
+            if self._most_similar_variant_lookup is not None:
+                self._genotypes_called_at_variant[variant_id] = numeric_genotype
