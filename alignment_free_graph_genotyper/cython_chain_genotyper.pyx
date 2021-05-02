@@ -96,9 +96,13 @@ def run(reads,
         reference_index,
         int max_index_lookup_frequency,
         reads_are_numeric=False,
-        reference_index_scoring=None
+        reference_index_scoring=None,
+        skip_chaining=False,
+        scale_by_frequency=False
         ):
 
+    if skip_chaining:
+        logging.warning("Will not do any chaining.")
 
     cdef np.int64_t[:] hashes_to_index = index._hashes_to_index
     cdef np.uint32_t[:] n_kmers = index._n_kmers
@@ -111,9 +115,16 @@ def run(reads,
 
     logging.info("k=%d" % k)
     # Reference index
-    cdef unsigned int[:] reference_index_position_to_index = reference_index.ref_position_to_index
-    cdef unsigned long[:] reference_index_kmers = reference_index.kmers
-    cdef np.ndarray[np.uint32_t] reference_index_nodes = reference_index.nodes
+
+    cdef unsigned int[:] reference_index_position_to_index
+    cdef unsigned long[:] reference_index_kmers
+    cdef np.ndarray[np.uint32_t] reference_index_nodes
+    if reference_index is not None:
+        reference_index_position_to_index = reference_index.ref_position_to_index
+        reference_index_kmers = reference_index.kmers
+        reference_index_nodes = reference_index.nodes
+
+
     cdef unsigned int reference_kmers_index_start
     cdef unsigned int reference_kmers_index_end
 
@@ -126,6 +137,10 @@ def run(reads,
         do_scoring = 1
     else:
         logging.warning("Skipping scoring against reference kmers")
+
+    if scale_by_frequency:
+        logging.info("Will scale counts by frequency")
+
 
     cdef np.ndarray[np.float_t] node_counts = np.zeros(max_node_id+1, dtype=np.float)
     cdef np.ndarray[np.int64_t] power_array = np.power(4, np.arange(0, k))
@@ -265,6 +280,7 @@ def run(reads,
             found_nodes = np.zeros(n_total_hits, dtype=np.int64)
             found_ref_offsets = np.zeros(n_total_hits, dtype=np.int64)
             found_read_offsets = np.zeros(n_total_hits, dtype=np.int64)
+            found_frequencies = np.zeros(n_total_hits, dtype=np.int64)
 
             # Get the actual hits
             counter = 0
@@ -293,6 +309,7 @@ def run(reads,
                     found_nodes[counter] = nodes[index_position + j]
                     found_ref_offsets[counter] = ref_offsets[index_position + j]
                     found_read_offsets[counter] = i
+                    found_frequencies[counter] = index_frequencies[index_position]
                     counter += 1
 
             #print(found_nodes)
@@ -300,6 +317,16 @@ def run(reads,
 
 
             # Do the chaining
+            if skip_chaining:
+                for c in range(found_nodes.shape[0]):
+                    if scale_by_frequency:
+                        node_counts[found_nodes[c]] += 1.0  / found_frequencies[c]
+                    else:
+                        node_counts[found_nodes[c]] += 1
+
+                continue
+
+
             potential_chain_start_positions = found_ref_offsets - found_read_offsets
             sorting = np.argsort(potential_chain_start_positions)
             found_read_offsets = found_read_offsets[sorting]
