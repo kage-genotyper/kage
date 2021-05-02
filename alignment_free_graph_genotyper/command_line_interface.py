@@ -33,12 +33,17 @@ def main():
     run_argument_parser(sys.argv[1:])
 
 
-def count_single_thread(reads, args):
+#def count_single_thread(reads, args):
+def count_single_thread(data):
+    reads, args = data
+
     if len(reads) == 0:
         logging.info("Skipping thread, no more reads")
         return None, None
 
-    reference_index = from_shared_memory(ReferenceKmerIndex, "reference_index_shared")
+    reference_index = None
+    if args.reference_index is not None:
+        reference_index = from_shared_memory(ReferenceKmerIndex, "reference_index_shared")
 
     reference_index_scoring = None
     if args.reference_index_scoring is not None:
@@ -50,7 +55,9 @@ def count_single_thread(reads, args):
     start_time = time.time()
     chain_positions, node_counts = cython_chain_genotyper.run(reads, kmer_index, args.max_node_id, args.kmer_size,
                                                               reference_index,args.max_index_lookup_frequency, 0,
-                                                              reference_index_scoring)
+                                                              reference_index_scoring,
+                                                              args.skip_chaining,
+                                                              args.scale_by_frequency)
     logging.info("Time spent on getting node counts: %.5f" % (time.time()-start_time))
     return NodeCounts(node_counts), chain_positions
 
@@ -63,9 +70,10 @@ def count(args):
         truth_positions = truth_alignments.positions
         logging.info("Read numpy alignments")
 
-    logging.info("Reading reference index from file")
-    reference_index = ReferenceKmerIndex.from_file(args.reference_index)
-    to_shared_memory(reference_index, "reference_index_shared")
+    if args.reference_index is not None:
+        logging.info("Reading reference index from file")
+        reference_index = ReferenceKmerIndex.from_file(args.reference_index)
+        to_shared_memory(reference_index, "reference_index_shared")
 
     if args.reference_index_scoring is not None:
         reference_index_scoring = ReferenceKmerIndex.from_file(args.reference_index_scoring)
@@ -81,7 +89,7 @@ def count(args):
     logging.info("Making pool")
     pool = Pool(args.n_threads)
     node_counts = np.zeros(max_node_id+1, dtype=float)
-    for result, chain_positions in pool.starmap(count_single_thread, zip(reads, repeat(args))):
+    for result, chain_positions in pool.imap(count_single_thread, zip(reads, repeat(args))):
         if result is not None:
             print("Got result. Length of counts: %d" % len(result.node_counts))
             node_counts += result.node_counts
@@ -117,7 +125,11 @@ def analyse_variants(args):
 def model_kmers_from_haplotype_nodes_single_thread(haplotype, random_seed, args):
     from .node_count_model import NodeCountModelCreatorFromSimpleChaining
     from obgraph.haplotype_nodes import HaplotypeToNodes
-    reference_index = from_shared_memory(ReferenceKmerIndex, "reference_index_shared")
+
+    reference_index = None
+    if args.reference_index is not None:
+        reference_index = from_shared_memory(ReferenceKmerIndex, "reference_index_shared")
+
     reference_index_scoring = None
     if args.reference_index_scoring is not None:
         reference_index_scoring = from_shared_memory(ReferenceKmerIndex, "reference_index_scoring_shared")
@@ -133,7 +145,10 @@ def model_kmers_from_haplotype_nodes_single_thread(haplotype, random_seed, args)
     sequence_forward = graph.get_numeric_node_sequences(nodes)
     logging.info("Sequence type: %s" % type(sequence_forward))
     logging.info("Done getting sequence (took %.3f sec)" % (time.time()-time_start))
-    creator = NodeCountModelCreatorFromSimpleChaining(graph, reference_index, nodes, sequence_forward, kmer_index, args.max_node_id, n_reads_to_simulate=args.n_reads, skip_chaining=args.skip_chaining, max_index_lookup_frequency=args.max_index_lookup_frequency, reference_index_scoring=reference_index_scoring, seed=random_seed)
+    creator = NodeCountModelCreatorFromSimpleChaining(graph, reference_index, nodes, sequence_forward, kmer_index, args.max_node_id,
+                                                      n_reads_to_simulate=args.n_reads, skip_chaining=args.skip_chaining,
+                                                      max_index_lookup_frequency=args.max_index_lookup_frequency,
+                                                      reference_index_scoring=reference_index_scoring, seed=random_seed)
     following, not_following = creator.get_node_counts()
     logging.info("Done with haplotype %d" % haplotype)
     return following, not_following
@@ -144,8 +159,6 @@ def model_kmers_from_haplotype_nodes(args):
     logging.info("Haplotypes that will be given to jobs and run in parallel: %s" % haplotypes)
 
     max_node_id = args.max_node_id
-    expected_node_counts_not_following_node = np.zeros(max_node_id+1, dtype=np.float)
-    expected_node_counts_following_node = np.zeros(max_node_id+1, dtype=np.float)
 
     logging.info("Reading haplotypenodes")
     nodes = HaplotypeToNodes.from_file(args.haplotype_nodes)
@@ -160,8 +173,9 @@ def model_kmers_from_haplotype_nodes(args):
     to_shared_memory(graph, "graph_shared")
 
     logging.info("Reading reference index from file")
-    reference_index = ReferenceKmerIndex.from_file(args.reference_index)
-    to_shared_memory(reference_index, "reference_index_shared")
+    if args.reference_index is not None:
+        reference_index = ReferenceKmerIndex.from_file(args.reference_index)
+        to_shared_memory(reference_index, "reference_index_shared")
 
     logging.info("Reading kmer index from file")
     kmer_index = KmerIndex.from_file(args.kmer_index)
@@ -171,6 +185,8 @@ def model_kmers_from_haplotype_nodes(args):
     pool = Pool(args.n_threads)
     random_seeds = list(range(0, len(haplotypes)))
     data_to_process = zip(haplotypes, random_seeds, repeat(args))
+    expected_node_counts_not_following_node = np.zeros(max_node_id+1, dtype=np.float)
+    expected_node_counts_following_node = np.zeros(max_node_id+1, dtype=np.float)
     while True:
         results = pool.starmap(model_kmers_from_haplotype_nodes_single_thread, itertools.islice(data_to_process, n_chunks_in_each_pool))
         if results:
@@ -222,6 +238,70 @@ def genotype(args):
     genotyper = genotyper_class(model, variants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup)
     genotyper.genotype()
     variants.to_vcf_file(args.out_file_name)
+    np.save(args.out_file_name + ".allele_frequencies", genotyper._predicted_allele_frequencies)
+    logging.info("Wrote predicted allele frequencies to %s" % args.out_file_name + ".allele_frequencies")
+
+
+def model_using_kmer_index(variant_id_interval, args):
+    variant_start_id, variant_end_id = variant_id_interval
+    logging.info("Processing variants with id between %d and %d" % (variant_start_id, variant_end_id))
+    from .node_count_model import NodeCountModelCreatorFromNoChaining, NodeCountModel
+
+    allele_frequency_index = None
+    if args.allele_frequency_index is not None:
+        allele_frequency_index = np.load(args.allele_frequency_index)
+
+    model_creator = NodeCountModelCreatorFromNoChaining(
+        from_shared_memory(KmerIndex, "kmer_index_shared"),
+        from_shared_memory(ReverseKmerIndex, "reverse_index_shared"),
+        from_shared_memory(VariantToNodes, "variant_to_nodes_shared"),
+        variant_start_id, variant_end_id, args.max_node_id, scale_by_frequency=args.scale_by_frequency,
+        allele_frequency_index=allele_frequency_index)
+
+    counts_following, counts_not_following = model_creator.get_node_counts()
+    return counts_following, counts_not_following
+
+
+def model_using_kmer_index_multiprocess(args):
+    reverse_index = ReverseKmerIndex.from_file(args.reverse_node_kmer_index)
+    to_shared_memory(reverse_index, "reverse_index_shared")
+    index = KmerIndex.from_file(args.kmer_index)
+    to_shared_memory(index, "kmer_index_shared")
+    variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
+    to_shared_memory(variant_to_nodes, "variant_to_nodes_shared")
+
+    max_node_id = args.max_node_id
+
+    logging.info("Will use %d threads" % args.n_threads)
+    #variants = VcfVariants.from_vcf(args.vcf, skip_index=True, make_generator=True)
+    #variants = variants.get_chunks(chunk_size=args.chunk_size)
+
+    n_threads = args.n_threads
+    n_variants = len(variant_to_nodes.ref_nodes)
+    intervals = [int(i) for i in np.linspace(0, n_variants, n_threads)]
+    variant_intervals = [(from_id, to_id) for from_id, to_id in zip(intervals[0:-1], intervals[1:])]
+    logging.info("Will process variant intervals: %s" % variant_intervals)
+    data_to_process = zip(variant_intervals, repeat(args))
+
+    expected_node_counts_not_following_node = np.zeros(max_node_id + 1, dtype=np.float)
+    expected_node_counts_following_node = np.zeros(max_node_id + 1, dtype=np.float)
+
+    pool = Pool(args.n_threads)
+
+    while True:
+        results = pool.starmap(model_using_kmer_index,
+                               itertools.islice(data_to_process, args.n_threads))
+        if results:
+            for expected_follow, expected_not_follow in results:
+                expected_node_counts_following_node += expected_follow
+                expected_node_counts_not_following_node += expected_not_follow
+        else:
+            logging.info("No results, breaking")
+            break
+
+    model = NodeCountModel(expected_node_counts_following_node, expected_node_counts_not_following_node)
+    model.to_file(args.out_file_name)
+    logging.info("Wrote model to %s" % args.out_file_name)
 
 
 def run_argument_parser(args):
@@ -240,9 +320,11 @@ def run_argument_parser(args):
     subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
     subparser.add_argument("-c", "--chunk-size", type=int, default=10000, required=False, help="Number of reads to process in the same chunk")
     subparser.add_argument("-T", "--truth_alignments", required=False)
-    subparser.add_argument("-Q", "--reference_index", required=True)
+    subparser.add_argument("-Q", "--reference_index", required=False)
     subparser.add_argument("-R", "--reference_index_scoring", required=False)
     subparser.add_argument("-I", "--max-index-lookup-frequency", required=False, type=int, default=5)
+    subparser.add_argument("-s", "--skip-chaining", required=False, type=bool, default=False)
+    subparser.add_argument("-f", "--scale-by-frequency", required=False, type=bool, default=False)
     subparser.set_defaults(func=count)
 
 
@@ -273,7 +355,7 @@ def run_argument_parser(args):
     subparser.add_argument("-n", "--n-haplotypes", type=int, required=True)
     subparser.add_argument("-N", "--n-reads", type=int, required=True, help="N reads to simulate per genome")
     subparser.add_argument("-s", "--skip-chaining", type=bool, default=False, required=False)
-    subparser.add_argument("-Q", "--reference_index", required=True)
+    subparser.add_argument("-Q", "--reference_index", required=False)
     subparser.add_argument("-I", "--max-index-lookup-frequency", required=False, type=int, default=5)
     subparser.add_argument("-T", "--run-n-times", required=False, help="Run the whole simulation N times. Useful when wanting to use more threads than number of haplotypes since multiple haplotypes then can be procesed in parallel.", default=1, type=int)
     subparser.add_argument("-R", "--reference_index_scoring", required=False)
@@ -388,8 +470,6 @@ def run_argument_parser(args):
 
         logging.info("Done")
 
-
-
     # Analyse variant kmers
     subparser = subparsers.add_parser("analyse_kmer_index")
     subparser.add_argument("-r", "--reverse-kmer-index", required=True)
@@ -398,28 +478,21 @@ def run_argument_parser(args):
     subparser.add_argument("-g", "--variant-to-nodes", required=True)
     subparser.set_defaults(func=analyse_kmer_index)
 
-    def model_using_kmer_index(args):
-        from .node_count_model import NodeCountModelCreatorFromNoChaining, NodeCountModel
-        index = KmerIndex.from_file(args.kmer_index)
-        graph = ObGraph.from_file(args.graph_file_name)
-        reverse_index = ReverseKmerIndex.from_file(args.reverse_node_kmer_index)
-        variants = GenotypeCalls.from_vcf(args.vcf)
-
-        model_creator = NodeCountModelCreatorFromNoChaining(index, reverse_index, graph, variants, args.max_node_id)
-        counts_following, counts_not_following = model_creator.get_node_counts()
-        model = NodeCountModel(counts_following, counts_not_following)
-        model.to_file(args.out_file_name)
 
     subparser = subparsers.add_parser("model_using_kmer_index")
-    subparser.add_argument("-g", "--graph_file_name", required=True)
+    subparser.add_argument("-g", "--variant-to-nodes", required=True)
     subparser.add_argument("-k", "--kmer-size", required=True, type=int)
     subparser.add_argument("-i", "--kmer-index", required=True)
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.add_argument("-m", "--max-node-id", type=int, required=True)
     subparser.add_argument("-r", "--reverse_node_kmer_index", required=True)
-    subparser.add_argument("-v", "--vcf", required=True)
-    subparser.set_defaults(func=model_using_kmer_index)
+    #subparser.add_argument("-v", "--vcf", required=True)
+    #subparser.add_argument("-c", "--chunk-size", type=int, default=100000, help="Number of variants to process in each chunk")
+    subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
+    subparser.add_argument("-f", "--scale-by-frequency", required=False, type=bool, default=False)
+    subparser.add_argument("-a", "--allele-frequency-index", required=False)
 
+    subparser.set_defaults(func=model_using_kmer_index_multiprocess)
 
     if len(args) == 0:
         parser.print_help()
