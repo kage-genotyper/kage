@@ -71,7 +71,7 @@ class VcfVariant:
 
     def id(self):
         #return (self.chromosome, self.position)
-        return (self.chromosome, self.position, self.ref_sequence, self.variant_sequence)
+        return (self.chromosome, self.position, self.ref_sequence.lower(), self.variant_sequence.lower())
 
     def get_vcf_line(self):
         return "%d\t%d\t.\t%s\t%s\t.\tPASS\t.\tGT\t%s\n"  % (self.chromosome, self.position, self.ref_sequence, self.variant_sequence, self.genotype if self.genotype is not None else ".")
@@ -248,6 +248,20 @@ class VcfVariants:
             self._variants_by_chromosome[chrom] = [variant for variant in self if variant.chromosome == chrom]
         """
 
+    def has_variant_left_of_variant(self, variant, window=31):
+        other = self.get_variants_in_region(variant.chromosome, variant.position - window, variant.position)
+        assert variant.position not in [v.position for v in other], "Variants between %d and %d contain %s position: %s" % (variant.position-window, variant.position, variant, other)
+        if len(other) > 0:
+            return True
+        return False
+
+    def has_variant_right_of_variant(self, variant, window=31):
+        other = self.get_variants_in_region(variant.chromosome, variant.position+1, variant.position+window)
+        assert variant.position not in [v.position for v in other]
+        if len(other) > 0:
+            return True
+        return False
+
     def get_variants_in_region(self, chromosome, start, end):
         chromosome = int(chromosome)
         if chromosome not in self._variants_by_chromosome:
@@ -388,6 +402,13 @@ class VcfVariants:
                 print("Only in set 1: %s" % variant)
             elif not other.has_variant_genotype(variant):
                 print("Genotype mismatch between %s and %s" % (variant, other.get(variant)))
+
+    def compute_similarity_to_other_variants_unsorted(self, other_variants):
+        n_identical = 0
+        for variant in self:
+            if other_variants.has_variant(variant):
+                n_identical += 1
+        return n_identical / len(self)
 
     def compute_similarity_to_other_variants(self, other_variants):
         n_identical = 0

@@ -10,6 +10,9 @@ class NodeCounts:
     def get_node_count_array(self):
         return self.node_counts
 
+    def __getitem__(self, item):
+        return self.node_counts[item]
+
     @classmethod
     def from_file(cls, file_name):
         try:

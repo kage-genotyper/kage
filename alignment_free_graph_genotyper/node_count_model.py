@@ -67,17 +67,22 @@ class NodeCountModel:
 
 
 class NodeCountModelCreatorFromNoChaining:
-    def __init__(self, kmer_index: KmerIndex, reverse_index: ReverseKmerIndex, graph: Graph, variants, max_node_id):
+    def __init__(self, kmer_index: KmerIndex, reverse_index: ReverseKmerIndex, variant_to_nodes, variant_start_id, variant_end_id, max_node_id,
+                 scale_by_frequency=False, allele_frequency_index=None):
         self.kmer_index = kmer_index
-        self.graph = graph
+        self.variant_to_nodes = variant_to_nodes
         self.reverse_index = reverse_index
-        self.variants = variants
+        self.variant_start_id = variant_start_id
+        self.variant_end_id = variant_end_id
 
         self.node_counts_following_node = np.zeros(max_node_id+1, dtype=np.float)
         self.node_counts_not_following_node = np.zeros(max_node_id+1, dtype=np.float)
+        self._scale_by_frequency = scale_by_frequency
+        self._allele_frequency_index = allele_frequency_index
+        if self._allele_frequency_index is not None:
+            logging.info("Will fetch allele frequencies from allele frequency index")
 
     def process_variant(self, reference_node, variant_node):
-
         for node in (reference_node, variant_node):
             expected_count_following = 0
             expected_count_not_following = 0
@@ -100,25 +105,48 @@ class NodeCountModelCreatorFromNoChaining:
                 n_hits = 0
                 for index in unique_indexes:
                     # do not add count for the actual kmer we are searching for, we add 1 for this in the end
+                    if self._allele_frequency_index is None:
+                        allele_frequency = allele_frequencies[index]  # fetch from graph
+                    else:
+                        # get the nodes belonging to this ref offset
+                        ref_offset = ref_offsets[index]
+                        hit_nodes = nodes[np.where(ref_offsets == ref_offset)]
+                        # allele frequency is the lowest allele frequency for these nodes
+                        allele_frequency = np.min(self._allele_frequency_index[hit_nodes])
+
                     if ref_offsets[index] != ref_pos:
-                        n_hits += allele_frequencies[index] # / frequencies[index]
+
+                        if self._scale_by_frequency:
+                            n_hits += allele_frequency / frequencies[index]
+                        else:
+                            n_hits += allele_frequency
 
                 expected_count_following += n_hits
                 expected_count_not_following += n_hits
 
-            expected_count_following += 1
+                if self._scale_by_frequency and False:
+                    # We add counts for following node here
+                    for hit_node, ref_offset, frequency, allele_frequency in zip(nodes, ref_offsets, frequencies, allele_frequencies):
+                        if hit_node == node and ref_offset == ref_pos:
+                            expected_count_following += allele_frequency * 1 / frequency
+
+            if not self._scale_by_frequency or True:
+                expected_count_following += 1.0
+
 
             self.node_counts_following_node[node] += expected_count_following
             self.node_counts_not_following_node[node] += expected_count_not_following
 
     def get_node_counts(self):
-        for i, variant in enumerate(self.variants):
-            if i % 1000 == 0:
-                logging.info("%d reads processed" % i)
+        for i, variant_id in enumerate(range(self.variant_start_id, self.variant_end_id)):
+            if i % 25000 == 0:
+                logging.info("%d/%d variants processed" % (i, self.variant_end_id-self.variant_start_id))
 
-            try:
-                reference_node, variant_node = self.graph.get_variant_nodes(variant)
-            except VariantNotFoundException:
+            #reference_node, variant_node = self.graph.get_variant_nodes(variant)
+            reference_node = self.variant_to_nodes.ref_nodes[variant_id]
+            variant_node = self.variant_to_nodes.var_nodes[variant_id]
+
+            if reference_node == 0 or variant_node == 0:
                 continue
 
             self.process_variant(reference_node, variant_node)
@@ -185,13 +213,15 @@ class NodeCountModelCreatorFromSimpleChaining:
         # Set to none to not use memory on the sequence anymore
         self.genome_sequence = None
 
+        logging.info("Getting node counts")
         chain_positions, node_counts = cython_chain_genotyper.run(reads, self.kmer_index,
               self._n_nodes,
               self._k,
               self._reference_index,
               self._max_index_lookup_frequency,
               True,
-              self._reference_index_scoring
+              self._reference_index_scoring,
+              self._skip_chaining
               )
 
         #logging.info("Sum of positions: %d" % np.sum(chain_positions))

@@ -74,13 +74,14 @@ class Genotyper:
         self._variant_counter = 0
         self._most_similar_variant_lookup = most_similar_variant_lookup
         self._genotypes_called_at_variant = []  # position is variant id, genotype is 1,2,3 (homo ref, homo alt, hetero)
+        self._predicted_allele_frequencies = np.zeros(len(node_counts.node_counts)) + 1.0  # default is 1.0, we will only change variant nodes
 
     def get_node_count(self, node):
         return self._node_counts.node_counts[node]
 
     def expected_count_following_node(self, node):
         if self._node_count_model is None:
-            return 100
+            return 1
 
         count = self._average_coverage * self._node_count_model.node_counts_following_node[node]
         count += 0.5
@@ -88,7 +89,7 @@ class Genotyper:
 
     def expected_count_not_following_node(self, node):
         if self._node_count_model is None:
-            return 0.3
+            return 0.01
 
         count = self._average_coverage * self._node_count_model.node_counts_not_following_node[node]
         count += 0.025
@@ -112,15 +113,33 @@ class Genotyper:
             expected_count_ref = counts[ref_node]
 
             # Add dummy counts
+            """
             if genotype == "1/1":
                 expected_count_alt = max(2, expected_count_alt)
-                expected_count_ref += max(0.01, expected_count_ref)
+                expected_count_ref = max(0.01, expected_count_ref)
             elif genotype == "0/0":
-                expected_count_ref += max(2, expected_count_ref)
-                expected_count_alt += max(0.01, expected_count_alt)
+                expected_count_ref = max(2, expected_count_ref)
+                expected_count_alt = max(0.01, expected_count_alt)
             elif genotype == "0/1":
-                expected_count_ref += max(1, expected_count_ref)
-                expected_count_alt += max(1, expected_count_alt)
+                expected_count_ref = max(1, expected_count_ref)
+                expected_count_alt = max(1, expected_count_alt)
+            """
+            if genotype == "1/1":
+                expected_count_alt += 0.1
+                expected_count_ref += 0.01
+            elif genotype == "0/0":
+                expected_count_ref += 0.1
+                expected_count_alt += 0.01
+            elif genotype == "0/1":
+                expected_count_ref += 0.056
+                expected_count_alt += 0.056
+
+            if genotype != "1/1":
+                assert expected_count_ref > 0, "Expected count ref is 0 for node %d, genotype %s" % (ref_node, genotype)
+
+            if genotype != "0/0":
+                assert expected_count_alt > 0
+
         else:
             # Haplotype node count model
             if genotype == "1/1":
@@ -141,10 +160,40 @@ class Genotyper:
             p = expected_count_ref / (expected_count_alt + expected_count_ref)
             k = int(ref_count)
             n = ref_count + variant_count
+            assert p > 0.0, "Prob in binom is zero. Should not happen. k=%d, n=%d, p=%.10f" % (k, n, p)
             return binom.pmf(k, n, p)
 
         return poisson.pmf(int(ref_count), expected_count_ref) * poisson.pmf(int(variant_count), expected_count_alt)
 
+    def _set_predicted_allele_frequency(self, ref_node, var_node, prob_homo_ref, prob_homo_alt, prob_hetero, predicted_genotype):
+
+        #if max(prob_homo_ref, prob_homo_alt, prob_hetero) < 0.97:
+        #    ref_f
+
+        if predicted_genotype == "0/0":
+            ref_frequency = 1 # prob_homo_ref
+        elif predicted_genotype == "1/1":
+            ref_frequency = 0  #1 - prob_homo_alt
+        elif predicted_genotype == "0/1":
+            ref_frequency = 0.5
+        else:
+            raise Exception("Invalid genotype")
+
+        alt_frequency = 1 - ref_frequency
+
+        if np.isnan(ref_frequency) or np.isnan(alt_frequency):
+            if predicted_genotype == "0/0":
+                ref_frequency = 1.0
+                alt_frequency = 0.0
+            elif predicted_genotype == "1/1":
+                ref_frequency = 0.0
+                alt_frequency = 1.0
+            else:
+                ref_frequency = 0.5
+                alt_frequency = 0.5
+
+        self._predicted_allele_frequencies[ref_node] = ref_frequency
+        self._predicted_allele_frequencies[var_node] = alt_frequency
 
     def _genotype_biallelic_variant(self, reference_node, variant_node, a_priori_homozygous_ref, a_priori_homozygous_alt,
                                 a_priori_heterozygous, debug=False):
@@ -157,24 +206,50 @@ class Genotyper:
         prob_posteriori_homozygous_alt = a_priori_homozygous_alt * p_counts_given_homozygous_alt
         prob_posteriori_homozygous_ref = a_priori_homozygous_ref * p_counts_given_homozygous_ref
 
+        sum_of_posteriori = prob_posteriori_homozygous_ref + prob_posteriori_heterozygous + prob_posteriori_homozygous_alt
+
+        prob_posteriori_heterozygous /= sum_of_posteriori
+        prob_posteriori_homozygous_alt /= sum_of_posteriori
+        prob_posteriori_homozygous_ref /= sum_of_posteriori
+
+        sum_of_probs = prob_posteriori_homozygous_ref + prob_posteriori_homozygous_alt + prob_posteriori_heterozygous
+
+        if abs(sum_of_probs - 1.0) > 0.01:
+            logging.warning("Probs do not sum to 1.0: Sum is %.5f" % sum_of_probs)
+
+
         # Minimum count for genotyping
         if self.get_node_count(variant_node) <= 0:
-            return "0/0"
+            predicted_genotype = "0/0"
 
         if prob_posteriori_homozygous_ref > prob_posteriori_homozygous_alt and prob_posteriori_homozygous_ref > prob_posteriori_heterozygous:
-            return "0/0"
+            predicted_genotype = "0/0"
         elif prob_posteriori_homozygous_alt > prob_posteriori_heterozygous and prob_posteriori_homozygous_alt > 0.0:
-            return "1/1"
+            predicted_genotype = "1/1"
         elif prob_posteriori_heterozygous > 0.0:
-            return "0/1"
+            predicted_genotype = "0/1"
         else:
-            logging.info("%.5f / %.5f / %.5f" % (
-                prob_posteriori_homozygous_ref, prob_posteriori_homozygous_alt, prob_posteriori_heterozygous))
-            return "0/0"
+            #logging.warning("All probs are zero for variant at node %d/%d." % (reference_node, variant_node))
+            #logging.warning("Model counts ref: %d/%d/%d." % (self._node_count_model.counts_homo_ref[reference_node], self._node_count_model.counts_homo_alt[reference_node], self._node_count_model.counts_hetero[reference_node]))
+            #logging.warning("Model counts var: %d/%d/%d." % (self._node_count_model.counts_homo_ref[variant_node], self._node_count_model.counts_homo_alt[variant_node], self._node_count_model.counts_hetero[variant_node]))
+            #logging.warning("Node counts: %d/%d." % (self._node_counts.node_counts[reference_node], self._node_counts.node_counts[variant_node]))
+            #logging.warning("Posteriori probs: %.4f, %.4f, %.4f" % (p_counts_given_homozygous_ref, p_counts_given_homozygous_alt, p_counts_given_heterozygous))
+            #logging.warning("A priori probs  : %.4f, %.4f, %.4f" % (a_priori_homozygous_ref, a_priori_homozygous_alt, a_priori_heterozygous))
+            #logging.warning("%.5f / %.5f / %.5f" % (
+            #prob_posteriori_homozygous_ref, prob_posteriori_homozygous_alt, prob_posteriori_heterozygous))
+            predicted_genotype = "0/0"
+
+        self._set_predicted_allele_frequency(reference_node, variant_node, prob_posteriori_homozygous_ref, prob_posteriori_homozygous_alt, prob_posteriori_heterozygous, predicted_genotype)
+        return predicted_genotype
 
     def get_allele_frequencies_from_most_similar_previous_variant(self, variant_id):
 
         orig_prob_homo_ref, orig_prob_homo_alt, orig_prob_hetero = self._genotype_frequencies.get_frequencies_for_variant(variant_id)
+        orig_prob_homo_ref = max(0.001, orig_prob_homo_ref)
+        orig_prob_hetero = max(0.001, orig_prob_hetero)
+        orig_prob_homo_alt = max(0.001, orig_prob_homo_alt)
+
+
         if self._most_similar_variant_lookup is None:
             return orig_prob_homo_ref, orig_prob_homo_alt, orig_prob_hetero
 
