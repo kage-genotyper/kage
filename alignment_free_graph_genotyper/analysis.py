@@ -60,11 +60,16 @@ class KmerAnalyser:
         self.n_predicted_variants = defaultdict(int)
         self.n_correct_genotypes = defaultdict(int)
         self.false_positives = defaultdict(int)
+        self.false_negatives = defaultdict(int)
+        self.false_negatives_with_zero_counts = defaultdict(int)
+        self.false_negatives_with_zero_counts_and_other_truth_variant_close = defaultdict(int)
+        self.false_negatives_with_zero_counts_and_other_truth_variant_close_only_one_side = defaultdict(int)
         self.node_counts = node_counts
         self.genotype_frequencies = genotype_frequencies
         self.most_similar_variants = most_similar_variants
         self.n_missing_kmers = 0
         self.n_ref_nodes_zero_in_model = 0
+        self.truth_genotypes.make_position_index()
 
     def print_report(self):
         for type in ["SNP", "DELETION", "INSERTION"]:
@@ -73,6 +78,9 @@ class KmerAnalyser:
             print("N predicted variants: %d" % self.n_predicted_variants[type])
             print("N correctly predicted: %d" % self.n_correct_genotypes[type])
             print("N false postives: %d" % self.false_positives[type])
+            print("N false negatives: %d" % self.false_negatives[type])
+            print("N false negatives with zero counts: %d" % self.false_negatives_with_zero_counts[type])
+            print("N false negatives with zero counts and truth variant close: %d (only one side: %d)" % (self.false_negatives_with_zero_counts_and_other_truth_variant_close[type], self.false_negatives_with_zero_counts_and_other_truth_variant_close_only_one_side[type]))
 
     def print_info_about_variant(self, reference_node, variant_node, variant, variant_id):
         reference_kmers = set(self.reverse_kmer_index.get_node_kmers(reference_node))
@@ -131,8 +139,17 @@ class KmerAnalyser:
                 logging.warning("----------------------------")
                 logging.warning("False negative genotype!")
                 self.print_info_about_variant(reference_node, variant_node, variant, variant_id)
+                self.false_negatives[variant.type] += 1
+                if self.node_counts[variant_node] == 0:
+                    self.false_negatives_with_zero_counts[variant.type] += 1
+                    window = 31
+                    if self.truth_genotypes.has_variant_left_of_variant(variant, window) or self.truth_genotypes.has_variant_right_of_variant(variant, window):
+                        self.false_negatives_with_zero_counts_and_other_truth_variant_close[variant.type] += 1
+                        if not self.truth_genotypes.has_variant_left_of_variant(variant, window) or not self.truth_genotypes.has_variant_right_of_variant(variant, window):
+                            self.false_negatives_with_zero_counts_and_other_truth_variant_close_only_one_side[variant.type] += 1
+                            #self.print_info_about_variant(reference_node, variant_node, variant, variant_id)
 
-        if False and self.predicted_genotypes.has_variant(variant) and not self.truth_genotypes.has_variant(variant):
+        if self.predicted_genotypes.has_variant(variant) and not self.truth_genotypes.has_variant(variant):
 
             if self.truth_regions.is_inside_regions(variant.position) and self.predicted_genotypes.get(variant).genotype != "0|0":
                 logging.warning("----------------------------")
