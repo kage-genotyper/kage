@@ -87,8 +87,8 @@ cdef np.ndarray[np.int64_t] get_kmers(np.ndarray[np.int64_t] numeric_read, np.nd
 
 
 
-#@cython.boundscheck(False)
-#@cython.wraparound(False)
+@cython.boundscheck(False)
+@cython.wraparound(False)
 def run(reads,
         index,
         int max_node_id,
@@ -216,8 +216,8 @@ def run(reads,
     for read_index in range(len(reads)):
         read = reads[read_index]
         got_index_hits = 0
-        if read_number % 5000 == 0:
-            logging.info("%d reads processed in %.5f sec. N total chains so far: %d" % (read_number, time.time() - prev_time, n_total_chains))
+        if read_number % 10000 == 0:
+            logging.info("%d reads processed (last 10k processed in %.5f sec). N total chains so far: %d" % (read_number, time.time() - prev_time, n_total_chains))
             prev_time = time.time()
 
         read_number += 1
