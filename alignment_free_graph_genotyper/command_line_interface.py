@@ -5,7 +5,7 @@ import itertools
 from alignment_free_graph_genotyper import cython_chain_genotyper
 from itertools import repeat
 import sys, argparse, time
-from graph_kmer_index.shared_mem import from_shared_memory, to_shared_memory, remove_shared_memory
+from graph_kmer_index.shared_mem import from_shared_memory, to_shared_memory, remove_shared_memory, SingleSharedArray
 from obgraph import Graph as ObGraph
 from graph_kmer_index import KmerIndex, ReverseKmerIndex
 from graph_kmer_index import ReferenceKmerIndex
@@ -35,7 +35,15 @@ def main():
 
 #def count_single_thread(reads, args):
 def count_single_thread(data):
+    logging.info("Process start")
     reads, args = data
+    start_time = time.time()
+
+    if isinstance(reads, str):
+        # this is a memory address
+        logging.info("Reading reads from shared memory")
+        reads = from_shared_memory(SingleSharedArray, reads).array
+        logging.info("Read reads from shared memory")
 
     if len(reads) == 0:
         logging.info("Skipping thread, no more reads")
@@ -50,16 +58,16 @@ def count_single_thread(data):
         reference_index_scoring = from_shared_memory(ReferenceKmerIndex, "reference_index_scoring_shared")
 
     kmer_index = from_shared_memory(KmerIndex, "kmer_index_shared")
+    logging.info("Time spent on getting indexes from memory: %.5f" % (time.time()-start_time))
 
     logging.info("Got %d lines" % len(reads))
-    start_time = time.time()
-    chain_positions, node_counts = cython_chain_genotyper.run(reads, kmer_index, args.max_node_id, args.kmer_size,
+    node_counts = cython_chain_genotyper.run(reads, kmer_index, args.max_node_id, args.kmer_size,
                                                               reference_index,args.max_index_lookup_frequency, 0,
                                                               reference_index_scoring,
                                                               args.skip_chaining,
                                                               args.scale_by_frequency)
     logging.info("Time spent on getting node counts: %.5f" % (time.time()-start_time))
-    return NodeCounts(node_counts), chain_positions
+    return NodeCounts(node_counts)
 
 
 def count(args):
@@ -84,18 +92,15 @@ def count(args):
     to_shared_memory(kmer_index, "kmer_index_shared")
 
     max_node_id = args.max_node_id
-    reads = read_chunks_from_fasta(args.reads, chunk_size=args.chunk_size)
+    reads = read_chunks_from_fasta(args.reads, chunk_size=args.chunk_size, write_to_shared_memory=True)
 
     logging.info("Making pool")
     pool = Pool(args.n_threads)
     node_counts = np.zeros(max_node_id+1, dtype=float)
-    for result, chain_positions in pool.imap(count_single_thread, zip(reads, repeat(args))):
+    for result in pool.imap(count_single_thread, zip(reads, repeat(args))):
         if result is not None:
             print("Got result. Length of counts: %d" % len(result.node_counts))
             node_counts += result.node_counts
-            if truth_positions is not None:
-                n_correct = len(np.where(np.abs(truth_positions - chain_positions) <= 150)[0])
-                logging.info("N correct chains: %d" % n_correct)
         else:
             logging.info("No results")
 

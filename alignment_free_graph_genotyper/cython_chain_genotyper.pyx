@@ -5,38 +5,6 @@ cimport cython
 import time
 
 
-
-@cython.boundscheck(False)
-@cython.wraparound(False)
-cdef list chain(np.ndarray[np.int64_t] ref_offsets, np.ndarray[np.int64_t] read_offsets, np.ndarray[np.int64_t] nodes, np.ndarray[np.int64_t] kmers):
-
-    cdef np.ndarray[np.int64_t] potential_chain_start_positions = ref_offsets - read_offsets
-    cdef int i, start, end
-
-
-    cdef long[:] sorting = np.argsort(potential_chain_start_positions)
-    #ref_offsets = ref_offsets[sorting]
-    read_offsets = read_offsets[sorting]
-    nodes = nodes[sorting]
-    potential_chain_start_positions = potential_chain_start_positions[sorting]
-
-
-    cdef list chains = []
-    cdef int score
-    cdef int current_start = 0
-    cdef int prev_position = potential_chain_start_positions[0]
-    for i in range(1, potential_chain_start_positions.shape[0]):
-        if potential_chain_start_positions[i] >= prev_position + 2:
-            score = np.unique(read_offsets[current_start:i]).shape[0]
-            chains.append([potential_chain_start_positions[current_start], nodes[current_start:i], score, kmers])
-            current_start = i
-        prev_position = potential_chain_start_positions[i]
-    score = np.unique(read_offsets[current_start:]).shape[0]
-    chains.append([potential_chain_start_positions[current_start], nodes[current_start:], score, kmers])
-
-    return chains
-
-
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef np.ndarray[np.int64_t, ndim=1] complement_of_numeric_read(np.ndarray[np.int64_t, ndim=1] numeric_read):
@@ -58,7 +26,6 @@ cdef np.ndarray[np.int64_t, ndim=1] complement_of_numeric_read(np.ndarray[np.int
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef np.ndarray[np.int64_t, ndim=1] letter_sequence_to_numeric(np.ndarray[np.int8_t, ndim=1] letter_sequence):
-#cdef letter_sequence_to_numeric(np.ndarray[np.int8_t, ndim=1] letter_sequence):
     cdef np.ndarray[np.int64_t] numeric = np.zeros(letter_sequence.shape[0], dtype=np.int)
     cdef int i = 0
     cdef int base
@@ -82,7 +49,6 @@ def np_letter_sequence_to_numeric(letter_sequence):
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef np.ndarray[np.int64_t] get_kmers(np.ndarray[np.int64_t] numeric_read, np.ndarray[np.int64_t] power_array):
-#def get_kmers(np.ndarray[np.int64_t] numeric_read, np.ndarray[np.int64_t] power_array):
     return np.convolve(numeric_read, power_array, mode='valid')
 
 
@@ -236,16 +202,8 @@ def run(reads,
         for l in range(2):
             if l == 0:
                 kmers = get_kmers(numeric_read, power_array)
-                if do_scoring == 1:
-                    short_kmers = get_kmers(numeric_read, power_array_short)
             else:
                 kmers = get_kmers(reverse_read, power_array)
-                if do_scoring == 1:
-                    short_kmers = get_kmers(reverse_read, power_array_short)
-
-            if do_scoring == 1:
-                for c in range(short_kmers.shape[0]):
-                    short_kmer_set_index[short_kmers[c] % modulo] = 1
 
             #short_kmers_set = set(short_kmers)
             kmer_hashes = np.mod(kmers, modulo)
@@ -324,143 +282,6 @@ def run(reads,
                     else:
                         node_counts[found_nodes[c]] += 1
 
-                continue
-
-
-            potential_chain_start_positions = found_ref_offsets - found_read_offsets
-            sorting = np.argsort(potential_chain_start_positions)
-            found_read_offsets = found_read_offsets[sorting]
-            #found_nodes = found_nodes[sorting]
-            potential_chain_start_positions = potential_chain_start_positions[sorting]
-
-            current_start = 0
-            prev_position = potential_chain_start_positions[0]
-            read_offsets_given_score = set()
-            score = 1
-            chains = []
-            read_offsets_given_score.add(found_read_offsets[0])
-            for i in range(1, potential_chain_start_positions.shape[0]):
-                if potential_chain_start_positions[i] >= prev_position + 2:
-                    #score = np.unique(found_read_offsets[current_start:i]).shape[0]
-                    #score = i - current_start  #found_read_offsets[current_start:i].shape[0]
-                    chains.append([potential_chain_start_positions[current_start], None, score, kmers])
-                    current_start = i
-                    score = 0
-                    read_offsets_given_score = set()
-                prev_position = potential_chain_start_positions[i]
-
-                if found_read_offsets[i] not in read_offsets_given_score:
-                    score += 1
-                    read_offsets_given_score.add(found_read_offsets[i])
-
-            #score = np.unique(found_read_offsets[current_start:]).shape[0]
-            #score = found_read_offsets.shape[0] - current_start
-            chains.append([potential_chain_start_positions[current_start], None, score, kmers])
-
-            # Score chains
-            if do_scoring == 1:
-                for c in range(len(chains)):
-                    ##short_kmers_set = chains[c][4]
-                    ref_start = chains[c][0] - 5
-                    ref_end = ref_start + approx_read_length + 5 - k_short
-
-                    # Get kmers from graph in this area
-                    #local_reference_kmers = reference_index_scoring.get_between(ref_start, ref_end)
-                    #local_reference_kmers = reference_index_scoring_kmers[reference_index_scoring_position_to_index[ref_start]:reference_index_scoring_position_to_index[ref_end]]
-                    local_reference_kmers = reference_index_scoring_kmers[ref_start:ref_end]  #reference_index_scoring_position_to_index[ref_start]:reference_index_scoring_position_to_index[ref_end]]
-                    score = 0
-                    for i in range(local_reference_kmers.shape[0]):
-                        if short_kmer_set_index[local_reference_kmers[i] % modulo] == 1:
-                            score += 1
-                            # don't count same kmer twice:
-                            short_kmer_set_index[local_reference_kmers[i] % modulo] = 0
-
-                    chains[c][2] = score  # len(short_kmers_set.intersection(local_reference_kmers))
-
-                    for c in range(short_kmers.shape[0]):
-                        short_kmer_set_index[short_kmers[c] % modulo] = 1
-
-                for c in range(short_kmers.shape[0]):
-                    short_kmer_set_index[short_kmers[c] % modulo] = 0
-
-            forward_and_reverse_chains.extend(chains)
-
-
-            #n_total_chains += len(chains)
-
-            #forward_and_reverse_chains.extend(chains)
-            #print([(f[0], f[2]) for f in forward_and_reverse_chains])
-
-        #if len(forward_and_reverse_chains) == 0:
-        #continue
-
-
-
-
-        # Find best chain
-        best_chain_kmers = None
-        best_chain = None
-        for c in range(len(forward_and_reverse_chains)):
-            if forward_and_reverse_chains[c][2] >= best_score:
-                best_score = forward_and_reverse_chains[c][2]
-                best_chain = forward_and_reverse_chains[c]
-
-        #print("Chose best chain %d with score %d" % (best_chain[0], best_chain[2]))
-        if best_chain is None:
-            best_score = 0
-            continue
-
-        chain_positions[read_number] = best_chain[0]
-
-
-
-
-
-        # Align nodes in area of best chain to the kmers (a reverse lookup)
-        # Find ref nodes within read area
-
-        # Iterate all nodes, look for SNPs
-        best_chain_kmers = best_chain[3]
-        best_chain_ref_pos = best_chain[0]
-
-        #best_chain_kmers_set = set(best_chain_kmers)
-
-        # Make a set index for kmers
-        for c in range(best_chain_kmers.shape[0]):
-            kmer_set_index[best_chain_kmers[c] % modulo] = 1
-
-
-
-
-        pos = best_chain[0]
-        reference_kmers_index_start = reference_index_position_to_index[min(max(0, pos-10), reference_index_position_to_index.shape[0]-1)]
-        reference_kmers_index_end = reference_index_position_to_index[min(reference_index_position_to_index.shape[0]-1, pos + 150 + 10)]
-        nodes_added = set()
-
-        for c in range(reference_kmers_index_start, reference_kmers_index_end):
-            reference_kmer = reference_index_kmers[c]
-            current_node = reference_index_nodes[c]
-
-            if kmer_set_index[reference_kmer % modulo] == 1 and current_node not in nodes_added:
-                node_counts[current_node] += 1.0
-                nodes_added.add(current_node)
-
-                #if current_node == 10702 or current_node == 10703:
-                if current_node == 2186273:
-                    logging.info("\nMatch from read %d against node %d on kmer %d. Sequence is %s" % (read_number, current_node, reference_kmer, read))
-
-        # Reset set index
-        for c in range(best_chain_kmers.shape[0]):
-            kmer_set_index[best_chain_kmers[c] % modulo] = 0
-
-
-
-        best_score = 0
-
-    return chain_positions, node_counts
-
-
-
-
+    return node_counts
 
 

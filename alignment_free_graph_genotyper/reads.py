@@ -1,4 +1,7 @@
 import logging
+from graph_kmer_index.shared_mem import SingleSharedArray, to_shared_memory, from_shared_memory
+import random
+import numpy as np
 
 class Reads:
     def __init__(self, reads):
@@ -15,12 +18,15 @@ class Reads:
         reads = (line.strip() for line in open(fasta_file_name) if not line.startswith(">"))
         return cls(reads)
 
-def read_chunks_from_fasta(fasta_file_name, chunk_size=10, include_read_names=False, assign_numeric_read_names=False):
+def read_chunks_from_fasta(fasta_file_name, chunk_size=10, include_read_names=False, assign_numeric_read_names=False, write_to_shared_memory=False, max_read_length=150):
     file = open(fasta_file_name)
     out = []
     i = 0
     read_id = 0
     current_read_name = None
+
+    out_array = np.empty(chunk_size, dtype="<U" + str(max_read_length))
+
     for line in file:
         if line.startswith(">"):
             if include_read_names:
@@ -34,17 +40,36 @@ def read_chunks_from_fasta(fasta_file_name, chunk_size=10, include_read_names=Fa
             logging.info("Read %d lines" % i)
 
         if include_read_names:
+            assert False, "Not supported, not rewritten to using np arrays"
             out.append((current_read_name, line.strip()))
         else:
-            out.append(line.strip())
+            #out.append(line.strip())
+            out_array[i] = line.strip()
 
         i += 1
         read_id += 1
         if i >= chunk_size and chunk_size > 0:
-            yield out
+            logging.info("Returning chunk of %d reads" % chunk_size)
+            if write_to_shared_memory:
+                out = SingleSharedArray(out_array)
+                shared_name = "shared_array_" + str(random.randint(1000000, 10000000000))
+                to_shared_memory(out, shared_name)
+                yield shared_name
+            else:
+                yield out_array
             out = []
+            out_array = np.empty(chunk_size, dtype="<U" + str(max_read_length))
             i = 0
-    yield out
+
+    logging.info("Returning chunk of %d reads" % i)
+
+    if write_to_shared_memory:
+        out = SingleSharedArray(out_array[0:i])
+        shared_name = "shared_array_" + str(random.randint(1000000, 10000000000))
+        to_shared_memory(out, shared_name)
+        yield shared_name
+    else:
+        yield out_array[0:i]
 
 
 def read_chunks_from_fastq(fastq_file_name, chunk_size=10, include_read_names=False, assign_numeric_read_names=False):

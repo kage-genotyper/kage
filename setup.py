@@ -3,12 +3,19 @@ from setuptools import setup, Extension
 #from Cython.Distutils import build_ext
 
 ext_modules=[
-      Extension("alignment_free_graph_genotyper.cython_chain_genotyper",
+    Extension("alignment_free_graph_genotyper.cython_chain_genotyper",
                 ["alignment_free_graph_genotyper/cython_chain_genotyper.pyx"],
                 libraries=["m"],
                 extra_compile_args = ["-O3", "-ffast-math", "-march=native", "-fopenmp" ],
                 extra_link_args=['-fopenmp'],
-                )]
+                ),
+    Extension("alignment_free_graph_genotyper.cython_readfile",
+              ["alignment_free_graph_genotyper/cython_readfile.pyx"],
+              libraries=["m"],
+              extra_compile_args=["-O3", "-ffast-math", "-march=native", "-fopenmp"],
+              extra_link_args=['-fopenmp'],
+              )
+]
 
 setup(name='alignment_free_graph_genotyper',
       version='0.0.1',
