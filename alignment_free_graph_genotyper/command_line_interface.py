@@ -5,7 +5,7 @@ import itertools
 from alignment_free_graph_genotyper import cython_chain_genotyper
 from itertools import repeat
 import sys, argparse, time
-from graph_kmer_index.shared_mem import from_shared_memory, to_shared_memory, remove_shared_memory, SingleSharedArray
+from graph_kmer_index.shared_mem import from_shared_memory, to_shared_memory, remove_shared_memory, SingleSharedArray, remove_all_shared_memory
 from obgraph import Graph as ObGraph
 from graph_kmer_index import KmerIndex, ReverseKmerIndex
 from graph_kmer_index import ReferenceKmerIndex
@@ -23,6 +23,7 @@ from obgraph.variant_to_nodes import VariantToNodes
 from .genotyper import Genotyper
 from .numpy_genotyper import NumpyGenotyper
 from .bayes_genotyper import NewBayesGenotyper
+import SharedArray as sa
 
 np.random.seed(1)
 
@@ -39,9 +40,11 @@ def count_single_thread(data):
     reads, args = data
     start_time = time.time()
 
+    read_shared_memory_name = None
     if isinstance(reads, str):
         # this is a memory address
         logging.info("Reading reads from shared memory")
+        read_shared_memory_name = reads
         reads = from_shared_memory(SingleSharedArray, reads).array
         logging.info("Read reads from shared memory")
 
@@ -67,6 +70,15 @@ def count_single_thread(data):
                                                               args.skip_chaining,
                                                               args.scale_by_frequency)
     logging.info("Time spent on getting node counts: %.5f" % (time.time()-start_time))
+
+    if read_shared_memory_name is not None:
+        logging.info("Removing shared memory")
+        try:
+            remove_shared_memory(read_shared_memory_name)
+        except FileNotFoundError:
+            logging.info("file not found")
+        logging.info("Removed shared memory")
+
     return NodeCounts(node_counts)
 
 
@@ -424,7 +436,7 @@ def run_argument_parser(args):
     subparser.set_defaults(func=make_genotype_model)
 
     def remove_shared_memory_command_line(args):
-        remove_shared_memory()
+        remove_all_shared_memory()
 
     subparser = subparsers.add_parser("remove_shared_memory")
     subparser.set_defaults(func=remove_shared_memory_command_line)
