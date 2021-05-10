@@ -197,7 +197,7 @@ def run(reads,
 
 
         reverse_read = complement_of_numeric_read(numeric_read[::-1])
-        forward_and_reverse_chains = []
+
 
         for l in range(2):
             if l == 0:
@@ -215,6 +215,7 @@ def run(reads,
                 hash = kmer_hashes[i]
                 if hash == 0:
                     continue
+
                 n_local_hits = n_kmers[hash]
                 if n_local_hits > 10000:
                     #logging.warning("%d kmer hits for kmer %d" % (n_local_hits, kmers[i]))
@@ -229,16 +230,20 @@ def run(reads,
 
                     if index_frequencies[index_position + j] > max_index_lookup_frequency:
                         continue
+
+                    node_counts[nodes[index_position + j]] += 1
                     n_total_hits += 1
+
+            continue
 
             if n_total_hits == 0:
                 continue
 
 
-            found_nodes = np.zeros(n_total_hits, dtype=np.int64)
-            found_ref_offsets = np.zeros(n_total_hits, dtype=np.int64)
-            found_read_offsets = np.zeros(n_total_hits, dtype=np.int64)
-            found_frequencies = np.zeros(n_total_hits, dtype=np.int64)
+            #found_nodes = np.zeros(n_total_hits, dtype=np.int64)
+            #found_ref_offsets = np.zeros(n_total_hits, dtype=np.int64)
+            #found_read_offsets = np.zeros(n_total_hits, dtype=np.int64)
+            #found_frequencies = np.zeros(n_total_hits, dtype=np.int64)
 
             # Get the actual hits
             counter = 0
@@ -264,23 +269,18 @@ def run(reads,
                     if index_frequencies[index_position + j] > max_index_lookup_frequency:
                         continue
                     #print(kmers[i])
-                    found_nodes[counter] = nodes[index_position + j]
-                    found_ref_offsets[counter] = ref_offsets[index_position + j]
-                    found_read_offsets[counter] = i
-                    found_frequencies[counter] = index_frequencies[index_position]
+                    #found_nodes[counter] = nodes[index_position + j]
+                    node_counts[nodes[index_position+j]] += 1
+                    #found_ref_offsets[counter] = ref_offsets[index_position + j]
+                    #found_read_offsets[counter] = i
+                    #found_frequencies[counter] = index_frequencies[index_position]
                     counter += 1
 
             #print(found_nodes)
             #chains = chain(found_ref_offsets, found_read_offsets, found_nodes, kmers)
 
-
-            # Do the chaining
-            if skip_chaining:
-                for c in range(found_nodes.shape[0]):
-                    if scale_by_frequency:
-                        node_counts[found_nodes[c]] += 1.0  / found_frequencies[c]
-                    else:
-                        node_counts[found_nodes[c]] += 1
+            #for c in range(found_nodes.shape[0]):
+            #    node_counts[found_nodes[c]] += 1
 
     return node_counts
 

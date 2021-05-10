@@ -74,7 +74,15 @@ class VcfVariant:
         return (self.chromosome, self.position, self.ref_sequence.lower(), self.variant_sequence.lower())
 
     def get_vcf_line(self):
-        return "%d\t%d\t.\t%s\t%s\t.\tPASS\t.\tGT\t%s\n"  % (self.chromosome, self.position, self.ref_sequence, self.variant_sequence, self.genotype if self.genotype is not None else ".")
+        chromosome = self.chromosome
+        if chromosome == 23:
+            chromosome = "X"
+        elif chromosome == 24:
+            chromosome = "Y"
+        else:
+            chromosome = str(chromosome)
+
+        return "%s\t%d\t.\t%s\t%s\t.\tPASS\t.\tGT\t%s\n"  % (chromosome, self.position, self.ref_sequence, self.variant_sequence, self.genotype if self.genotype is not None else ".")
 
     def __str__(self):
         return "chr%d:%d %s/%s %s %s" % (self.chromosome, self.position, self.ref_sequence, self.variant_sequence, self.genotype, self.type)
