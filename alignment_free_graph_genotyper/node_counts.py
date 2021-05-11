@@ -1,7 +1,8 @@
 import numpy as np
 
 class NodeCounts:
-    def __init__(self, node_counts):
+    properties = {"node_counts"}
+    def __init__(self, node_counts=None):
         self.node_counts = node_counts
 
     def to_file(self, file_name):

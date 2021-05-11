@@ -70,6 +70,8 @@ def count_single_thread(data):
                                                               args.skip_chaining,
                                                               args.scale_by_frequency)
     logging.info("Time spent on getting node counts: %.5f" % (time.time()-start_time))
+    shared_counts = from_shared_memory(NodeCounts, "counts_shared")
+    shared_counts.node_counts += node_counts
 
     if read_shared_memory_name is not None:
         logging.info("Removing shared memory")
@@ -79,6 +81,7 @@ def count_single_thread(data):
             logging.info("file not found")
         logging.info("Removed shared memory")
 
+    return True
     return NodeCounts(node_counts)
 
 
@@ -106,17 +109,23 @@ def count(args):
     max_node_id = args.max_node_id
     reads = read_chunks_from_fasta(args.reads, chunk_size=args.chunk_size, write_to_shared_memory=True)
 
+    counts = NodeCounts(np.zeros(args.max_node_id+1, dtype=np.float))
+    to_shared_memory(counts, "counts_shared")
+
     logging.info("Making pool")
     pool = Pool(args.n_threads)
     node_counts = np.zeros(max_node_id+1, dtype=float)
     for result in pool.imap(count_single_thread, zip(reads, repeat(args))):
         if result is not None:
-            print("Got result. Length of counts: %d" % len(result.node_counts))
-            node_counts += result.node_counts
+            #logging.info("Got result. Length of counts: %d" % len(result.node_counts))
+            t1 = time.time()
+            #node_counts += result.node_counts
+            logging.info("Time spent adding counts: %.5f" % (time.time() - t1))
         else:
             logging.info("No results")
 
-    counts = NodeCounts(node_counts)
+    #counts = NodeCounts(node_counts)
+    counts = from_shared_memory(NodeCounts, "counts_shared")
     counts.to_file(args.node_counts_out_file_name)
 
 

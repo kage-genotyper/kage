@@ -48,7 +48,7 @@ def np_letter_sequence_to_numeric(letter_sequence):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef np.ndarray[np.int64_t] get_kmers(np.ndarray[np.int64_t] numeric_read, np.ndarray[np.int64_t] power_array):
+cdef np.ndarray[np.int64_t, ndim=1] get_kmers(np.ndarray[np.int64_t] numeric_read, np.ndarray[np.int64_t] power_array):
     return np.convolve(numeric_read, power_array, mode='valid')
 
 
@@ -75,7 +75,9 @@ def run(reads,
     cdef np.uint32_t[:] nodes = index._nodes
     cdef np.uint64_t[:] ref_offsets = index._ref_offsets
     cdef np.uint64_t[:] index_kmers = index._kmers
+    #cdef np.ndarray[np.uint64_t] index_kmers = index._kmers
     cdef np.uint16_t[:] index_frequencies = index._frequencies
+    #cdef np.ndarray[np.uint16_t] index_frequencies = index._frequencies
     cdef int modulo = index._modulo
     logging.info("Hash modulo is %d. Max index lookup frequency is %d. k=%d" % (modulo, max_index_lookup_frequency, k))
 
@@ -141,7 +143,7 @@ def run(reads,
     cdef set short_kmers_set
     cdef float best_score = 0
     #cdef list best_chain
-    cdef read_number = -1
+    cdef int read_number = -1
     cdef np.ndarray[np.int64_t] chain_positions = np.zeros(len(reads), dtype=np.int64)
     cdef np.ndarray[np.uint32_t] ref_nodes_in_read_area = np.zeros(0, dtype=np.uint32)
     cdef np.ndarray[np.int64_t] snp_nodes = np.zeros(0, dtype=np.int64)
@@ -195,92 +197,38 @@ def run(reads,
             numeric_read = read.astype(np.int64)
 
 
-
         reverse_read = complement_of_numeric_read(numeric_read[::-1])
-
 
         for l in range(2):
             if l == 0:
-                kmers = get_kmers(numeric_read, power_array)
+                #kmers = get_kmers(numeric_read, power_array)
+                kmers = np.convolve(numeric_read, power_array, mode='valid')
             else:
-                kmers = get_kmers(reverse_read, power_array)
+                #kmers = get_kmers(reverse_read, power_array)
+                kmers = np.convolve(reverse_read, power_array, mode='valid')
 
-            #short_kmers_set = set(short_kmers)
-            kmer_hashes = np.mod(kmers, modulo)
-            n = kmers.shape[0]
-            n_total_hits = 0
-
-            # First find number of hits
-            for i in range(n):
-                hash = kmer_hashes[i]
+            for i in range(kmers.shape[0]):
+                hash = kmers[i] % modulo  # kmer_hashes[i]
                 if hash == 0:
                     continue
 
                 n_local_hits = n_kmers[hash]
-                if n_local_hits > 10000:
+                #if n_local_hits > 10000:
                     #logging.warning("%d kmer hits for kmer %d" % (n_local_hits, kmers[i]))
-                    continue
+                #    continue
 
                 index_position = hashes_to_index[hash]
                 for j in range(n_local_hits):
+                    l = index_position + j
                     # Check that this entry actually matches the kmer, sometimes it will not due to collision
-                    #logging.info("Checking index position %d. index_kmers len: %d" % (index_position + j, len(index_kmers)))
-                    if index_kmers[index_position + j] != kmers[i]:
+                    if index_kmers[l] != kmers[i]:
                         continue
 
-                    if index_frequencies[index_position + j] > max_index_lookup_frequency:
+                    if index_frequencies[l] > max_index_lookup_frequency:
                         continue
 
-                    node_counts[nodes[index_position + j]] += 1
-                    n_total_hits += 1
+                    node_counts[nodes[l]] += 1
 
-            continue
-
-            if n_total_hits == 0:
-                continue
-
-
-            #found_nodes = np.zeros(n_total_hits, dtype=np.int64)
-            #found_ref_offsets = np.zeros(n_total_hits, dtype=np.int64)
-            #found_read_offsets = np.zeros(n_total_hits, dtype=np.int64)
-            #found_frequencies = np.zeros(n_total_hits, dtype=np.int64)
-
-            # Get the actual hits
-            counter = 0
-
-            for i in range(n):
-                hash = kmer_hashes[i]
-                if hash == 0:
-                    continue
-
-                index_position = hashes_to_index[hash]
-                n_local_hits = n_kmers[hash]
-
-                if n_local_hits == 0:
-                    continue
-
-                if n_local_hits > 10000:
-                    #logging.warning("%d kmer hits for kmer %d (skipping 2)" % (n_local_hits, kmers[i]))
-                    continue
-
-                for j in range(n_local_hits):
-                    if index_kmers[index_position + j] != kmers[i]:
-                        continue
-                    if index_frequencies[index_position + j] > max_index_lookup_frequency:
-                        continue
-                    #print(kmers[i])
-                    #found_nodes[counter] = nodes[index_position + j]
-                    node_counts[nodes[index_position+j]] += 1
-                    #found_ref_offsets[counter] = ref_offsets[index_position + j]
-                    #found_read_offsets[counter] = i
-                    #found_frequencies[counter] = index_frequencies[index_position]
-                    counter += 1
-
-            #print(found_nodes)
-            #chains = chain(found_ref_offsets, found_read_offsets, found_nodes, kmers)
-
-            #for c in range(found_nodes.shape[0]):
-            #    node_counts[found_nodes[c]] += 1
 
     return node_counts
 
