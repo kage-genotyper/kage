@@ -58,6 +58,7 @@ class VcfVariant:
         self.type = type
         self.vcf_line_number = vcf_line_number
 
+        self._filter = "PASS"
 
     def get_genotype(self):
         return self.genotype.replace("|", "/").replace("1/0", "0/1")
@@ -65,9 +66,35 @@ class VcfVariant:
     def copy(self):
         return VcfVariant(self.chromosome, self.position, self.ref_sequence, self.variant_sequence, self.genotype, self.type, self.vcf_line, self.vcf_line_number)
 
-    def set_genotype(self, genotype):
-        assert genotype in ["0|0", "0/0", "0|1", "0/1", "1/1", "1|1"], "Invalid genotype %s" % genotype
-        self.genotype = genotype
+    def set_filter_by_prob(self, prob_correct, criteria_for_pass=0.99):
+        if prob_correct > criteria_for_pass:
+            self._filter = "PASS"
+        else:
+            self._filter = "LowQUAL"
+
+    def get_numeric_genotype(self):
+        g = self.get_genotype()
+        if g == "0/0":
+            return 1
+        elif g == "1/1":
+            return 2
+        elif g == "0/1":
+            return 3
+        else:
+            raise Exception("Invalid genotype")
+
+    def set_genotype(self, genotype, is_numeric=False):
+        if is_numeric:
+            assert genotype in [0, 1, 2, 3]
+            if genotype == 1 or genotype == 0:
+                self.genotype = "0/0"
+            elif genotype == 2:
+                self.genotype = "1/1"
+            else:
+                self.genotype = "0/1"
+        else:
+            assert genotype in ["0|0", "0/0", "0|1", "0/1", "1/1", "1|1"], "Invalid genotype %s" % genotype
+            self.genotype = genotype
 
     def id(self):
         #return (self.chromosome, self.position)
@@ -82,7 +109,7 @@ class VcfVariant:
         else:
             chromosome = str(chromosome)
 
-        return "%s\t%d\t.\t%s\t%s\t.\tPASS\t.\tGT\t%s\n"  % (chromosome, self.position, self.ref_sequence, self.variant_sequence, self.genotype if self.genotype is not None else ".")
+        return "%s\t%d\t.\t%s\t%s\t.\t%s\t.\tGT\t%s\n"  % (chromosome, self.position, self.ref_sequence, self.variant_sequence, self._filter, self.genotype if self.genotype is not None else ".")
 
     def __str__(self):
         return "chr%d:%d %s/%s %s %s" % (self.chromosome, self.position, self.ref_sequence, self.variant_sequence, self.genotype, self.type)
@@ -127,6 +154,24 @@ class VcfVariant:
 
     def get_reference_allele_frequency(self):
         return 1 - self.get_variant_allele_frequency()
+
+    def get_individuals_and_numeric_haplotypes(self):
+        # genotypes are 1, 2, 3 for homo ref, homo alt and hetero
+        for individual_id, genotype_string in enumerate(self.vcf_line.split()[9:]):
+            genotype_string = genotype_string.split(":")[0].replace("/", "|")
+            if genotype_string == "0|0":
+                numeric = (1, 1)
+            elif genotype_string == "1|1":
+                numeric = (2, 2)
+            elif genotype_string == "0|1":
+                numeric = (1, 2)
+            elif genotype_string == "1|0":
+                numeric = (2, 1)
+            else:
+                logging.error("Could not parse genotype string %s" % genotype_string)
+                raise Exception("Unknown genotype")
+
+            yield (individual_id, numeric)
 
     def get_individuals_and_numeric_genotypes(self):
         # genotypes are 1, 2, 3 for homo ref, homo alt and hetero
@@ -188,7 +233,7 @@ class VcfVariant:
 
 
 class VcfVariants:
-    def __init__(self, variant_genotypes, skip_index=False, header_lines=""):
+    def __init__(self, variant_genotypes=[], skip_index=False, header_lines=""):
         self._header_lines = header_lines
         self.variant_genotypes = variant_genotypes
         self._index = {}
@@ -196,13 +241,24 @@ class VcfVariants:
         if not skip_index:
             self.make_index()
 
-    def get_chunks(self, chunk_size=5000):
+    def get_header(self):
+        return self._header_lines
+
+    def get_variant_by_line_number(self, line_number):
+        return self.variant_genotypes[line_number]
+
+    def add_variants(self, variant_list):
+        self.variant_genotypes.extend(variant_list)
+
+    def get_chunks(self, chunk_size=5000, add_variants_to_list=None):
         out = []
         i = 0
         for variant_number, variant in enumerate(self.variant_genotypes):
             if variant_number % 100000 == 0:
                 logging.info("%d variants read" % variant_number)
             out.append(variant)
+            if add_variants_to_list is not None:
+                add_variants_to_list.append(variant)
             i += 1
             if i >= chunk_size and chunk_size > 0:
                 yield out
@@ -295,6 +351,9 @@ class VcfVariants:
         return self._index[variant.id()]
 
     def __getitem__(self, item):
+        if item >= len(self.variant_genotypes):
+            logging.error("Variant with id %d does not exist. There are only %d variants" % (item, len(self.variant_genotypes)))
+
         return self.variant_genotypes[item]
 
     def __len__(self):
@@ -306,14 +365,19 @@ class VcfVariants:
     def __next__(self):
         return self.variant_genotypes.__next__()
 
-    def to_vcf_file(self, file_name, add_individual_to_header="DONOR", ignore_homo_ref=False):
+    def to_vcf_file(self, file_name, add_individual_to_header="DONOR", ignore_homo_ref=False, add_header_lines=[], sample_name_output="DONOR"):
         logging.info("Writing to file %s" % file_name)
         with open(file_name, "w") as f:
             #f.write(self._header_lines)
             for header_line in self._header_lines.split("\n")[0:-1]:  # last element is empty
                 if header_line.startswith("#CHROM"):
-                    header_line += "\tDONOR"
+                    header_line += "\t" + sample_name_output
+                    # first write additional header line, the chrom-line should be the last one
+                    for additional_header_line in add_header_lines:
+                        f.writelines([additional_header_line + "\n"])
+
                 f.writelines([header_line + "\n"])
+
 
             for i, variant in enumerate(self):
                 if i % 1000000 == 0:
@@ -324,6 +388,29 @@ class VcfVariants:
 
                 f.writelines([variant.get_vcf_line()])
 
+
+    @staticmethod
+    def read_header_from_vcf(vcf_file_name):
+        f = open(vcf_file_name)
+        is_bgzipped = False
+        if vcf_file_name.endswith(".gz"):
+            logging.info("Assuming gzipped file")
+            is_bgzipped = True
+            gz = gzip.open(vcf_file_name)
+            f = io.BufferedReader(gz, buffer_size=1000 * 1000 * 2)  # 2 GB buffer size?
+            logging.info("Made gz file object")
+
+        header_lines = ""
+        for line in f:
+            if is_bgzipped:
+                line = line.decode("utf-8")
+
+            if line.startswith("#"):
+                header_lines += line
+            else:
+                break
+
+        return header_lines
 
     @classmethod
     def from_vcf(cls, vcf_file_name, skip_index=False, limit_to_n_lines=None, make_generator=False, limit_to_chromosome=None):
@@ -339,6 +426,9 @@ class VcfVariants:
         if limit_to_chromosome is not None:
             logging.info("Will only read variants from chromsome %s" % limit_to_chromosome)
 
+        # Get header
+        header_lines = VcfVariants.read_header_from_vcf(vcf_file_name)
+
         f = open(vcf_file_name)
         is_bgzipped = False
         if vcf_file_name.endswith(".gz"):
@@ -352,12 +442,11 @@ class VcfVariants:
             logging.info("Returning variant generator")
             if is_bgzipped:
                 f = (line for line in f if not line.decode("utf-8").startswith("#"))
-                return cls((VcfVariant.from_vcf_line(line.decode("utf-8"), vcf_line_number=i) for i, line in enumerate(f) if not line.decode("utf-8").startswith("#")), skip_index=skip_index)
+                return cls((VcfVariant.from_vcf_line(line.decode("utf-8"), vcf_line_number=i) for i, line in enumerate(f) if not line.decode("utf-8").startswith("#")), skip_index=skip_index, header_lines=header_lines)
             else:
                 f = (line for line in f if not line.startswith("#"))
-                return cls((VcfVariant.from_vcf_line(line, vcf_line_number=i) for i, line in enumerate(f)), skip_index=skip_index)
+                return cls((VcfVariant.from_vcf_line(line, vcf_line_number=i) for i, line in enumerate(f)), skip_index=skip_index, header_lines=header_lines)
 
-        header_lines = ""
         n_variants_added = 0
         prev_time = time.time()
         variant_number = -1
@@ -365,9 +454,7 @@ class VcfVariants:
             if is_bgzipped:
                 line = line.decode("utf-8")
 
-
             if line.startswith("#"):
-                header_lines += line
                 continue
 
             variant_number += 1

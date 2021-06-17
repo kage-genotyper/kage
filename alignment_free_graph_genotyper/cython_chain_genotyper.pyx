@@ -67,9 +67,6 @@ def run(reads,
         scale_by_frequency=False
         ):
 
-    if skip_chaining:
-        logging.warning("Will not do any chaining.")
-
     cdef np.int64_t[:] hashes_to_index = index._hashes_to_index
     cdef np.uint32_t[:] n_kmers = index._n_kmers
     cdef np.uint32_t[:] nodes = index._nodes
@@ -81,7 +78,6 @@ def run(reads,
     cdef int modulo = index._modulo
     logging.info("Hash modulo is %d. Max index lookup frequency is %d. k=%d" % (modulo, max_index_lookup_frequency, k))
 
-    logging.info("k=%d" % k)
     # Reference index
 
     cdef unsigned int[:] reference_index_position_to_index
@@ -103,8 +99,6 @@ def run(reads,
     if reference_index_scoring is not None:
         reference_index_scoring_kmers = reference_index_scoring.kmers
         do_scoring = 1
-    else:
-        logging.warning("Skipping scoring against reference kmers")
 
     if scale_by_frequency:
         logging.info("Will scale counts by frequency")
@@ -184,8 +178,8 @@ def run(reads,
     for read_index in range(len(reads)):
         read = reads[read_index]
         got_index_hits = 0
-        if read_number % 10000 == 0:
-            logging.info("%d reads processed (last 10k processed in %.5f sec). N total chains so far: %d" % (read_number, time.time() - prev_time, n_total_chains))
+        if read_number % 50000 == 0:
+            logging.info("%d reads processed (last 50k processed in %.5f sec). N total chains so far: %d" % (read_number, time.time() - prev_time, n_total_chains))
             prev_time = time.time()
 
         read_number += 1

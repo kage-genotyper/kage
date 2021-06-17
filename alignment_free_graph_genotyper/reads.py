@@ -2,6 +2,8 @@ import logging
 from graph_kmer_index.shared_mem import SingleSharedArray, to_shared_memory, from_shared_memory
 import random
 import numpy as np
+import gzip
+
 
 class Reads:
     def __init__(self, reads):
@@ -19,7 +21,14 @@ class Reads:
         return cls(reads)
 
 def read_chunks_from_fasta(fasta_file_name, chunk_size=10, include_read_names=False, assign_numeric_read_names=False, write_to_shared_memory=False, max_read_length=150):
-    file = open(fasta_file_name)
+
+    is_gzipped = False
+    if fasta_file_name.endswith(".gz"):
+        file = gzip.open(fasta_file_name)
+        is_gzipped = True
+    else:
+        file = open(fasta_file_name)
+
     out = []
     i = 0
     read_id = 0
@@ -28,6 +37,9 @@ def read_chunks_from_fasta(fasta_file_name, chunk_size=10, include_read_names=Fa
     out_array = np.empty(chunk_size, dtype="<U" + str(max_read_length))
 
     for line in file:
+        if is_gzipped:
+            line = line.decode("utf-8")
+
         if line.startswith(">"):
             if include_read_names:
                 if assign_numeric_read_names:
@@ -38,6 +50,10 @@ def read_chunks_from_fasta(fasta_file_name, chunk_size=10, include_read_names=Fa
 
         if i % 500000 == 0:
             logging.info("Read %d lines" % i)
+
+        if len(line) < 31:
+            logging.warning("Fasta sequence %s is short, skipping." % line.strip())
+            continue
 
         if include_read_names:
             assert False, "Not supported, not rewritten to using np arrays"

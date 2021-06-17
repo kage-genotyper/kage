@@ -18,12 +18,14 @@ from pathos.multiprocessing import Pool
 import numpy as np
 from .node_counts import NodeCounts
 from .node_count_model import NodeCountModel, GenotypeNodeCountModel
-from obgraph.genotype_matrix import MostSimilarVariantLookup, GenotypeFrequencies
+from obgraph.genotype_matrix import MostSimilarVariantLookup, GenotypeFrequencies, GenotypeTransitionProbabilities
 from obgraph.variant_to_nodes import VariantToNodes
 from .genotyper import Genotyper
 from .numpy_genotyper import NumpyGenotyper
 from .bayes_genotyper import NewBayesGenotyper
 import SharedArray as sa
+from obgraph.haplotype_matrix import HaplotypeMatrix
+from obgraph.variant_to_nodes import NodeToVariants
 
 np.random.seed(1)
 
@@ -36,17 +38,14 @@ def main():
 
 #def count_single_thread(reads, args):
 def count_single_thread(data):
-    logging.info("Process start")
     reads, args = data
     start_time = time.time()
 
     read_shared_memory_name = None
     if isinstance(reads, str):
         # this is a memory address
-        logging.info("Reading reads from shared memory")
         read_shared_memory_name = reads
         reads = from_shared_memory(SingleSharedArray, reads).array
-        logging.info("Read reads from shared memory")
 
     if len(reads) == 0:
         logging.info("Skipping thread, no more reads")
@@ -63,7 +62,6 @@ def count_single_thread(data):
     kmer_index = from_shared_memory(KmerIndex, "kmer_index_shared")
     logging.info("Time spent on getting indexes from memory: %.5f" % (time.time()-start_time))
 
-    logging.info("Got %d lines" % len(reads))
     node_counts = cython_chain_genotyper.run(reads, kmer_index, args.max_node_id, args.kmer_size,
                                                               reference_index,args.max_index_lookup_frequency, 0,
                                                               reference_index_scoring,
@@ -74,12 +72,10 @@ def count_single_thread(data):
     shared_counts.node_counts += node_counts
 
     if read_shared_memory_name is not None:
-        logging.info("Removing shared memory")
         try:
             remove_shared_memory(read_shared_memory_name)
         except FileNotFoundError:
             logging.info("file not found")
-        logging.info("Removed shared memory")
 
     return True
     return NodeCounts(node_counts)
@@ -91,10 +87,8 @@ def count(args):
         from numpy_alignments import NumpyAlignments
         truth_alignments = NumpyAlignments.from_file(args.truth_alignments)
         truth_positions = truth_alignments.positions
-        logging.info("Read numpy alignments")
 
     if args.reference_index is not None:
-        logging.info("Reading reference index from file")
         reference_index = ReferenceKmerIndex.from_file(args.reference_index)
         to_shared_memory(reference_index, "reference_index_shared")
 
@@ -102,7 +96,6 @@ def count(args):
         reference_index_scoring = ReferenceKmerIndex.from_file(args.reference_index_scoring)
         to_shared_memory(reference_index_scoring, "reference_index_scoring_shared")
 
-    logging.info("Reading kmer index from file")
     kmer_index = KmerIndex.from_file(args.kmer_index)
     to_shared_memory(kmer_index, "kmer_index_shared")
 
@@ -112,7 +105,6 @@ def count(args):
     counts = NodeCounts(np.zeros(args.max_node_id+1, dtype=np.float))
     to_shared_memory(counts, "counts_shared")
 
-    logging.info("Making pool")
     pool = Pool(args.n_threads)
     node_counts = np.zeros(max_node_id+1, dtype=float)
     for result in pool.imap(count_single_thread, zip(reads, repeat(args))):
@@ -120,7 +112,6 @@ def count(args):
             #logging.info("Got result. Length of counts: %d" % len(result.node_counts))
             t1 = time.time()
             #node_counts += result.node_counts
-            logging.info("Time spent adding counts: %.5f" % (time.time() - t1))
         else:
             logging.info("No results")
 
@@ -133,6 +124,12 @@ def analyse_variants(args):
     from .node_count_model import NodeCountModel
     from obgraph.genotype_matrix import MostSimilarVariantLookup
     from obgraph.variant_to_nodes import VariantToNodes
+
+    whitelist = None
+    if args.whitelist is not None:
+        whitelist = np.load(args.whitelist)
+
+    transition_probs = GenotypeTransitionProbabilities.from_file(args.transition_probabilities)
     most_similar_variants = MostSimilarVariantLookup.from_file(args.most_similar_variants)
     variant_nodes = VariantToNodes.from_file(args.variant_nodes)
     kmer_index = KmerIndex.from_file(args.kmer_index)
@@ -144,7 +141,7 @@ def analyse_variants(args):
 
     analyser = KmerAnalyser(variant_nodes, args.kmer_size, VcfVariants.from_vcf(args.vcf), kmer_index, reverse_index, VcfVariants.from_vcf(args.predicted_vcf),
                             VcfVariants.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NodeCounts.from_file(args.node_counts),
-                            node_count_model, GenotypeFrequencies.from_file(args.genotype_frequencies), most_similar_variants)
+                            node_count_model, GenotypeFrequencies.from_file(args.genotype_frequencies), most_similar_variants, whitelist, transition_probs=transition_probs)
     analyser.analyse_unique_kmers_on_variants()
 
 
@@ -246,26 +243,100 @@ def model_kmers_from_haplotype_nodes(args):
     logging.info("Wrote expected node counts to file %s" % args.out_file_name)
 
 
-def genotype(args):
-    logging.info("Using genotyper %s" % args.genotyper)
+def genotype_single_thread(data):
+    variant_interval, args = data
+    min_variant_id = variant_interval[0]
+    max_variant_id = variant_interval[1]
+
     genotyper_class = globals()[args.genotyper]
 
+    genotype_transition_probs = None
+    if args.genotype_transition_probs is not None:
+        genotype_transition_probs = from_shared_memory(GenotypeTransitionProbabilities, "genotype_transition_probs_shared")
+
+    genotype_frequencies = from_shared_memory(GenotypeFrequencies, "genotype_frequencies_shared")
+
+    most_similar_variant_lookup = None
+    if args.most_similar_variant_lookup is not None:
+        most_similar_variant_lookup = from_shared_memory(MostSimilarVariantLookup, "most_similar_variant_lookup_shared")
+
+    if args.model is not None:
+        model = from_shared_memory(GenotypeNodeCountModel, "model_shared")
+    else:
+        model = None
+
+    variant_to_nodes = from_shared_memory(VariantToNodes, "variant_to_nodes_shared")
+    node_counts = from_shared_memory(NodeCounts, "node_counts_shared")
+
+    if args.tricky_variants is not None:
+        tricky_variants = from_shared_memory(SingleSharedArray, "tricky_variants_shared").array
+    else:
+        tricky_variants = None
+
+    genotyper = genotyper_class(model, min_variant_id, max_variant_id, variant_to_nodes, node_counts, genotype_frequencies,
+                            most_similar_variant_lookup, avg_coverage=args.average_coverage, genotype_transition_probs=genotype_transition_probs,
+                                tricky_variants=tricky_variants, use_naive_priors=args.use_naive_priors)
+    genotypes, probs = genotyper.genotype()
+    return min_variant_id, max_variant_id, genotypes, probs
+
+
+def genotype(args):
+    logging.info("Using genotyper %s" % args.genotyper)
+
     genotype_frequencies = GenotypeFrequencies.from_file(args.genotype_frequencies)
-    most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
+    if args.most_similar_variant_lookup is not None:
+        most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
+        to_shared_memory(most_similar_variant_lookup, "most_similar_variant_lookup_shared")
+
     try:
         model = GenotypeNodeCountModel.from_file(args.model) if args.model is not None else None
     except KeyError:
         model = NodeCountModel.from_file(args.model)
 
     variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
-
-    variants = VcfVariants.from_vcf(args.vcf)
     node_counts = NodeCounts.from_file(args.counts)
-    genotyper = genotyper_class(model, variants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup)
-    genotyper.genotype()
-    variants.to_vcf_file(args.out_file_name)
-    np.save(args.out_file_name + ".allele_frequencies", genotyper._predicted_allele_frequencies)
-    logging.info("Wrote predicted allele frequencies to %s" % args.out_file_name + ".allele_frequencies")
+
+    variant_store = []
+    variants = VcfVariants.from_vcf(args.vcf, make_generator=True, skip_index=True)
+    variant_chunks = variants.get_chunks(chunk_size=args.chunk_size, add_variants_to_list=variant_store)
+    variant_chunks = ((chunk[0].vcf_line_number, chunk[-1].vcf_line_number) for chunk in variant_chunks)
+
+    if args.tricky_variants is not None:
+        tricky_variants = np.load(args.tricky_variants)
+        to_shared_memory(SingleSharedArray(tricky_variants), "tricky_variants_shared")
+
+    if args.genotype_transition_probs is not None:
+        to_shared_memory(GenotypeTransitionProbabilities.from_file(args.genotype_transition_probs), "genotype_transition_probs_shared")
+
+    to_shared_memory(genotype_frequencies, "genotype_frequencies_shared")
+    if model is not None:
+        to_shared_memory(model, "model_shared")
+    to_shared_memory(variant_to_nodes, "variant_to_nodes_shared")
+    to_shared_memory(node_counts, "node_counts_shared")
+
+    #genotyper = genotyper_class(model, variants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup)
+    #genotyper.genotype()
+    pool = Pool(args.n_threads)
+    #genotyped_variants = VcfVariants(header_lines=variants.get_header())
+    results = []
+
+
+    for min_variant_id, max_variant_id, genotypes, probs in pool.imap(genotype_single_thread, zip(variant_chunks, repeat(args))):
+        results.append((min_variant_id, max_variant_id, genotypes, probs))
+        #genotyped_variants.add_variants(result)
+
+    i = 0
+    for min_variant_id, max_variant_id, genotypes, probs in results:
+        logging.info("Merging results, %d/%d" % (i, len(results)))
+        i += 1
+        for variant_id in range(min_variant_id, max_variant_id+1):
+            variant_store[variant_id].set_genotype(genotypes[variant_id-min_variant_id], is_numeric=True)
+            variant_store[variant_id].set_filter_by_prob(probs[variant_id-min_variant_id], criteria_for_pass=args.min_genotype_quality)
+
+    VcfVariants(variant_store, header_lines=variants.get_header(), skip_index=True).\
+        to_vcf_file(args.out_file_name, ignore_homo_ref=False, add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">'], sample_name_output=args.sample_name_output)
+    #np.save(args.out_file_name + ".allele_frequencies", genotyper._predicted_allele_frequencies)
+    #logging.info("Wrote predicted allele frequencies to %s" % args.out_file_name + ".allele_frequencies")
 
 
 def model_using_kmer_index(variant_id_interval, args):
@@ -277,12 +348,21 @@ def model_using_kmer_index(variant_id_interval, args):
     if args.allele_frequency_index is not None:
         allele_frequency_index = np.load(args.allele_frequency_index)
 
+    haplotype_matrix = None
+    node_to_variants = None
+    if args.haplotype_matrix is not None:
+        haplotype_matrix = HaplotypeMatrix.from_file(args.haplotype_matrix)
+        node_to_variants = NodeToVariants.from_file(args.node_to_variants)
+
     model_creator = NodeCountModelCreatorFromNoChaining(
         from_shared_memory(KmerIndex, "kmer_index_shared"),
         from_shared_memory(ReverseKmerIndex, "reverse_index_shared"),
         from_shared_memory(VariantToNodes, "variant_to_nodes_shared"),
         variant_start_id, variant_end_id, args.max_node_id, scale_by_frequency=args.scale_by_frequency,
-        allele_frequency_index=allele_frequency_index)
+        allele_frequency_index=allele_frequency_index,
+        haplotype_matrix=haplotype_matrix,
+        node_to_variants=node_to_variants
+    )
 
     counts_following, counts_not_following = model_creator.get_node_counts()
     return counts_following, counts_not_following
@@ -368,6 +448,8 @@ def run_argument_parser(args):
     subparser.add_argument("-m", "--node-count-model", required=True)
     subparser.add_argument("-G", "--genotype-frequencies", required=True)
     subparser.add_argument("-M", "--most-similar-variants", required=True)
+    subparser.add_argument("-w", "--whitelist", required=False, help="Only consider these variants")
+    subparser.add_argument("-p", "--transition-probabilities", required=True)
     subparser.set_defaults(func=analyse_variants)
 
     subparser = subparsers.add_parser("model")
@@ -395,9 +477,18 @@ def run_argument_parser(args):
     subparser.add_argument("-v", "--vcf", required=True, help="Vcf to genotype")
     subparser.add_argument("-m", "--model", required=False, help="Node count model")
     subparser.add_argument("-G", "--genotype-frequencies", required=True, help="Genotype frequencies")
-    subparser.add_argument("-M", "--most_similar_variant_lookup", required=True, help="Most similar variant lookup")
+    subparser.add_argument("-M", "--most_similar_variant_lookup", required=False, help="Most similar variant lookup")
     subparser.add_argument("-o", "--out-file-name", required=True, help="Will write genotyped variants to this file")
     subparser.add_argument("-C", "--genotyper", required=False, default="Genotyper", help="Genotyper to use")
+    subparser.add_argument("-t", "--n-threads", type=int, required=False, default=1)
+    subparser.add_argument("-z", "--chunk-size", type=int, default=100000, help="Number of variants to process in each chunk")
+    subparser.add_argument("-a", "--average-coverage", type=float, default=15, help="Expected average read coverage")
+    subparser.add_argument("-q", "--min-genotype-quality", type=float, default=0.95, help="Min prob of genotype being correct")
+    subparser.add_argument("-p", "--genotype-transition-probs", required=False)
+    subparser.add_argument("-x", "--tricky-variants", required=False)
+    subparser.add_argument("-s", "--sample-name-output", required=False, default="DONOR", help="Sample name that will be used in the output vcf")
+    subparser.add_argument("-u", "--use-naive-priors", required=False, type=bool, default=False, help="Set to True to use only population allele frequencies as priors.")
+
     subparser.set_defaults(func=genotype)
 
 
@@ -444,6 +535,67 @@ def run_argument_parser(args):
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.set_defaults(func=make_genotype_model)
 
+    def find_tricky_variants(args):
+        variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
+        model = GenotypeNodeCountModel.from_file(args.node_count_model)
+        reverse_index = ReverseKmerIndex.from_file(args.reverse_kmer_index)
+
+        tricky_variants = np.zeros(len(variant_to_nodes.ref_nodes+1), dtype=np.uint32)
+
+        n_tricky_model = 0
+        n_tricky_kmers = 0
+        n_nonunique = 0
+
+        max_counts_model = args.max_counts_model
+
+        for variant_id in range(0, len(variant_to_nodes.ref_nodes)):
+            if variant_id % 10000 == 0:
+                logging.info("%d variants processed, %d tricky due to model, %d tricky due to kmers. N non-unique filtered: %d" % (variant_id, n_tricky_model, n_tricky_kmers, n_nonunique))
+
+            ref_node = variant_to_nodes.ref_nodes[variant_id]
+            var_node = variant_to_nodes.var_nodes[variant_id]
+
+            model_counts_ref = sorted([
+                model.counts_homo_ref[ref_node],
+                model.counts_homo_alt[ref_node],
+                model.counts_hetero[ref_node]
+            ])
+            model_counts_var = sorted([
+                model.counts_homo_ref[var_node],
+                model.counts_homo_alt[var_node],
+                model.counts_hetero[var_node]
+            ])
+
+            if args.only_allow_unique:
+                if model.counts_homo_ref[var_node] > 0 or model.counts_homo_alt[ref_node] > 0:
+                    n_nonunique += 1
+                    tricky_variants[variant_id] = 1
+
+            #if model_counts_ref[2] > max_counts_model and model_counts_var[2] > max_counts_model:
+            if model_counts_ref[2] < model_counts_ref[1] * 1.1 or model_counts_var[2] < model_counts_var[1] * 1.1:
+                #logging.warning(model_counts_ref)
+                tricky_variants[variant_id] = 1
+                n_tricky_model += 1
+            else:
+                reference_kmers = set(reverse_index.get_node_kmers(ref_node))
+                variant_kmers = set(reverse_index.get_node_kmers(var_node))
+                if len(reference_kmers.intersection(variant_kmers)) > 0:
+                    #logging.warning("-----\nKmer crash on variant %d \n Ref kmers: %s\n Var kmers: %s" % (variant_id, reference_kmers, variant_kmers))
+                    tricky_variants[variant_id] = 1
+                    n_tricky_kmers += 1
+
+        np.save(args.out_file_name, tricky_variants)
+        logging.info("Wrote tricky variants to file %s" % args.out_file_name)
+
+    subparser = subparsers.add_parser("find_tricky_variants")
+    subparser.add_argument("-v", "--variant-to-nodes", required=True)
+    subparser.add_argument("-m", "--node-count-model", required=True)
+    subparser.add_argument("-r", "--reverse-kmer-index", required=True)
+    subparser.add_argument("-M", "--max-counts-model", required=False, type=int, default=8, help="If model count exceeds this number, variant is tricky")
+    subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.add_argument("-u", "--only-allow-unique", required=False, type=bool, help="Only allow variants where all kmers are unique")
+    subparser.set_defaults(func=find_tricky_variants)
+
     def remove_shared_memory_command_line(args):
         remove_all_shared_memory()
 
@@ -486,11 +638,10 @@ def run_argument_parser(args):
 
         reverse_kmers = ReverseKmerIndex.from_file(args.reverse_kmer_index)
         index = KmerIndex.from_file(args.kmer_index)
-        variants = VcfVariants.from_vcf(args.vcf, skip_index=True)
         variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
 
         from .variant_kmer_analyser import VariantKmerAnalyser
-        analyser = VariantKmerAnalyser(reverse_kmers, index, variants, variant_to_nodes)
+        analyser = VariantKmerAnalyser(reverse_kmers, index, variant_to_nodes, args.write_good_variants_to_file)
         analyser.analyse()
 
 
@@ -500,13 +651,15 @@ def run_argument_parser(args):
     subparser = subparsers.add_parser("analyse_kmer_index")
     subparser.add_argument("-r", "--reverse-kmer-index", required=True)
     subparser.add_argument("-i", "--kmer-index", required=True)
-    subparser.add_argument("-v", "--vcf", required=True)
     subparser.add_argument("-g", "--variant-to-nodes", required=True)
+    subparser.add_argument("-o", "--write-good-variants-to-file", required=False, help="When specified, good variant IDs will be written to file")
     subparser.set_defaults(func=analyse_kmer_index)
 
 
     subparser = subparsers.add_parser("model_using_kmer_index")
     subparser.add_argument("-g", "--variant-to-nodes", required=True)
+    subparser.add_argument("-N", "--node-to-variants", required=False)
+    subparser.add_argument("-H", "--haplotype-matrix", required=False)
     subparser.add_argument("-k", "--kmer-size", required=True, type=int)
     subparser.add_argument("-i", "--kmer-index", required=True)
     subparser.add_argument("-o", "--out-file-name", required=True)
@@ -517,8 +670,37 @@ def run_argument_parser(args):
     subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
     subparser.add_argument("-f", "--scale-by-frequency", required=False, type=bool, default=False)
     subparser.add_argument("-a", "--allele-frequency-index", required=False)
-
     subparser.set_defaults(func=model_using_kmer_index_multiprocess)
+
+    def model_using_transition_probs(args):
+        from .node_count_model import GenotypeModelCreatorFromTransitionProbabilities
+        from obgraph.genotype_matrix import GenotypeMatrix
+        from obgraph.variant_to_nodes import NodeToVariants
+        graph = ObGraph.from_file(args.graph)
+        genotype_matrix = GenotypeMatrix.from_file(args.genotype_matrix)
+        variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
+        node_to_variants = NodeToVariants.from_file(args.node_to_variants)
+        mapping_index = KmerIndex.from_file(args.mapping_index)
+        population_kemrs = KmerIndex.from_file(args.population_kmers)
+
+        maker = GenotypeModelCreatorFromTransitionProbabilities(graph, genotype_matrix, variant_to_nodes, node_to_variants, mapping_index, population_kemrs,
+                                                                args.max_node_id)
+
+        maker.get_node_counts()
+        genotype_model = GenotypeNodeCountModel(maker.counts_homo_ref, maker.counts_homo_alt, maker.counts_hetero)
+        genotype_model.to_file(args.out_file_name)
+
+    subparser = subparsers.add_parser("model_using_kmer_index2")
+    subparser.add_argument("-g", "--graph", required=True)
+    subparser.add_argument("-G", "--genotype_matrix", required=True)
+    subparser.add_argument("-v", "--variant-to-nodes", required=True)
+    subparser.add_argument("-V", "--node_to_variants", required=True)
+    subparser.add_argument("-i", "--mapping-index", required=True)
+    subparser.add_argument("-I", "--population-kmers", required=True)
+    subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.add_argument("-m", "--max-node-id", type=int, required=True)
+    subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
+    subparser.set_defaults(func=model_using_transition_probs)
 
     if len(args) == 0:
         parser.print_help()

@@ -73,7 +73,7 @@ class Genotyper:
         self._individuals_with_genotypes = []
         self._variant_counter = 0
         self._most_similar_variant_lookup = most_similar_variant_lookup
-        self._genotypes_called_at_variant = []  # position is variant id, genotype is 1,2,3 (homo ref, homo alt, hetero)
+        self._genotypes_called_at_variant = {}  # index is variant id, genotype is 1,2,3 (homo ref, homo alt, hetero)
         self._predicted_allele_frequencies = np.zeros(len(node_counts.node_counts)) + 1.0  # default is 1.0, we will only change variant nodes
 
     def get_node_count(self, node):
@@ -254,25 +254,64 @@ class Genotyper:
             return orig_prob_homo_ref, orig_prob_homo_alt, orig_prob_hetero
 
         most_similar = self._most_similar_variant_lookup.get_most_similar_variant(variant_id)
-        most_similar_genotype = self._genotypes_called_at_variant[most_similar]
-        prob_same_genotype = self._most_similar_variant_lookup.prob_of_having_the_same_genotype_as_most_similar(variant_id)
-        prob_same_genotype = min(0.999, max(prob_same_genotype, 0.001)) * 0.92
+        if most_similar in self._genotypes_called_at_variant:
+            most_similar_genotype = self._genotypes_called_at_variant[most_similar]
+            #prob_same_genotype = self._most_similar_variant_lookup.prob_of_having_the_same_genotype_as_most_similar(variant_id)
 
-        # First init probs for having genotypes and not having same genotypes as most similar
-        prob_homo_ref = (1 - prob_same_genotype) * orig_prob_homo_ref
-        prob_homo_alt = (1 - prob_same_genotype) * orig_prob_homo_alt
-        prob_hetero = (1 - prob_same_genotype) * orig_prob_hetero
+            prob_homo_ref_given_prev = self._genotype_transition_probs.get_transition_probability(variant_id, most_similar_genotype, 1)
+            prob_homo_alt_given_prev = self._genotype_transition_probs.get_transition_probability(variant_id, most_similar_genotype, 2)
+            prob_hetero_given_prev = self._genotype_transition_probs.get_transition_probability(variant_id, most_similar_genotype, 3)
 
-        if most_similar_genotype == 1:
-            prob_homo_ref += prob_same_genotype
-        elif most_similar_genotype == 2:
-            prob_homo_alt += prob_same_genotype
-        elif most_similar_genotype == 3:
-            prob_hetero += prob_same_genotype
+            if prob_homo_alt_given_prev == 0 and prob_homo_ref_given_prev == 0 and prob_hetero_given_prev == 0:
+                # no data, probably no individuals having that genotype, fallback to population probs
+                return orig_prob_homo_ref, orig_prob_homo_alt, orig_prob_hetero
 
-        return prob_homo_ref, prob_homo_alt, prob_hetero
+            """
+            prob_homo_ref_given_prev = 0
+            prob_homo_alt_given_prev = 0
+            prob_hetero_given_prev = 0
+
+            if most_similar_genotype == 1:
+                prob_homo_ref_given_prev = self._most_similar_variant_lookup.prob_of_having_the_same_genotype_as_most_similar(variant_id)
+            elif most_similar_genotype == 2:
+                prob_homo_alt_given_prev = self._most_similar_variant_lookup.prob_of_having_the_same_genotype_as_most_similar(variant_id)
+            elif most_similar_genotype == 3:
+                prob_hetero_ref_given_prev = self._most_similar_variant_lookup.prob_of_having_the_same_genotype_as_most_similar(variant_id)
+            """
+
+            sum_of_probs_given_prev = prob_homo_alt_given_prev + prob_homo_ref_given_prev + prob_hetero_given_prev
+            if abs(sum_of_probs_given_prev - 1) < 0.001 and False:
+                logging.warning("Probs given prev variant does not sum to 1: %.5f. Prev variant: %d, this variant: %d. Predicted: %d" % (sum_of_probs_given_prev, most_similar, variant_id, most_similar_genotype))
+
+            prob_prev_genotype_is_correct = 0.97
+            if most_similar_genotype != 1:
+                prob_prev_genotype_is_correct = 0.97
+
+            prob_homo_ref = prob_homo_ref_given_prev * prob_prev_genotype_is_correct + (1-prob_prev_genotype_is_correct) * orig_prob_homo_ref
+            prob_homo_alt = prob_homo_alt_given_prev * prob_prev_genotype_is_correct + (1-prob_prev_genotype_is_correct) * orig_prob_homo_alt
+            prob_hetero = prob_hetero_given_prev * prob_prev_genotype_is_correct + (1-prob_prev_genotype_is_correct) * orig_prob_hetero
+
+
+            """
+            # First init probs for having genotypes and not having same genotypes as most similar
+            prob_homo_ref = (1 - prob_same_genotype) * orig_prob_homo_ref
+            prob_homo_alt = (1 - prob_same_genotype) * orig_prob_homo_alt
+            prob_hetero = (1 - prob_same_genotype) * orig_prob_hetero
+
+            if most_similar_genotype == 1:
+                prob_homo_ref += prob_same_genotype
+            elif most_similar_genotype == 2:
+                prob_homo_alt += prob_same_genotype
+            elif most_similar_genotype == 3:
+                prob_hetero += prob_same_genotype
+            """
+
+            return prob_homo_ref, prob_homo_alt, prob_hetero
+        else:
+            return orig_prob_homo_ref, orig_prob_homo_alt, orig_prob_hetero
 
     def genotype(self):
+
         variant_id = -1
         for i, variant in enumerate(self._variants):
             if i % 1000 == 0 and i > 0:
@@ -280,7 +319,7 @@ class Genotyper:
 
             variant_id += 1
             variant_id = variant.vcf_line_number
-            self._genotypes_called_at_variant.append(0)
+            #self._genotypes_called_at_variant.append(0)
             assert "," not in variant.variant_sequence, "Only biallelic variants are allowed. Line is not bialleleic"
 
             debug = False

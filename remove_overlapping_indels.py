@@ -2,7 +2,11 @@ import logging
 logging.basicConfig(level=logging.INFO)
 import sys
 
-vcf = open(sys.argv[1])
+if sys.argv[1] == "-":
+    vcf = sys.stdin
+else:
+    vcf = open(sys.argv[1])
+
 n_snps = 0
 n_indels_removed = 0
 
@@ -13,7 +17,7 @@ for i, line in enumerate(vcf):
     if line.startswith("#"):
         continue
 
-    if i % 1000 == 0:
+    if i % 100000 == 0:
         logging.info("%d lines processed" % i)
 
     if "VT=SNP" in line:
@@ -23,19 +27,28 @@ for i, line in enumerate(vcf):
 
 
 vcf = open(sys.argv[1])
+if sys.argv[1] == "-":
+    vcf = sys.stdin
+else:
+    vcf = open(sys.argv[1])
+
 indel_positions = set()
 for i, line in enumerate(vcf):
 
-    if i % 1000 == 0:
+    if i % 100000 == 0:
         logging.info("%d lines processed" % i)
 
     if line.startswith("#"):
         print(line.strip())
         continue
 
+    l = line.split()
+
+    if "N" in l[3] or "N" in l[4]:
+        logging.info("Skipped variant %s,%s due to N in sequence" % (l[0], l[1]))
+        continue
 
     if "VT=INDEL" in line:
-        l = line.split()
         pos = int(l[1])
         size = len(l[3]) + 1
 
