@@ -56,7 +56,8 @@ class LocalGenotyper:
 
 
 class Genotyper:
-    def __init__(self, node_count_model, variants: VcfVariants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup, variant_window_size=500):
+    def __init__(self, node_count_model, variants: VcfVariants, variant_to_nodes, node_counts,
+                 genotype_frequencies, most_similar_variant_lookup, variant_window_size=500):
         self._variants = variants
         self._node_count_model = node_count_model
 

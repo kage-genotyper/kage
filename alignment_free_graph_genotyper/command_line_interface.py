@@ -5,7 +5,7 @@ import itertools
 from alignment_free_graph_genotyper import cython_chain_genotyper
 from itertools import repeat
 import sys, argparse, time
-from graph_kmer_index.shared_mem import from_shared_memory, to_shared_memory, remove_shared_memory, SingleSharedArray, remove_all_shared_memory
+from graph_kmer_index.shared_mem import from_shared_memory, to_shared_memory, remove_shared_memory, SingleSharedArray, remove_all_shared_memory, remove_shared_memory_in_session
 from obgraph import Graph as ObGraph
 from graph_kmer_index import KmerIndex, ReverseKmerIndex
 from graph_kmer_index import ReferenceKmerIndex
@@ -26,6 +26,7 @@ from .bayes_genotyper import NewBayesGenotyper
 import SharedArray as sa
 from obgraph.haplotype_matrix import HaplotypeMatrix
 from obgraph.variant_to_nodes import NodeToVariants
+import random
 
 np.random.seed(1)
 
@@ -53,13 +54,13 @@ def count_single_thread(data):
 
     reference_index = None
     if args.reference_index is not None:
-        reference_index = from_shared_memory(ReferenceKmerIndex, "reference_index_shared")
+        reference_index = from_shared_memory(ReferenceKmerIndex, "reference_index_shared" + args.shared_memory_unique_id)
 
     reference_index_scoring = None
     if args.reference_index_scoring is not None:
-        reference_index_scoring = from_shared_memory(ReferenceKmerIndex, "reference_index_scoring_shared")
+        reference_index_scoring = from_shared_memory(ReferenceKmerIndex, "reference_index_scoring_shared"+args.shared_memory_unique_id)
 
-    kmer_index = from_shared_memory(KmerIndex, "kmer_index_shared")
+    kmer_index = from_shared_memory(KmerIndex, "kmer_index_shared"+args.shared_memory_unique_id)
     logging.info("Time spent on getting indexes from memory: %.5f" % (time.time()-start_time))
 
     node_counts = cython_chain_genotyper.run(reads, kmer_index, args.max_node_id, args.kmer_size,
@@ -68,7 +69,7 @@ def count_single_thread(data):
                                                               args.skip_chaining,
                                                               args.scale_by_frequency)
     logging.info("Time spent on getting node counts: %.5f" % (time.time()-start_time))
-    shared_counts = from_shared_memory(NodeCounts, "counts_shared")
+    shared_counts = from_shared_memory(NodeCounts, "counts_shared"+args.shared_memory_unique_id)
     shared_counts.node_counts += node_counts
 
     if read_shared_memory_name is not None:
@@ -82,6 +83,9 @@ def count_single_thread(data):
 
 
 def count(args):
+    args.shared_memory_unique_id = str(random.randint(0, 1e15))
+    logging.info("Shared memory unique id: %s" % args.shared_memory_unique_id)
+
     truth_positions = None
     if args.truth_alignments is not None:
         from numpy_alignments import NumpyAlignments
@@ -90,20 +94,20 @@ def count(args):
 
     if args.reference_index is not None:
         reference_index = ReferenceKmerIndex.from_file(args.reference_index)
-        to_shared_memory(reference_index, "reference_index_shared")
+        to_shared_memory(reference_index, "reference_index_shared" + args.shared_memory_unique_id)
 
     if args.reference_index_scoring is not None:
         reference_index_scoring = ReferenceKmerIndex.from_file(args.reference_index_scoring)
-        to_shared_memory(reference_index_scoring, "reference_index_scoring_shared")
+        to_shared_memory(reference_index_scoring, "reference_index_scoring_shared" + args.shared_memory_unique_id)
 
     kmer_index = KmerIndex.from_file(args.kmer_index)
-    to_shared_memory(kmer_index, "kmer_index_shared")
+    to_shared_memory(kmer_index, "kmer_index_shared" + args.shared_memory_unique_id)
 
     max_node_id = args.max_node_id
     reads = read_chunks_from_fasta(args.reads, chunk_size=args.chunk_size, write_to_shared_memory=True)
 
     counts = NodeCounts(np.zeros(args.max_node_id+1, dtype=np.float))
-    to_shared_memory(counts, "counts_shared")
+    to_shared_memory(counts, "counts_shared" + args.shared_memory_unique_id)
 
     pool = Pool(args.n_threads)
     node_counts = np.zeros(max_node_id+1, dtype=float)
@@ -116,7 +120,7 @@ def count(args):
             logging.info("No results")
 
     #counts = NodeCounts(node_counts)
-    counts = from_shared_memory(NodeCounts, "counts_shared")
+    counts = from_shared_memory(NodeCounts, "counts_shared" + args.shared_memory_unique_id)
     counts.to_file(args.node_counts_out_file_name)
 
 
@@ -252,24 +256,24 @@ def genotype_single_thread(data):
 
     genotype_transition_probs = None
     if args.genotype_transition_probs is not None:
-        genotype_transition_probs = from_shared_memory(GenotypeTransitionProbabilities, "genotype_transition_probs_shared")
+        genotype_transition_probs = from_shared_memory(GenotypeTransitionProbabilities, "genotype_transition_probs_shared" + args.shared_memory_unique_id)
 
-    genotype_frequencies = from_shared_memory(GenotypeFrequencies, "genotype_frequencies_shared")
+    genotype_frequencies = from_shared_memory(GenotypeFrequencies, "genotype_frequencies_shared" + args.shared_memory_unique_id)
 
     most_similar_variant_lookup = None
     if args.most_similar_variant_lookup is not None:
-        most_similar_variant_lookup = from_shared_memory(MostSimilarVariantLookup, "most_similar_variant_lookup_shared")
+        most_similar_variant_lookup = from_shared_memory(MostSimilarVariantLookup, "most_similar_variant_lookup_shared" + args.shared_memory_unique_id)
 
     if args.model is not None:
-        model = from_shared_memory(GenotypeNodeCountModel, "model_shared")
+        model = from_shared_memory(GenotypeNodeCountModel, "model_shared" + args.shared_memory_unique_id)
     else:
         model = None
 
-    variant_to_nodes = from_shared_memory(VariantToNodes, "variant_to_nodes_shared")
-    node_counts = from_shared_memory(NodeCounts, "node_counts_shared")
+    variant_to_nodes = from_shared_memory(VariantToNodes, "variant_to_nodes_shared" + args.shared_memory_unique_id)
+    node_counts = from_shared_memory(NodeCounts, "node_counts_shared" + args.shared_memory_unique_id)
 
     if args.tricky_variants is not None:
-        tricky_variants = from_shared_memory(SingleSharedArray, "tricky_variants_shared").array
+        tricky_variants = from_shared_memory(SingleSharedArray, "tricky_variants_shared" + args.shared_memory_unique_id).array
     else:
         tricky_variants = None
 
@@ -282,11 +286,13 @@ def genotype_single_thread(data):
 
 def genotype(args):
     logging.info("Using genotyper %s" % args.genotyper)
+    args.shared_memory_unique_id = str(random.randint(0, 1e15))
+    logging.info("Random id for shared memory: %s" % args.shared_memory_unique_id)
 
     genotype_frequencies = GenotypeFrequencies.from_file(args.genotype_frequencies)
     if args.most_similar_variant_lookup is not None:
         most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
-        to_shared_memory(most_similar_variant_lookup, "most_similar_variant_lookup_shared")
+        to_shared_memory(most_similar_variant_lookup, "most_similar_variant_lookup_shared" + args.shared_memory_unique_id)
 
     try:
         model = GenotypeNodeCountModel.from_file(args.model) if args.model is not None else None
@@ -303,16 +309,16 @@ def genotype(args):
 
     if args.tricky_variants is not None:
         tricky_variants = np.load(args.tricky_variants)
-        to_shared_memory(SingleSharedArray(tricky_variants), "tricky_variants_shared")
+        to_shared_memory(SingleSharedArray(tricky_variants), "tricky_variants_shared" + args.shared_memory_unique_id)
 
     if args.genotype_transition_probs is not None:
-        to_shared_memory(GenotypeTransitionProbabilities.from_file(args.genotype_transition_probs), "genotype_transition_probs_shared")
+        to_shared_memory(GenotypeTransitionProbabilities.from_file(args.genotype_transition_probs), "genotype_transition_probs_shared" + args.shared_memory_unique_id)
 
-    to_shared_memory(genotype_frequencies, "genotype_frequencies_shared")
+    to_shared_memory(genotype_frequencies, "genotype_frequencies_shared" + args.shared_memory_unique_id)
     if model is not None:
-        to_shared_memory(model, "model_shared")
-    to_shared_memory(variant_to_nodes, "variant_to_nodes_shared")
-    to_shared_memory(node_counts, "node_counts_shared")
+        to_shared_memory(model, "model_shared" + args.shared_memory_unique_id)
+    to_shared_memory(variant_to_nodes, "variant_to_nodes_shared" + args.shared_memory_unique_id)
+    to_shared_memory(node_counts, "node_counts_shared" + args.shared_memory_unique_id)
 
     #genotyper = genotyper_class(model, variants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup)
     #genotyper.genotype()
@@ -702,10 +708,19 @@ def run_argument_parser(args):
     subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
     subparser.set_defaults(func=model_using_transition_probs)
 
+    def filter_vcf(args):
+        from .variant_filtering import remove_overlapping_indels
+        remove_overlapping_indels(args.vcf_file_name)
+
+    subparser = subparsers.add_parser("remove_overlapping_indels")
+    subparser.add_argument("-v", "--vcf-file-name", required=True)
+    subparser.set_defaults(func=filter_vcf)
+
     if len(args) == 0:
         parser.print_help()
         sys.exit(1)
 
     args = parser.parse_args(args)
     args.func(args)
+    remove_shared_memory_in_session()
 
