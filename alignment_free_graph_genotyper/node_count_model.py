@@ -50,6 +50,26 @@ class GenotypeNodeCountModel:
                  counts_hetero=self.counts_hetero)
 
 
+class NodeCountModelAlleleFrequencies:
+    properties = {"allele_frequencies", "allele_frequencies_squared"}
+    def __init__(self, allele_frequencies=None, allele_frequencies_squared=None, average_coverage=1):
+        self.allele_frequencies = allele_frequencies
+        self.allele_frequencies_squared = allele_frequencies_squared
+
+    @classmethod
+    def from_file(cls, file_name):
+        try:
+            data = np.load(file_name + ".npy")
+        except FileNotFoundError:
+            data = np.load(file_name)
+
+        return cls(data["allele_frequencies"], data["allele_frequencies_squared"])
+
+    def to_file(self, file_name):
+        np.savez(file_name, allele_frequencies=self.allele_frequencies,
+                 allele_frequencies_squared=self.allele_frequencies_squared)
+
+
 class NodeCountModel:
     def __init__(self, node_counts_following_node, node_counts_not_following_node, average_coverage=1):
         self.node_counts_following_node = node_counts_following_node
@@ -433,14 +453,13 @@ class NodeCountModelCreatorFromNoChaining:
                         if hit_node == node and ref_offset == ref_pos:
                             expected_count_following += allele_frequency * 1 / frequency
 
-            if not self._scale_by_frequency or True:
-                expected_count_following += 1.0
+            expected_count_following += 1.0
 
 
             self.node_counts_following_node[node] += expected_count_following
             self.node_counts_not_following_node[node] += expected_count_not_following
 
-    def get_node_counts(self):
+    def create_model(self):
         for i, variant_id in enumerate(range(self.variant_start_id, self.variant_end_id)):
             if i % 25000 == 0:
                 logging.info("%d/%d variants processed" % (i, self.variant_end_id-self.variant_start_id))
@@ -454,7 +473,81 @@ class NodeCountModelCreatorFromNoChaining:
 
             self.process_variant(reference_node, variant_node)
 
+    def get_results(self):
         return self.node_counts_following_node, self.node_counts_not_following_node
+
+
+class NodeCountModelCreatorFromNoChainingOnlyAlleleFrequencies(NodeCountModelCreatorFromNoChaining):
+    def __init__(self, kmer_index: KmerIndex, reverse_index: ReverseKmerIndex, variant_to_nodes, variant_start_id,
+                 variant_end_id, max_node_id,
+                 scale_by_frequency=False, allele_frequency_index=None, haplotype_matrix=None, node_to_variants=None):
+        self.kmer_index = kmer_index
+        self.variant_to_nodes = variant_to_nodes
+        self.reverse_index = reverse_index
+        self.variant_start_id = variant_start_id
+        self.variant_end_id = variant_end_id
+
+        self._allele_frequencies_summed = np.zeros(max_node_id + 1, dtype=np.float)
+        self._allele_frequencies_sum_of_squares = np.zeros(max_node_id + 1, dtype=np.float)
+
+        self._allele_frequency_index = allele_frequency_index
+        if self._allele_frequency_index is not None:
+            logging.info("Will fetch allele frequencies from allele frequency index")
+
+        self.haplotype_matrix = haplotype_matrix
+        self.node_to_variants = node_to_variants
+        self.variant_to_nodes = variant_to_nodes
+
+    def process_variant(self, reference_node, variant_node):
+        for node in (reference_node, variant_node):
+            allele_frequencies_found = []
+
+            expected_count_following = 0
+            expected_count_not_following = 0
+            lookup = self.reverse_index.get_node_kmers_and_ref_positions(node)
+            for result in zip(lookup[0], lookup[1]):
+                kmer = result[0]
+                ref_pos = result[1]
+                kmer = int(kmer)
+                nodes, ref_offsets, frequencies, allele_frequencies = self.kmer_index.get(kmer, max_hits=1000000)
+                if nodes is None:
+                    continue
+
+                unique_ref_offsets, unique_indexes = np.unique(ref_offsets, return_index=True)
+
+                if len(unique_indexes) == 0:
+                    # Could happen when variant index has more kmers than full graph index
+                    # logging.warning("Found not index hits for kmer %d" % kmer)
+                    continue
+
+                n_hits = 0
+                for index in unique_indexes:
+                    # do not add count for the actual kmer we are searching for, we add 1 for this in the end
+                    if self.haplotype_matrix is not None:
+                        ref_offset = ref_offsets[index]
+                        hit_nodes = nodes[np.where(ref_offsets == ref_offset)]
+                        allele_frequency = self.haplotype_matrix.get_allele_frequency_for_nodes(hit_nodes,
+                                                                                                self.node_to_variants,
+                                                                                                self.variant_to_nodes)
+                    elif self._allele_frequency_index is None:
+                        allele_frequency = allele_frequencies[index]  # fetch from graph
+                    else:
+                        # get the nodes belonging to this ref offset
+                        ref_offset = ref_offsets[index]
+                        hit_nodes = nodes[np.where(ref_offsets == ref_offset)]
+                        # allele frequency is the lowest allele frequency for these nodes
+                        allele_frequency = np.min(self._allele_frequency_index[hit_nodes])
+
+                    if ref_offsets[index] != ref_pos:
+                        allele_frequencies_found.append(allele_frequency)
+
+
+            allele_frequencies_found = np.array(allele_frequencies_found)
+            self._allele_frequencies_summed[node] = np.sum(allele_frequencies_found)
+            self._allele_frequencies_sum_of_squares[node] = np.sum(allele_frequencies_found**2)
+
+    def get_results(self):
+        return self._allele_frequencies_summed, self._allele_frequencies_sum_of_squares
 
 
 class NodeCountModelCreatorFromSimpleChaining:

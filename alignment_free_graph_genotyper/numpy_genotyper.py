@@ -1,7 +1,9 @@
 import logging
 from .genotyper import Genotyper
-from scipy.stats import binom
+from scipy.stats import binom, betabinom
 import numpy as np
+from .negative_binomial_model_clean import CombinationModel, CombinationModelBothAlleles
+from .node_count_model import GenotypeNodeCountModel, NodeCountModelAlleleFrequencies
 
 class NumpyGenotyper(Genotyper):
     def __init__(self, node_count_model, min_variant_id, max_variant_id, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup, variant_window_size=500,
@@ -38,39 +40,65 @@ class NumpyGenotyper(Genotyper):
         ref_nodes = self._variant_to_nodes.ref_nodes[self._min_variant_id:self._max_variant_id+1]
         alt_nodes = self._variant_to_nodes.var_nodes[self._min_variant_id:self._max_variant_id+1]
 
-        model = self._node_count_model
-        expected_count_on_variant_ref_nodes = {}
-        expected_count_on_variant_alt_nodes = {}
-
-        if model is not None:
-            expected_count_on_variant_ref_nodes["homo_ref"] = model.counts_homo_ref[ref_nodes] + self._dummy_count_having_variant
-            expected_count_on_variant_ref_nodes["homo_alt"] = model.counts_homo_alt[ref_nodes] + self._dummy_counts_not_having_variant
-            expected_count_on_variant_ref_nodes["hetero"] = model.counts_hetero[ref_nodes] + (self._dummy_count_having_variant+self._dummy_counts_not_having_variant) / 2
-
-            expected_count_on_variant_alt_nodes["homo_ref"] = model.counts_homo_ref[alt_nodes] + self._dummy_counts_not_having_variant
-            expected_count_on_variant_alt_nodes["homo_alt"] = model.counts_homo_alt[alt_nodes] + self._dummy_count_having_variant
-            expected_count_on_variant_alt_nodes["hetero"] = model.counts_hetero[alt_nodes] + (self._dummy_count_having_variant+self._dummy_counts_not_having_variant) / 2
-        else:
-            logging.warning("Not using model to compute probabilities")
-            expected_count_on_variant_ref_nodes["homo_ref"] = 2 + self._dummy_count_having_variant
-            expected_count_on_variant_ref_nodes["homo_alt"] = 0 + self._dummy_counts_not_having_variant
-            expected_count_on_variant_ref_nodes["hetero"] = 1 + (self._dummy_count_having_variant+self._dummy_counts_not_having_variant) / 2
-            expected_count_on_variant_alt_nodes["homo_ref"] = 0 + self._dummy_counts_not_having_variant
-            expected_count_on_variant_alt_nodes["homo_alt"] = 2 + self._dummy_count_having_variant
-            expected_count_on_variant_alt_nodes["hetero"] = 1 + (self._dummy_count_having_variant+self._dummy_counts_not_having_variant) / 2
-
+        # Get observed counts
         observed_ref_nodes = self._node_counts.get_node_count_array()[ref_nodes]
         observed_alt_nodes = self._node_counts.get_node_count_array()[alt_nodes]
-
-        # binomial
         n = observed_alt_nodes + observed_ref_nodes
         k = observed_ref_nodes
+
         marginal_probs = np.zeros((3, len(ref_nodes)))  # marginal probs go into matrix, each row is one genotype, columns are variants
-        logging.info("Computing marginal probs")
-        for i, genotype in enumerate(["homo_ref", "homo_alt", "hetero"]):
-            logging.debug("Computing marginal probs for genotypes %s" % genotype)
-            p = expected_count_on_variant_ref_nodes[genotype] / (expected_count_on_variant_ref_nodes[genotype] + expected_count_on_variant_alt_nodes[genotype])
-            marginal_probs[i] = binom.pmf(k, n, p)
+
+        model = self._node_count_model
+        assert model is not None
+
+        if model is not None and isinstance(model, NodeCountModelAlleleFrequencies):
+            logging.info("P sums: %s" % model.allele_frequencies[ref_nodes][0:50])
+            logging.info("P sums squared: %s" % model.allele_frequencies_squared[ref_nodes][0:50])
+            logging.info("Counts ref: %s" % observed_ref_nodes[0:50])
+            logging.info("Counts ref: %s" % observed_alt_nodes[0:50])
+
+            combination_model_ref = CombinationModel.from_p_sums(7.5, model.allele_frequencies[ref_nodes], model.allele_frequencies_squared[ref_nodes])
+            combination_model_alt = CombinationModel.from_p_sums(7.5, model.allele_frequencies[alt_nodes], model.allele_frequencies_squared[alt_nodes])
+            combination_model_both = CombinationModelBothAlleles(combination_model_ref, combination_model_alt)
+
+            for i, genotype in enumerate([2, 0, 1]):
+                logging.debug("Computing marginal probs for genotypes %s using combination model" % genotype)
+                probabilities = combination_model_both.pmf(observed_ref_nodes, observed_alt_nodes, genotype)
+                logging.info("Probabilities.. genotype %d: %s" % (genotype, str(probabilities[0:50])))
+                marginal_probs[i] = probabilities
+
+        else:
+
+            expected_count_on_variant_ref_nodes = {}
+            expected_count_on_variant_alt_nodes = {}
+
+            if model is not None:
+                expected_count_on_variant_ref_nodes["homo_ref"] = model.counts_homo_ref[ref_nodes] + self._dummy_count_having_variant
+                expected_count_on_variant_ref_nodes["homo_alt"] = model.counts_homo_alt[ref_nodes] + self._dummy_counts_not_having_variant
+                expected_count_on_variant_ref_nodes["hetero"] = model.counts_hetero[ref_nodes] + (self._dummy_count_having_variant+self._dummy_counts_not_having_variant) / 2
+
+                expected_count_on_variant_alt_nodes["homo_ref"] = model.counts_homo_ref[alt_nodes] + self._dummy_counts_not_having_variant
+                expected_count_on_variant_alt_nodes["homo_alt"] = model.counts_homo_alt[alt_nodes] + self._dummy_count_having_variant
+                expected_count_on_variant_alt_nodes["hetero"] = model.counts_hetero[alt_nodes] + (self._dummy_count_having_variant+self._dummy_counts_not_having_variant) / 2
+            else:
+                logging.warning("Not using model to compute probabilities")
+                expected_count_on_variant_ref_nodes["homo_ref"] = 2 + self._dummy_count_having_variant
+                expected_count_on_variant_ref_nodes["homo_alt"] = 0 + self._dummy_counts_not_having_variant
+                expected_count_on_variant_ref_nodes["hetero"] = 1 + (self._dummy_count_having_variant+self._dummy_counts_not_having_variant) / 2
+                expected_count_on_variant_alt_nodes["homo_ref"] = 0 + self._dummy_counts_not_having_variant
+                expected_count_on_variant_alt_nodes["homo_alt"] = 2 + self._dummy_count_having_variant
+                expected_count_on_variant_alt_nodes["hetero"] = 1 + (self._dummy_count_having_variant+self._dummy_counts_not_having_variant) / 2
+
+
+            logging.info("Computing marginal probs")
+            for i, genotype in enumerate(["homo_ref", "homo_alt", "hetero"]):
+                logging.debug("Computing marginal probs for genotypes %s" % genotype)
+                p = expected_count_on_variant_ref_nodes[genotype] / \
+                    (expected_count_on_variant_ref_nodes[genotype] + expected_count_on_variant_alt_nodes[genotype])
+                marginal_probs[i] = binom.pmf(k, n, p)
+                #marginal_probs[i] = betabinom.pmf(k, n, expected_count_on_variant_ref_nodes[genotype]*50 + 0.1,
+                #                                  expected_count_on_variant_alt_nodes[genotype]*50 + 0.1)
+
 
         # detect cases where all probs are zero
         e = 10e-6
@@ -126,17 +154,19 @@ class NumpyGenotyper(Genotyper):
             predicted_genotype = "0/1"
             prob_correct = prob_posteriori_heterozygous
         else:
-            logging.warning("All probs are zero for variant %d" % variant_id)
+            #logging.warning("All probs are zero for variant %d" % variant_id)
+            """
             logging.warning("Nodes %d/%d." % (reference_node, variant_node))
             reference_node = self._variant_to_nodes.ref_nodes[variant_id]
             variant_node = self._variant_to_nodes.var_nodes[variant_id]
-            logging.warning("Model counts ref: %d/%d/%d." % (self._node_count_model.counts_homo_ref[reference_node], self._node_count_model.counts_homo_alt[reference_node], self._node_count_model.counts_hetero[reference_node]))
+            #logging.warning("Model counts ref: %d/%d/%d." % (self._node_count_model.counts_homo_ref[reference_node], self._node_count_model.counts_homo_alt[reference_node], self._node_count_model.counts_hetero[reference_node]))
             logging.warning("Model counts var: %d/%d/%d." % (self._node_count_model.counts_homo_ref[variant_node], self._node_count_model.counts_homo_alt[variant_node], self._node_count_model.counts_hetero[variant_node]))
             logging.warning("Node counts: %d/%d." % (self._node_counts.node_counts[reference_node], self._node_counts.node_counts[variant_node]))
             logging.warning("Posteriori probs: %.4f, %.4f, %.4f" % (p_counts_given_homozygous_ref, p_counts_given_homozygous_alt, p_counts_given_heterozygous))
             logging.warning("A priori probs  : %.4f, %.4f, %.4f" % (a_priori_homozygous_ref, a_priori_homozygous_alt, a_priori_heterozygous))
             # logging.warning("%.5f / %.5f / %.5f" % (
             # prob_posteriori_homozygous_ref, prob_posteriori_homozygous_alt, prob_posteriori_heterozygous))
+            """
             prob_correct = 0
             predicted_genotype = "0/0"
 

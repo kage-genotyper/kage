@@ -17,7 +17,7 @@ import platform
 from pathos.multiprocessing import Pool
 import numpy as np
 from .node_counts import NodeCounts
-from .node_count_model import NodeCountModel, GenotypeNodeCountModel
+from .node_count_model import NodeCountModel, GenotypeNodeCountModel, NodeCountModelAlleleFrequencies
 from obgraph.genotype_matrix import MostSimilarVariantLookup, GenotypeFrequencies, GenotypeTransitionProbabilities
 from obgraph.variant_to_nodes import VariantToNodes
 from .genotyper import Genotyper
@@ -265,8 +265,14 @@ def genotype_single_thread(data):
         most_similar_variant_lookup = from_shared_memory(MostSimilarVariantLookup, "most_similar_variant_lookup_shared" + args.shared_memory_unique_id)
 
     if args.model is not None:
-        model = from_shared_memory(GenotypeNodeCountModel, "model_shared" + args.shared_memory_unique_id)
+        logging.info("Reading model from shared memory")
+        if "allele_frequencies" in args.model:
+            model = from_shared_memory(NodeCountModelAlleleFrequencies, "model_shared" + args.shared_memory_unique_id)
+        else:
+            model = from_shared_memory(GenotypeNodeCountModel, "model_shared" + args.shared_memory_unique_id)
+        logging.info(str(model))
     else:
+        logging.warning("Model is None")
         model = None
 
     variant_to_nodes = from_shared_memory(VariantToNodes, "variant_to_nodes_shared" + args.shared_memory_unique_id)
@@ -276,6 +282,7 @@ def genotype_single_thread(data):
         tricky_variants = from_shared_memory(SingleSharedArray, "tricky_variants_shared" + args.shared_memory_unique_id).array
     else:
         tricky_variants = None
+
 
     genotyper = genotyper_class(model, min_variant_id, max_variant_id, variant_to_nodes, node_counts, genotype_frequencies,
                             most_similar_variant_lookup, avg_coverage=args.average_coverage, genotype_transition_probs=genotype_transition_probs,
@@ -297,7 +304,11 @@ def genotype(args):
     try:
         model = GenotypeNodeCountModel.from_file(args.model) if args.model is not None else None
     except KeyError:
-        model = NodeCountModel.from_file(args.model)
+        try:
+            model = NodeCountModel.from_file(args.model)
+        except KeyError:
+            model = NodeCountModelAlleleFrequencies.from_file(args.model)
+            logging.info("Model is allele frequency model")
 
     variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
     node_counts = NodeCounts.from_file(args.counts)
@@ -348,7 +359,7 @@ def genotype(args):
 def model_using_kmer_index(variant_id_interval, args):
     variant_start_id, variant_end_id = variant_id_interval
     logging.info("Processing variants with id between %d and %d" % (variant_start_id, variant_end_id))
-    from .node_count_model import NodeCountModelCreatorFromNoChaining, NodeCountModel
+    from .node_count_model import NodeCountModelCreatorFromNoChaining, NodeCountModel, NodeCountModelCreatorFromNoChainingOnlyAlleleFrequencies
 
     allele_frequency_index = None
     if args.allele_frequency_index is not None:
@@ -360,7 +371,14 @@ def model_using_kmer_index(variant_id_interval, args):
         haplotype_matrix = HaplotypeMatrix.from_file(args.haplotype_matrix)
         node_to_variants = NodeToVariants.from_file(args.node_to_variants)
 
-    model_creator = NodeCountModelCreatorFromNoChaining(
+    if args.version != "v2":
+        model_class = NodeCountModelCreatorFromNoChaining
+    else:
+        model_class = NodeCountModelCreatorFromNoChainingOnlyAlleleFrequencies
+        logging.warning("Using new version which gets sum of allele frequencies and squared sum")
+
+
+    model_creator = model_class(
         from_shared_memory(KmerIndex, "kmer_index_shared"),
         from_shared_memory(ReverseKmerIndex, "reverse_index_shared"),
         from_shared_memory(VariantToNodes, "variant_to_nodes_shared"),
@@ -369,9 +387,8 @@ def model_using_kmer_index(variant_id_interval, args):
         haplotype_matrix=haplotype_matrix,
         node_to_variants=node_to_variants
     )
-
-    counts_following, counts_not_following = model_creator.get_node_counts()
-    return counts_following, counts_not_following
+    model_creator.create_model()
+    return model_creator.get_results()
 
 
 def model_using_kmer_index_multiprocess(args):
@@ -395,8 +412,12 @@ def model_using_kmer_index_multiprocess(args):
     logging.info("Will process variant intervals: %s" % variant_intervals)
     data_to_process = zip(variant_intervals, repeat(args))
 
-    expected_node_counts_not_following_node = np.zeros(max_node_id + 1, dtype=np.float)
-    expected_node_counts_following_node = np.zeros(max_node_id + 1, dtype=np.float)
+    if args.version != "v2":
+        expected_node_counts_not_following_node = np.zeros(max_node_id + 1, dtype=np.float)
+        expected_node_counts_following_node = np.zeros(max_node_id + 1, dtype=np.float)
+    else:
+        allele_frequencies = np.zeros(max_node_id + 1, dtype=np.float)
+        allele_frequencies_squared = np.zeros(max_node_id + 1, dtype=np.float)
 
     pool = Pool(args.n_threads)
 
@@ -404,14 +425,22 @@ def model_using_kmer_index_multiprocess(args):
         results = pool.starmap(model_using_kmer_index,
                                itertools.islice(data_to_process, args.n_threads))
         if results:
-            for expected_follow, expected_not_follow in results:
-                expected_node_counts_following_node += expected_follow
-                expected_node_counts_not_following_node += expected_not_follow
+            for results1, results2 in results:
+                if args.version != "v2":
+                    expected_node_counts_following_node += results1
+                    expected_node_counts_not_following_node += results2
+                else:
+                    allele_frequencies += results1
+                    allele_frequencies_squared += results2
         else:
             logging.info("No results, breaking")
             break
 
-    model = NodeCountModel(expected_node_counts_following_node, expected_node_counts_not_following_node)
+    if args.version != "v2":
+        model = NodeCountModel(expected_node_counts_following_node, expected_node_counts_not_following_node)
+    else:
+        model = NodeCountModelAlleleFrequencies(allele_frequencies, allele_frequencies_squared)
+
     model.to_file(args.out_file_name)
     logging.info("Wrote model to %s" % args.out_file_name)
 
@@ -676,6 +705,7 @@ def run_argument_parser(args):
     subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
     subparser.add_argument("-f", "--scale-by-frequency", required=False, type=bool, default=False)
     subparser.add_argument("-a", "--allele-frequency-index", required=False)
+    subparser.add_argument("-V", "--version", required=False, default=None)
     subparser.set_defaults(func=model_using_kmer_index_multiprocess)
 
     def model_using_transition_probs(args):
