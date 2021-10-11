@@ -3,7 +3,7 @@ from .genotyper import Genotyper
 from scipy.stats import binom, betabinom
 import numpy as np
 from .negative_binomial_model_clean import CombinationModel, CombinationModelBothAlleles
-from .node_count_model import GenotypeNodeCountModel, NodeCountModelAlleleFrequencies
+from .node_count_model import GenotypeNodeCountModel, NodeCountModelAlleleFrequencies, NodeCountModelAdvanced
 
 class NumpyGenotyper(Genotyper):
     def __init__(self, node_count_model, min_variant_id, max_variant_id, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup, variant_window_size=500,
@@ -51,7 +51,26 @@ class NumpyGenotyper(Genotyper):
         model = self._node_count_model
         assert model is not None
 
-        if model is not None and isinstance(model, NodeCountModelAlleleFrequencies):
+        if model is not None and isinstance(model, NodeCountModelAdvanced):
+            from .combination_model import CombinationModelWithHistogram
+            logging.info("Using advanced node count model")
+            models = [None, None]
+            for i, nodes in enumerate([ref_nodes, alt_nodes]):
+                models[i] = CombinationModelWithHistogram.from_counts(7.5, model.frequencies[nodes],
+                                                                              model.frequencies_squared[nodes],
+                                                                              #model.has_too_many[nodes],
+                                                                              np.ones_like(model.has_too_many[nodes]),
+                                                                              model.certain[nodes],
+                                                                              model.frequency_matrix[nodes])
+            combination_model_both = CombinationModelBothAlleles(models[0], models[1])
+
+            for i, genotype in enumerate([2, 0, 1]):
+                logging.debug("Computing marginal probs for genotypes %s using combination model" % genotype)
+                probabilities = combination_model_both.pmf(observed_ref_nodes, observed_alt_nodes, genotype)
+                logging.info("Probabilities.. genotype %d: %s" % (genotype, str(probabilities[0:50])))
+                marginal_probs[i] = probabilities
+
+        elif model is not None and isinstance(model, NodeCountModelAlleleFrequencies):
             logging.info("P sums: %s" % model.allele_frequencies[ref_nodes][0:50])
             logging.info("P sums squared: %s" % model.allele_frequencies_squared[ref_nodes][0:50])
             logging.info("Counts ref: %s" % observed_ref_nodes[0:50])

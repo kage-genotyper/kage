@@ -264,7 +264,9 @@ def genotype_single_thread(data):
     if args.most_similar_variant_lookup is not None:
         most_similar_variant_lookup = from_shared_memory(MostSimilarVariantLookup, "most_similar_variant_lookup_shared" + args.shared_memory_unique_id)
 
-    if args.model is not None:
+    if args.model_advanced is not None:
+        model = from_shared_memory(NodeCountModelAdvanced, "model_shared" + args.shared_memory_unique_id)
+    elif args.model is not None:
         logging.info("Reading model from shared memory")
         if "allele_frequencies" in args.model:
             model = from_shared_memory(NodeCountModelAlleleFrequencies, "model_shared" + args.shared_memory_unique_id)
@@ -301,14 +303,18 @@ def genotype(args):
         most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
         to_shared_memory(most_similar_variant_lookup, "most_similar_variant_lookup_shared" + args.shared_memory_unique_id)
 
-    try:
-        model = GenotypeNodeCountModel.from_file(args.model) if args.model is not None else None
-    except KeyError:
+
+    if args.model_advanced is not None:
+        model = NodeCountModelAdvanced.from_file(args.model_advanced)
+    else:
         try:
-            model = NodeCountModel.from_file(args.model)
+            model = GenotypeNodeCountModel.from_file(args.model) if args.model is not None else None
         except KeyError:
-            model = NodeCountModelAlleleFrequencies.from_file(args.model)
-            logging.info("Model is allele frequency model")
+            try:
+                model = NodeCountModel.from_file(args.model)
+            except KeyError:
+                model = NodeCountModelAlleleFrequencies.from_file(args.model)
+                logging.info("Model is allele frequency model")
 
     variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
     node_counts = NodeCounts.from_file(args.counts)
@@ -520,6 +526,7 @@ def run_argument_parser(args):
     subparser.add_argument("-g", "--variant-to-nodes", required=True)
     subparser.add_argument("-v", "--vcf", required=True, help="Vcf to genotype")
     subparser.add_argument("-m", "--model", required=False, help="Node count model")
+    subparser.add_argument("-A", "--model_advanced", required=False, help="Node count model")
     subparser.add_argument("-G", "--genotype-frequencies", required=True, help="Genotype frequencies")
     subparser.add_argument("-M", "--most_similar_variant_lookup", required=False, help="Most similar variant lookup")
     subparser.add_argument("-o", "--out-file-name", required=True, help="Will write genotyped variants to this file")
