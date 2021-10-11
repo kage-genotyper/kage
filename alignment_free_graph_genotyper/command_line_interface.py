@@ -17,7 +17,7 @@ import platform
 from pathos.multiprocessing import Pool
 import numpy as np
 from .node_counts import NodeCounts
-from .node_count_model import NodeCountModel, GenotypeNodeCountModel, NodeCountModelAlleleFrequencies
+from .node_count_model import NodeCountModel, GenotypeNodeCountModel, NodeCountModelAlleleFrequencies, NodeCountModelAdvanced, NodeCountModelCreatorAdvanced
 from obgraph.genotype_matrix import MostSimilarVariantLookup, GenotypeFrequencies, GenotypeTransitionProbabilities
 from obgraph.variant_to_nodes import VariantToNodes
 from .genotyper import Genotyper
@@ -371,9 +371,11 @@ def model_using_kmer_index(variant_id_interval, args):
         haplotype_matrix = HaplotypeMatrix.from_file(args.haplotype_matrix)
         node_to_variants = NodeToVariants.from_file(args.node_to_variants)
 
-    if args.version != "v2":
+    if args.version == "":
         model_class = NodeCountModelCreatorFromNoChaining
-    else:
+    elif args.version == "v3":
+        model_class = NodeCountModelCreatorAdvanced
+    elif args.version == "v2":
         model_class = NodeCountModelCreatorFromNoChainingOnlyAlleleFrequencies
         logging.warning("Using new version which gets sum of allele frequencies and squared sum")
 
@@ -412,10 +414,13 @@ def model_using_kmer_index_multiprocess(args):
     logging.info("Will process variant intervals: %s" % variant_intervals)
     data_to_process = zip(variant_intervals, repeat(args))
 
-    if args.version != "v2":
+    if args.version == "":
         expected_node_counts_not_following_node = np.zeros(max_node_id + 1, dtype=np.float)
         expected_node_counts_following_node = np.zeros(max_node_id + 1, dtype=np.float)
-    else:
+    elif args.version == "v3":
+        resulting_model = NodeCountModelAdvanced.create_empty(max_node_id)
+        logging.info("REsulting model: %s" % resulting_model)
+    elif args.version == "v2":
         allele_frequencies = np.zeros(max_node_id + 1, dtype=np.float)
         allele_frequencies_squared = np.zeros(max_node_id + 1, dtype=np.float)
 
@@ -425,20 +430,24 @@ def model_using_kmer_index_multiprocess(args):
         results = pool.starmap(model_using_kmer_index,
                                itertools.islice(data_to_process, args.n_threads))
         if results:
-            for results1, results2 in results:
-                if args.version != "v2":
-                    expected_node_counts_following_node += results1
-                    expected_node_counts_not_following_node += results2
-                else:
-                    allele_frequencies += results1
-                    allele_frequencies_squared += results2
+            for res in results:
+                if args.version == "":
+                    expected_node_counts_following_node += res[0]
+                    expected_node_counts_not_following_node += res[1]
+                elif args.version == "v3":
+                    resulting_model = resulting_model + res
+                elif args.version == "v2":
+                    allele_frequencies += res[0]
+                    allele_frequencies_squared += res[1]
         else:
             logging.info("No results, breaking")
             break
 
-    if args.version != "v2":
+    if args.version == "":
         model = NodeCountModel(expected_node_counts_following_node, expected_node_counts_not_following_node)
-    else:
+    elif args.version == "v3":
+        model = resulting_model
+    elif args.version == "v2":
         model = NodeCountModelAlleleFrequencies(allele_frequencies, allele_frequencies_squared)
 
     model.to_file(args.out_file_name)

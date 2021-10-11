@@ -61,7 +61,7 @@ class VcfVariant:
         self._filter = "PASS"
 
     def get_genotype(self):
-        return self.genotype.replace("|", "/").replace("1/0", "0/1")
+        return self.genotype.replace("|", "/").replace("1/0", "0/1").replace("./.", "0/0").replace(".", "0/0")
 
     def copy(self):
         return VcfVariant(self.chromosome, self.position, self.ref_sequence, self.variant_sequence, self.genotype, self.type, self.vcf_line, self.vcf_line_number)
@@ -81,7 +81,7 @@ class VcfVariant:
         elif g == "0/1":
             return 3
         else:
-            raise Exception("Invalid genotype")
+            raise Exception("Invalid genotype. Genotype is: %s" % g)
 
     def set_genotype(self, genotype, is_numeric=False):
         if is_numeric:
@@ -439,6 +439,7 @@ class VcfVariants:
             logging.info("Made gz file object")
 
         if make_generator:
+            assert limit_to_chromosome is None, "Cannot both limit to chromosome and make generator (not implemented)"
             logging.info("Returning variant generator")
             if is_bgzipped:
                 f = (line for line in f if not line.decode("utf-8").startswith("#"))
@@ -470,7 +471,11 @@ class VcfVariants:
 
             variant = VcfVariant.from_vcf_line(line, vcf_line_number=variant_number)
             if limit_to_chromosome is not None and variant.chromosome != int(limit_to_chromosome):
-                continue
+                if len(variant_genotypes) > 0:
+                    logging.info("Stoppinng reading file since limiting to chromosome and now on new chromosome")
+                    break
+                else:
+                    continue
 
             n_variants_added += 1
             variant_genotypes.append(variant)

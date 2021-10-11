@@ -70,6 +70,49 @@ class NodeCountModelAlleleFrequencies:
                  allele_frequencies_squared=self.allele_frequencies_squared)
 
 
+
+class NodeCountModelAdvanced:
+    properties = {"frequencies", "frequencies_squared", "certain", "frequency_matrix", "has_too_many"}
+    def __init__(self, frequencies=None, frequencies_squared=None, certain=None, frequency_matrix=None, has_too_many=None):
+        self.frequencies = frequencies
+        self.frequencies_squared = frequencies_squared
+        self.certain = certain
+        self.frequency_matrix = frequency_matrix
+        self.has_too_many = has_too_many
+
+    @classmethod
+    def create_empty(cls, max_node_id):
+        frequencies = np.zeros(max_node_id + 1, dtype=np.float)
+        frequencies_squared = np.zeros(max_node_id + 1, dtype=np.float)
+        certain = np.zeros(max_node_id + 1, dtype=np.float)
+        frequency_matrix = np.zeros((max_node_id + 1, 5), dtype=np.float)
+        has_too_many = np.zeros(max_node_id + 1, dtype=np.bool)
+        return cls(frequencies, frequencies_squared, certain, frequency_matrix, has_too_many)
+
+    def __add__(self, other):
+        self.frequencies += other.frequencies
+        self.frequencies_squared += other.frequencies_squared
+        self.certain += other.certain
+        self.frequency_matrix += other.frequency_matrix
+        self.has_too_many += other.has_too_many
+        return self
+
+    @classmethod
+    def from_file(cls, file_name):
+        try:
+            data = np.load(file_name + ".npy")
+        except FileNotFoundError:
+            data = np.load(file_name)
+
+        return cls(data["frequencies"], data["frequencies_squared"], data["certain"], data["frequency_matrix"], data["has_too_many"])
+
+    def to_file(self, file_name):
+        np.savez(file_name, frequencies=self.frequencies, frequencies_squared=self.frequencies_squared, certain=self.certain,
+                 frequency_matrix=self.frequency_matrix, has_too_many=self.has_too_many)
+
+
+
+
 class NodeCountModel:
     def __init__(self, node_counts_following_node, node_counts_not_following_node, average_coverage=1):
         self.node_counts_following_node = node_counts_following_node
@@ -631,3 +674,86 @@ class NodeCountModelCreatorFromSimpleChaining:
         self._node_counts_not_following_node[not_followed] = node_counts[not_followed]
 
         return self._node_counts_following_node, self._node_counts_not_following_node
+
+
+class NodeCountModelCreatorAdvanced(NodeCountModelCreatorFromNoChaining):
+    def __init__(self, kmer_index: KmerIndex, reverse_index: ReverseKmerIndex, variant_to_nodes, variant_start_id,
+                 variant_end_id, max_node_id,
+                 scale_by_frequency=False, allele_frequency_index=None, haplotype_matrix=None, node_to_variants=None):
+        self.kmer_index = kmer_index
+        self.variant_to_nodes = variant_to_nodes
+        self.reverse_index = reverse_index
+        self.variant_start_id = variant_start_id
+        self.variant_end_id = variant_end_id
+
+        self._frequencies = np.zeros(max_node_id + 1, dtype=np.float)
+        self._frequencies_squared = np.zeros(max_node_id + 1, dtype=np.float)
+        self._certain = np.zeros(max_node_id + 1, dtype=np.float)
+        self._frequency_matrix = np.zeros((max_node_id + 1, 5), dtype=np.float)
+        self._has_too_many = np.zeros(max_node_id + 1, dtype=np.bool)
+
+        self._allele_frequency_index = allele_frequency_index
+        if self._allele_frequency_index is not None:
+            logging.info("Will fetch allele frequencies from allele frequency index")
+
+        self.haplotype_matrix = haplotype_matrix
+        self.node_to_variants = node_to_variants
+        self.variant_to_nodes = variant_to_nodes
+
+    def process_variant(self, reference_node, variant_node):
+
+        for node in (reference_node, variant_node):
+            allele_frequencies_found = []
+
+            expected_count_following = 0
+            expected_count_not_following = 0
+            lookup = self.reverse_index.get_node_kmers_and_ref_positions(node)
+            for result in zip(lookup[0], lookup[1]):
+                kmer = result[0]
+                ref_pos = result[1]
+                kmer = int(kmer)
+                nodes, ref_offsets, frequencies, allele_frequencies = self.kmer_index.get(kmer, max_hits=1000000)
+                if nodes is None:
+                    continue
+
+                unique_ref_offsets, unique_indexes = np.unique(ref_offsets, return_index=True)
+
+                if len(unique_indexes) == 0:
+                    # Could happen when variant index has more kmers than full graph index
+                    # logging.warning("Found not index hits for kmer %d" % kmer)
+                    continue
+
+                n_hits = 0
+                for index in unique_indexes:
+                    # do not add count for the actual kmer we are searching for, we add 1 for this in the end
+                    if self.haplotype_matrix is not None:
+                        ref_offset = ref_offsets[index]
+                        hit_nodes = nodes[np.where(ref_offsets == ref_offset)]
+                        allele_frequency = self.haplotype_matrix.get_allele_frequency_for_nodes(hit_nodes,
+                                                                                                self.node_to_variants,
+                                                                                                self.variant_to_nodes)
+                    elif self._allele_frequency_index is None:
+                        allele_frequency = allele_frequencies[index]  # fetch from graph
+                    else:
+                        # get the nodes belonging to this ref offset
+                        ref_offset = ref_offsets[index]
+                        hit_nodes = nodes[np.where(ref_offsets == ref_offset)]
+                        # allele frequency is the lowest allele frequency for these nodes
+                        allele_frequency = np.min(self._allele_frequency_index[hit_nodes])
+
+                    if ref_offsets[index] != ref_pos:
+                        if allele_frequency == 1:
+                            self._certain[node] += 1
+                        else:
+                            allele_frequencies_found.append(allele_frequency)
+
+            allele_frequencies_found = np.array(allele_frequencies_found)
+            self._frequencies[node] = np.sum(allele_frequencies_found)
+            self._frequencies_squared[node] = np.sum(allele_frequencies_found**2)
+            if len(allele_frequencies_found) <= 5:
+                self._frequency_matrix[node,0:len(allele_frequencies_found)] = allele_frequencies_found
+            else:
+                self._has_too_many[node] = True
+
+    def get_results(self):
+        return NodeCountModelAdvanced(self._frequencies, self._frequencies_squared, self._certain, self._frequency_matrix, self._has_too_many)
