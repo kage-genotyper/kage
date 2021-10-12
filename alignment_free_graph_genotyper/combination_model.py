@@ -1,10 +1,3 @@
-import logging
-import numpy as np
-from scipy.stats import nbinom, poisson
-from scipy.special import gamma, factorial, gammaln, logsumexp, hyp2f1, hyp1f1, hyperu, factorial
-from itertools import combinations
-import matplotlib.pyplot as plt
-COVERAGE=15
 
 import logging
 import numpy as np
@@ -15,9 +8,10 @@ import matplotlib.pyplot as plt
 
 COVERAGE = 15
 
+
 class CombinationModelWithHistogram:
     """Do real calculation when few unceritain duplications, else use gamma distr"""
-    error_rate = 0.01
+    error_rate = 0.02
 
     def __init__(self, base_lambda, r, p, repeat_dist, do_gamma_calc, certain_counts):
         """
@@ -60,11 +54,13 @@ class CombinationModelWithHistogram:
         q = np.log((1 - allele_frequencies))
         repeat_dist[:, 0] = np.sum(q, axis=1)
         for n in range(1, n_duplicates + 1):
-            f = factorial(n)
             probs = [repeat_dist[:, 0] + np.sum(p[:, comb], axis=1) - np.sum(q[:, comb], axis=1)
                      for comb in combinations(ns, n)]
-            repeat_dist[:, n] = logsumexp(probs)
+            # print(list(combinations(ns, n)))
+            # print(probs)
+            repeat_dist[:, n] = logsumexp(probs, axis=0)
         assert repeat_dist.shape == (n_variants, n_duplicates + 1), (repeat_dist.shape, (n_variants, n_duplicates + 1))
+        assert np.allclose(np.sum(np.exp(repeat_dist), axis=1), 1), np.exp(repeat_dist[:5, :])
         return repeat_dist
 
     @classmethod
@@ -80,7 +76,7 @@ class CombinationModelWithHistogram:
         dist_pmf = self.dist_logpmf(k, n_copies)
         assert dist_pmf.shape == (self._n_variants,), (dist_pmf.shape, (self._n_variants,))
         gamma_pmf = self.gamma_logpmf(k, n_copies)
-        print(dist_pmf, gamma_pmf)
+        # print(dist_pmf, gamma_pmf)
         assert gamma_pmf.shape == (self._n_variants,), (gamma_pmf.shape, (self._n_variants,))
         ret = np.where(self._do_gamma_calc, gamma_pmf, dist_pmf)
         assert ret.shape == (self._n_variants,), (ret.shape, (self._n_variants,))

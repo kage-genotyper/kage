@@ -1,6 +1,6 @@
 import logging
 from .genotyper import Genotyper
-from scipy.stats import binom, betabinom
+from scipy.stats import binom
 import numpy as np
 from .negative_binomial_model_clean import CombinationModel, CombinationModelBothAlleles
 from .node_count_model import GenotypeNodeCountModel, NodeCountModelAlleleFrequencies, NodeCountModelAdvanced
@@ -51,24 +51,42 @@ class NumpyGenotyper(Genotyper):
         model = self._node_count_model
         assert model is not None
 
+
+        logging.info("%.3f, %.3f, %.3f, %.3f" % (model.frequencies[1511], model.frequencies[1512], model.certain[1511], model.certain[1512]))
+        logging.info("%d, %s" % (model.has_too_many[1511], model.frequency_matrix[1511,:]))
+        logging.info("%d, %s" % (model.has_too_many[1512], model.frequency_matrix[1512,:]))
+
+        zero_threshold = 10e-6
+
         if model is not None and isinstance(model, NodeCountModelAdvanced):
+            zero_threshold = 10e-20
             from .combination_model import CombinationModelWithHistogram
             logging.info("Using advanced node count model")
             models = [None, None]
             for i, nodes in enumerate([ref_nodes, alt_nodes]):
-                models[i] = CombinationModelWithHistogram.from_counts(7.5, model.frequencies[nodes],
+
+                models[i] = CombinationModelWithHistogram.from_counts(7, model.frequencies[nodes],
                                                                               model.frequencies_squared[nodes],
-                                                                              #model.has_too_many[nodes],
-                                                                              np.ones_like(model.has_too_many[nodes]),
+                                                                              model.has_too_many[nodes],
+                                                                              #np.ones_like(model.has_too_many[nodes]),
                                                                               model.certain[nodes],
                                                                               model.frequency_matrix[nodes])
-            combination_model_both = CombinationModelBothAlleles(models[0], models[1])
 
+            combination_model_both = CombinationModelBothAlleles(models[0], models[1])
             for i, genotype in enumerate([2, 0, 1]):
                 logging.debug("Computing marginal probs for genotypes %s using combination model" % genotype)
                 probabilities = combination_model_both.pmf(observed_ref_nodes, observed_alt_nodes, genotype)
-                logging.info("Probabilities.. genotype %d: %s" % (genotype, str(probabilities[0:50])))
+                #logging.info("Probabilities.. genotype %d: %s" % (genotype, str(probabilities[0:50])))
                 marginal_probs[i] = probabilities
+
+                debug_variant_id = 16563
+
+                logging.info("Genotype %d, prob: %.15f" % (genotype, probabilities[debug_variant_id]))
+                logging.info("Counts: %d, %d" % (observed_ref_nodes[debug_variant_id], observed_alt_nodes[debug_variant_id]))
+
+            logging.info("%s" % marginal_probs[:,debug_variant_id])
+            marginal_probs = np.nan_to_num(marginal_probs)
+            logging.info("%s" % marginal_probs[:,debug_variant_id])
 
         elif model is not None and isinstance(model, NodeCountModelAlleleFrequencies):
             logging.info("P sums: %s" % model.allele_frequencies[ref_nodes][0:50])
@@ -120,8 +138,7 @@ class NumpyGenotyper(Genotyper):
 
 
         # detect cases where all probs are zero
-        e = 10e-6
-        all_zero = np.where((marginal_probs[0,:] < e) & (marginal_probs[1,:] < e) & (marginal_probs[2,:] < e))[0]
+        all_zero = np.where((marginal_probs[0,:] < zero_threshold) & (marginal_probs[1,:] < zero_threshold) & (marginal_probs[2,:] < zero_threshold))[0]
         marginal_probs[:,all_zero] = 1/3
         logging.info("%d out of %d variants have only zero probs" % (len(all_zero), len(ref_nodes)))
 

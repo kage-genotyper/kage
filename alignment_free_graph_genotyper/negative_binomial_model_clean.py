@@ -65,10 +65,11 @@ class CombinationModelBothAlleles:
     def pmf(self, k1, k2, genotype):
         ref_probs = self._model_ref.logpmf(k1, genotype)
         alt_probs = self._model_alt.logpmf(k2, 2-genotype)
-        print(ref_probs)
-        print(alt_probs)
-        return np.exp(ref_probs+alt_probs)
-
+        logging.info("%.4f" % ref_probs[51287])
+        logging.info("%.4f" % alt_probs[51287])
+        result = np.exp(ref_probs+alt_probs)
+        logging.info("exp of sum: %.15f" % result[51287])
+        return result
 
 def simulate(alpha, beta, base_lambda, n=1000000):
     mu = np.random.gamma(alpha, 1/beta, n)

@@ -1,5 +1,5 @@
 from .genotyper import Genotyper
-from scipy.stats import betabinom
+#from scipy.stats import betabinom
 
 class NewBayesGenotyper(Genotyper):
     alpha = 1
