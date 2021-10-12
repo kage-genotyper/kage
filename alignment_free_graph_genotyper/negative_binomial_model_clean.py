@@ -68,7 +68,7 @@ class CombinationModelBothAlleles:
         logging.info("%.4f" % ref_probs[51287])
         logging.info("%.4f" % alt_probs[51287])
         result = np.exp(ref_probs+alt_probs)
-        logging.info("exp of sum: %.15f" % result[51287])
+        logging.info("exp of sum: %.15f" % result[40605])
         return result
 
 def simulate(alpha, beta, base_lambda, n=1000000):

@@ -65,7 +65,7 @@ class NumpyGenotyper(Genotyper):
             models = [None, None]
             for i, nodes in enumerate([ref_nodes, alt_nodes]):
 
-                models[i] = CombinationModelWithHistogram.from_counts(7, model.frequencies[nodes],
+                models[i] = CombinationModelWithHistogram.from_counts(5, model.frequencies[nodes],
                                                                               model.frequencies_squared[nodes],
                                                                               model.has_too_many[nodes],
                                                                               #np.ones_like(model.has_too_many[nodes]),
