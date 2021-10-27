@@ -10,7 +10,7 @@ COVERAGE = 15
 
 class CombinationModelWithHistogram:
     """Do real calculation when few unceritain duplications, else use gamma distr"""
-    error_rate = 0.005
+    error_rate = 0.01
 
     def __init__(self, base_lambda, r, p, repeat_dist, do_gamma_calc, certain_counts):
         """
@@ -65,6 +65,16 @@ class CombinationModelWithHistogram:
         assert gamma_pmf.shape == (self._n_variants,), (gamma_pmf.shape, (self._n_variants,))
         ret = np.where(self._do_gamma_calc, gamma_pmf, dist_pmf)
         assert ret.shape == (self._n_variants,), (ret.shape, (self._n_variants,))
+        if np.sum(np.isnan(ret)) != 0:
+            pos = np.where(np.isnan(ret))
+            logging.error("There are nan values in ret at positions %s" % pos)
+            logging.error("Do gamma calc at positions: %s" % self._do_gamma_calc[pos])
+            assert np.all(self._do_gamma_calc[pos])
+            logging.error("_r and _p: %s %s" % (self._r[pos], self._p[pos]))
+            logging.error("Counts: %s" % k[pos])
+            mu = (n_copies + self._certain_counts + self.error_rate) * self._base_lambda
+            logging.error("MU: %s" % mu[pos])
+            #raise Exception("Error")
         return ret
 
     def dist_logpmf(self, k, n_copies=1):

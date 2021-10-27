@@ -22,6 +22,7 @@ from obgraph.genotype_matrix import MostSimilarVariantLookup, GenotypeFrequencie
 from obgraph.variant_to_nodes import VariantToNodes
 from .genotyper import Genotyper
 from .numpy_genotyper import NumpyGenotyper
+from .combination_model_genotyper import CombinationModelGenotyper
 from .bayes_genotyper import NewBayesGenotyper
 import SharedArray as sa
 from obgraph.haplotype_matrix import HaplotypeMatrix
@@ -357,7 +358,7 @@ def genotype(args):
             variant_store[variant_id].set_filter_by_prob(probs[variant_id-min_variant_id], criteria_for_pass=args.min_genotype_quality)
 
     VcfVariants(variant_store, header_lines=variants.get_header(), skip_index=True).\
-        to_vcf_file(args.out_file_name, ignore_homo_ref=False, add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">'], sample_name_output=args.sample_name_output)
+        to_vcf_file(args.out_file_name, ignore_homo_ref=True, add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">'], sample_name_output=args.sample_name_output)
     #np.save(args.out_file_name + ".allele_frequencies", genotyper._predicted_allele_frequencies)
     #logging.info("Wrote predicted allele frequencies to %s" % args.out_file_name + ".allele_frequencies")
 
@@ -588,7 +589,8 @@ def run_argument_parser(args):
 
     def find_tricky_variants(args):
         variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
-        model = GenotypeNodeCountModel.from_file(args.node_count_model)
+        #model = GenotypeNodeCountModel.from_file(args.node_count_model)
+        model = NodeCountModelAdvanced.from_file(args.node_count_model)
         reverse_index = ReverseKmerIndex.from_file(args.reverse_kmer_index)
 
         tricky_variants = np.zeros(len(variant_to_nodes.ref_nodes+1), dtype=np.uint32)
@@ -606,6 +608,7 @@ def run_argument_parser(args):
             ref_node = variant_to_nodes.ref_nodes[variant_id]
             var_node = variant_to_nodes.var_nodes[variant_id]
 
+            """
             model_counts_ref = sorted([
                 model.counts_homo_ref[ref_node],
                 model.counts_homo_alt[ref_node],
@@ -616,14 +619,19 @@ def run_argument_parser(args):
                 model.counts_homo_alt[var_node],
                 model.counts_hetero[var_node]
             ])
+            """
+            model_counts_ref = model.frequencies[ref_node]
+            model_counts_var = model.frequencies[var_node]
 
             if args.only_allow_unique:
-                if model.counts_homo_ref[var_node] > 0 or model.counts_homo_alt[ref_node] > 0:
+                #if model.counts_homo_ref[var_node] > 0 or model.counts_homo_alt[ref_node] > 0:
+                if model_counts_ref > 0 or model_counts_var > 0:
                     n_nonunique += 1
                     tricky_variants[variant_id] = 1
 
             #if model_counts_ref[2] > max_counts_model and model_counts_var[2] > max_counts_model:
-            if model_counts_ref[2] < model_counts_ref[1] * 1.1 or model_counts_var[2] < model_counts_var[1] * 1.1:
+            #if model_counts_ref[2] < model_counts_ref[1] * 1.1 or model_counts_var[2] < model_counts_var[1] * 1.1:
+            if model_counts_ref > model_counts_var * 5.0 or model_counts_var > model_counts_ref * 5.0:
                 #logging.warning(model_counts_ref)
                 tricky_variants[variant_id] = 1
                 n_tricky_model += 1
@@ -721,7 +729,7 @@ def run_argument_parser(args):
     subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
     subparser.add_argument("-f", "--scale-by-frequency", required=False, type=bool, default=False)
     subparser.add_argument("-a", "--allele-frequency-index", required=False)
-    subparser.add_argument("-V", "--version", required=False, default=None)
+    subparser.add_argument("-V", "--version", required=False, default="v3")
     subparser.set_defaults(func=model_using_kmer_index_multiprocess)
 
     def model_using_transition_probs(args):
