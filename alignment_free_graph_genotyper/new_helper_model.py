@@ -1,3 +1,4 @@
+import logging
 from scipy.special import logsumexp
 import numpy as np
 
@@ -7,9 +8,11 @@ M = MAIN
 H = HELPER
 
 def create_combined_matrices(genotype_matrix, window_size):
+    logging.info("Multiplying genotype matrix")
     helper = genotype_matrix*3
     result = []
     for i in range (1, window_size):
+        logging.info("Window size: %d/%d" % (i, window_size))
         flat_idx = genotype_matrix[i:]+helper[:-i]
         tmp = np.array([(flat_idx==k).sum(axis=1) for k in range(9)])
         tmp = (tmp.T).reshape(-1, 3, 3)
@@ -62,8 +65,10 @@ class HelperModel:
 
     @classmethod
     def from_genotype_matrix(cls, model, genotype_matrix, helpers=None):
-        combined = create_combined_matrices(genotype_matrix, 10)
-        helpers = find_best_helper(combined, calc_likelihood) if helpers is None
+        if helpers is None:
+            combined = create_combined_matrices(genotype_matrix, 10)
+            helpers = find_best_helper(combined, calc_likelihood)
+
         # helpers = find_best_helper(combined, calc_argmax)
         helper_counts = genotype_matrix[helpers]*3
         flat_idx = genotype_matrix+helper_counts

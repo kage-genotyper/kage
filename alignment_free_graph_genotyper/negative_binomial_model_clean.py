@@ -69,6 +69,10 @@ class CombinationModelBothAlleles:
         result = ref_probs + alt_probs
         return result
 
+    def logpmf(self, k1, k2, genotype):
+        return self.pmf(k1, k2, genotype)
+
+
 def simulate(alpha, beta, base_lambda, n=1000000):
     mu = np.random.gamma(alpha, 1/beta, n)
     of = np.random.poisson(mu)

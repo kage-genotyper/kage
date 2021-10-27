@@ -265,8 +265,13 @@ def genotype_single_thread(data):
     if args.most_similar_variant_lookup is not None:
         most_similar_variant_lookup = from_shared_memory(MostSimilarVariantLookup, "most_similar_variant_lookup_shared" + args.shared_memory_unique_id)
 
+    helper_model = None
+    helper_model_combo_matrix = None
+
     if args.model_advanced is not None:
         model = from_shared_memory(NodeCountModelAdvanced, "model_shared" + args.shared_memory_unique_id)
+        helper_model = from_shared_memory(SingleSharedArray, "helper_model" + args.shared_memory_unique_id).array
+        helper_model_combo_matrix = from_shared_memory(SingleSharedArray, "helper_model_combo_matrix" + args.shared_memory_unique_id).array
     elif args.model is not None:
         logging.info("Reading model from shared memory")
         if "allele_frequencies" in args.model:
@@ -289,7 +294,9 @@ def genotype_single_thread(data):
 
     genotyper = genotyper_class(model, min_variant_id, max_variant_id, variant_to_nodes, node_counts, genotype_frequencies,
                             most_similar_variant_lookup, avg_coverage=args.average_coverage, genotype_transition_probs=genotype_transition_probs,
-                                tricky_variants=tricky_variants, use_naive_priors=args.use_naive_priors)
+                                tricky_variants=tricky_variants, use_naive_priors=args.use_naive_priors,
+                                helper_model=helper_model, helper_model_combo=helper_model_combo_matrix
+    )
     genotypes, probs = genotyper.genotype()
     return min_variant_id, max_variant_id, genotypes, probs
 
@@ -331,6 +338,12 @@ def genotype(args):
 
     if args.genotype_transition_probs is not None:
         to_shared_memory(GenotypeTransitionProbabilities.from_file(args.genotype_transition_probs), "genotype_transition_probs_shared" + args.shared_memory_unique_id)
+
+    if args.helper_model is not None:
+        helper_model = np.load(args.helper_model + ".npy")
+        to_shared_memory(SingleSharedArray(helper_model), "helper_model" + args.shared_memory_unique_id)
+        helper_model_combo_matrix = np.load(args.helper_model + "_combo_matrix.npy")
+        to_shared_memory(SingleSharedArray(helper_model_combo_matrix), "helper_model_combo_matrix" + args.shared_memory_unique_id)
 
     to_shared_memory(genotype_frequencies, "genotype_frequencies_shared" + args.shared_memory_unique_id)
     if model is not None:
@@ -540,6 +553,8 @@ def run_argument_parser(args):
     subparser.add_argument("-x", "--tricky-variants", required=False)
     subparser.add_argument("-s", "--sample-name-output", required=False, default="DONOR", help="Sample name that will be used in the output vcf")
     subparser.add_argument("-u", "--use-naive-priors", required=False, type=bool, default=False, help="Set to True to use only population allele frequencies as priors.")
+    subparser.add_argument("-f", "--helper-model", required=False)
+
 
     subparser.set_defaults(func=genotype)
 
@@ -769,6 +784,36 @@ def run_argument_parser(args):
     subparser = subparsers.add_parser("remove_overlapping_indels")
     subparser.add_argument("-v", "--vcf-file-name", required=True)
     subparser.set_defaults(func=filter_vcf)
+
+
+    def create_helper_model(args):
+        from .new_helper_model import create_combined_matrices, find_best_helper, calc_likelihood
+        from obgraph.genotype_matrix import GenotypeMatrix
+        genotype_matrix = GenotypeMatrix.from_file(args.genotype_matrix)
+        genotype_matrix = genotype_matrix.matrix.transpose()
+
+
+        logging.info("Creating combined matrices")
+        combined = create_combined_matrices(genotype_matrix, args.window_size)
+        logging.info("Finding best helper")
+        helpers = find_best_helper(combined, calc_likelihood)
+        np.save(args.out_file_name, helpers)
+        logging.info("Saved helper model to file: %s" % args.out_file_name)
+
+        helper_counts = genotype_matrix[helpers] * 3
+        flat_idx = genotype_matrix + helper_counts
+        genotype_combo_matrix = np.array([(flat_idx == k).sum(axis=1) for k in range(9)]).T.reshape(-1, 3, 3) + 1
+        np.save(args.out_file_name + "_combo_matrix", genotype_combo_matrix)
+        logging.info("Saved combo matrix to file %s" % args.out_file_name+"_combo_matrix")
+
+
+    subparser = subparsers.add_parser("create_helper_model")
+    subparser.add_argument("-g", "--genotype-matrix", required=True)
+    subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.add_argument("-w", "--window-size", required=False, default=50, type=int,
+                           help="Number of variants before/after considered as potential helper variant")
+    subparser.set_defaults(func=create_helper_model)
+
 
     if len(args) == 0:
         parser.print_help()
