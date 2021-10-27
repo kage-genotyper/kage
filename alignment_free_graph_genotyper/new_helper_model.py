@@ -61,9 +61,9 @@ class HelperModel:
         return np.argmax(probs, axis=0)
 
     @classmethod
-    def from_genotype_matrix(cls, model, genotype_matrix):
+    def from_genotype_matrix(cls, model, genotype_matrix, helpers=None):
         combined = create_combined_matrices(genotype_matrix, 10)
-        helpers = find_best_helper(combined, calc_likelihood)
+        helpers = find_best_helper(combined, calc_likelihood) if helpers is None
         # helpers = find_best_helper(combined, calc_argmax)
         helper_counts = genotype_matrix[helpers]*3
         flat_idx = genotype_matrix+helper_counts
