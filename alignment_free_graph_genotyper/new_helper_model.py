@@ -18,10 +18,10 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
     # 2 => 0
     # 3 => 1
     new_genotype_matrix = np.zeros_like(genotype_matrix)
-    new_genotype_matrix[np.where(genotype_matrix == 0)] = 2
-    new_genotype_matrix[np.where(genotype_matrix == 1)] = 2
-    new_genotype_matrix[np.where(genotype_matrix == 2)] = 0
-    new_genotype_matrix[np.where(genotype_matrix == 3)] = 1
+    new_genotype_matrix[np.where(genotype_matrix == 0)] = -1
+    new_genotype_matrix[np.where(genotype_matrix == 1)] = 0
+    new_genotype_matrix[np.where(genotype_matrix == 2)] = 1
+    new_genotype_matrix[np.where(genotype_matrix == 3)] = 2
     genotype_matrix = new_genotype_matrix
 
     logging.info("Finding best helper")
@@ -93,7 +93,7 @@ class HelperModel:
     def __init__(self, model, helper_variants, genotype_combo_matrix):
         self._model = model
         self._helper_variants = helper_variants
-        self._genotype_probs = np.log(genotype_combo_matrix/genotype_combo_matrix.sum(axis=-1, keepdims=True))
+        self._genotype_probs = np.log(genotype_combo_matrix/genotype_combo_matrix.sum(axis=(-1, -2), keepdims=True))
 
     def predict(self, k1, k2):
         probs = [self.logpmf(k1, k2, g) for g in range(3)]
