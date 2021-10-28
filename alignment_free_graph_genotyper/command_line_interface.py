@@ -787,28 +787,25 @@ def run_argument_parser(args):
 
 
     def create_helper_model(args):
-        from .new_helper_model import create_combined_matrices, find_best_helper, calc_likelihood
+        from .new_helper_model import create_combined_matrices, find_best_helper, calc_likelihood, make_helper_model_from_genotype_matrix
         from obgraph.genotype_matrix import GenotypeMatrix
+
         genotype_matrix = GenotypeMatrix.from_file(args.genotype_matrix)
-        genotype_matrix = genotype_matrix.matrix.transpose()
+        most_similar = None
+        if args.most_similar_variants is not None:
+            most_similar = MostSimilarVariantLookup.from_file(args.most_similar_variants)
 
+        helpers, genotype_matrix_combo = make_helper_model_from_genotype_matrix(genotype_matrix, most_similar)
 
-        logging.info("Creating combined matrices")
-        combined = create_combined_matrices(genotype_matrix, args.window_size)
-        logging.info("Finding best helper")
-        helpers = find_best_helper(combined, calc_likelihood)
         np.save(args.out_file_name, helpers)
         logging.info("Saved helper model to file: %s" % args.out_file_name)
-
-        helper_counts = genotype_matrix[helpers] * 3
-        flat_idx = genotype_matrix + helper_counts
-        genotype_combo_matrix = np.array([(flat_idx == k).sum(axis=1) for k in range(9)]).T.reshape(-1, 3, 3) + 1
-        np.save(args.out_file_name + "_combo_matrix", genotype_combo_matrix)
+        np.save(args.out_file_name + "_combo_matrix", genotype_matrix_combo)
         logging.info("Saved combo matrix to file %s" % args.out_file_name+"_combo_matrix")
 
 
     subparser = subparsers.add_parser("create_helper_model")
-    subparser.add_argument("-g", "--genotype-matrix", required=True)
+    subparser.add_argument("-g", "--genotype-matrix", required=False)
+    subparser.add_argument("-m", "--most-similar-variants", required=False)
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.add_argument("-w", "--window-size", required=False, default=50, type=int,
                            help="Number of variants before/after considered as potential helper variant")
