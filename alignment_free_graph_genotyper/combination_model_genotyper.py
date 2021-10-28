@@ -73,6 +73,13 @@ class CombinationModelGenotyper(Genotyper):
         print(self._helper_model.shape)
         print(self._helper_model_combo_matrix.shape)
         helper_model = HelperModel(combination_model_both, self._helper_model, self._helper_model_combo_matrix)
+        genotypes = helper_model.predict(observed_ref_nodes, observed_alt_nodes)
+        self._predicted_genotypes = np.zeros_like(genotypes)
+        self._predicted_genotypes[genotypes==0] = 1
+        self._predicted_genotypes[genotypes==1] = 3
+        self._predicted_genotypes[genotypes==2] = 2
+        return 
+
         for i, genotype in enumerate([2, 0, 1]):
             logging.debug("Computing marginal probs for genotypes %s using combination model" % genotype)
             #probabilities = combination_model_both.pmf(observed_ref_nodes, observed_alt_nodes, genotype)
@@ -105,6 +112,9 @@ class CombinationModelGenotyper(Genotyper):
 
     def _genotype_biallelic_variant(self, variant_id, a_priori_homozygous_ref, a_priori_homozygous_alt,
                                     a_priori_heterozygous):
+
+
+
 
         p_counts_given_homozygous_ref = self.marginal_probs[0, variant_id - self._min_variant_id]
         p_counts_given_homozygous_alt = self.marginal_probs[1, variant_id - self._min_variant_id]
@@ -150,7 +160,7 @@ class CombinationModelGenotyper(Genotyper):
         logging.debug("Min variant id is %d" % self._min_variant_id)
         logging.debug("Max variant id is %d" % self._max_variant_id)
         self.compute_marginal_probabilities()
-
+        return 
         # for i, variant in enumerate(self._variants):
         for i, variant_id in enumerate(range(self._min_variant_id, self._max_variant_id+1)):
             if i % 500000 == 0 and i > 0:
