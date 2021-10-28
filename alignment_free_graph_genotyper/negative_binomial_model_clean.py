@@ -63,8 +63,8 @@ class CombinationModelBothAlleles:
         self._model_alt = model_alt
 
     def pmf(self, k1, k2, genotype):
-        ref_probs = self._model_ref.logpmf(k1, genotype)
-        alt_probs = self._model_alt.logpmf(k2, 2-genotype)
+        ref_probs = self._model_ref.logpmf(k1, 2-genotype)
+        alt_probs = self._model_alt.logpmf(k2, genotype)
         #result = np.exp(ref_probs+alt_probs)
         result = ref_probs + alt_probs
         return result

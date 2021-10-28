@@ -20,8 +20,8 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
     new_genotype_matrix = np.zeros_like(genotype_matrix)
     new_genotype_matrix[np.where(genotype_matrix == 0)] = -1
     new_genotype_matrix[np.where(genotype_matrix == 1)] = 0
-    new_genotype_matrix[np.where(genotype_matrix == 2)] = 1
-    new_genotype_matrix[np.where(genotype_matrix == 3)] = 2
+    new_genotype_matrix[np.where(genotype_matrix == 2)] = 2
+    new_genotype_matrix[np.where(genotype_matrix == 3)] = 1
     genotype_matrix = new_genotype_matrix
 
     logging.info("Finding best helper")
@@ -90,10 +90,11 @@ def find_best_helper(combined, score_func):
     return best_idx
 
 class HelperModel:
-    def __init__(self, model, helper_variants, genotype_combo_matrix):
+    def __init__(self, model, helper_variants, genotype_combo_matrix, tricky_variants=None):
         self._model = model
         self._helper_variants = helper_variants
         self._genotype_probs = np.log(genotype_combo_matrix/genotype_combo_matrix.sum(axis=(-1, -2), keepdims=True))
+        self._tricky_variants = tricky_variants
 
     def predict(self, k1, k2):
         probs = [self.logpmf(k1, k2, g) for g in range(3)]
@@ -113,6 +114,9 @@ class HelperModel:
 
     def logpmf(self, ref_counts, alt_counts, genotype):
         count_probs = np.array([self._model.logpmf(ref_counts, alt_counts, g) for g in [0, 1, 2]]).T
+        if self._tricky_variants is not None:
+            logging.info("Using tricky variants")
+            count_probs = np.where(self._tricky_variants.reshape(-1, 1), np.log(1/3), count_probs)
         log_probs =  self._genotype_probs+count_probs[self._helper_variants].reshape(-1, 3, 1)+count_probs.reshape(-1, 1, 3)
         return logsumexp(log_probs, axis=H)[..., genotype]
 

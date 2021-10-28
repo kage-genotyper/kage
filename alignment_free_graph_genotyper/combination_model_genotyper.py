@@ -72,26 +72,25 @@ class CombinationModelGenotyper(Genotyper):
         logging.info("Creating helper model")
         print(self._helper_model.shape)
         print(self._helper_model_combo_matrix.shape)
-        helper_model = HelperModel(combination_model_both, self._helper_model, self._helper_model_combo_matrix)
-        genotypes = helper_model.predict(observed_ref_nodes, observed_alt_nodes)
+        helper_model = HelperModel(combination_model_both, self._helper_model, self._helper_model_combo_matrix, self._tricky_variants)
+        #genotypes = helper_model.predict(observed_ref_nodes, observed_alt_nodes)
+        """
         self._predicted_genotypes = np.zeros_like(genotypes)
         self._predicted_genotypes[genotypes==0] = 1
         self._predicted_genotypes[genotypes==1] = 3
         self._predicted_genotypes[genotypes==2] = 2
-        return 
+        """
 
-        for i, genotype in enumerate([2, 0, 1]):
+        for i, genotype in enumerate([0, 2, 1]):
             logging.debug("Computing marginal probs for genotypes %s using combination model" % genotype)
             #probabilities = combination_model_both.pmf(observed_ref_nodes, observed_alt_nodes, genotype)
             probabilities = helper_model.logpmf(observed_ref_nodes, observed_alt_nodes, genotype)
             marginal_probs[i] = probabilities
-            logging.info(np.where(np.isnan(marginal_probs[i])))
 
         # detect cases where all probs are zero and convert nans to zeros
         logging.info("Number of nan values in marginal probs: %d" % np.sum(np.isnan(marginal_probs)))
         marginal_probs = np.nan_to_num(marginal_probs)
 
-        print(marginal_probs[0:300,:])
 
         zero_threshold = -1000000
         """
@@ -101,11 +100,13 @@ class CombinationModelGenotyper(Genotyper):
         logging.info("%d out of %d variants have only zero probs" % (len(all_zero), len(ref_nodes)))
         """
 
+        """
         if self._tricky_variants is not None:
             tricky_variants = self._tricky_variants[self._min_variant_id:self._max_variant_id + 1]
             logging.info("There are %d tricky variants that will be given 1/3 as marginal probabilities" % np.sum(
                 tricky_variants))
             marginal_probs[:, np.nonzero(tricky_variants)] = np.log(1 / 3)
+        """
 
         logging.info("Marginal probs computed")
         self.marginal_probs = marginal_probs
@@ -160,7 +161,8 @@ class CombinationModelGenotyper(Genotyper):
         logging.debug("Min variant id is %d" % self._min_variant_id)
         logging.debug("Max variant id is %d" % self._max_variant_id)
         self.compute_marginal_probabilities()
-        return 
+        #return self._predicted_genotypes, self._prob_correct
+        #return
         # for i, variant in enumerate(self._variants):
         for i, variant_id in enumerate(range(self._min_variant_id, self._max_variant_id+1)):
             if i % 500000 == 0 and i > 0:

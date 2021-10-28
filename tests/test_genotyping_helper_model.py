@@ -60,6 +60,9 @@ class Tester:
                                               )
 
         genotyper.genotype_and_modify_variants(self.input_variants)
+        print("Predicted genotypes: %s" % genotyper._predicted_genotypes)
+        print(genotyper.marginal_probs)
+        print(self.input_variants)
 
     def testcase_all_homo_alt(self):
         # Case 1
