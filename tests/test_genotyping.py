@@ -8,7 +8,7 @@ from kage.node_count_model import NodeCountModel
 from kage.variants import VcfVariants, VcfVariant
 from kage.node_count_model import NodeCountModelAdvanced
 from kage.combination_model_genotyper import CombinationModelGenotyper
-from kage.new_helper_model import make_helper_model_from_genotype_matrix
+from kage.helper_index import make_helper_model_from_genotype_matrix
 
 
 

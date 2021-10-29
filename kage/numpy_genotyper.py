@@ -2,7 +2,8 @@ import logging
 from .genotyper import Genotyper
 from scipy.stats import binom
 import numpy as np
-from .negative_binomial_model_clean import CombinationModel, CombinationModelBothAlleles
+# from .negative_binomial_model_clean import CombinationModel
+# from .models import ComboModelBothAlleles
 from .node_count_model import GenotypeNodeCountModel, NodeCountModelAlleleFrequencies, NodeCountModelAdvanced
 
 class NumpyGenotyper(Genotyper):

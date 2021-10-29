@@ -674,7 +674,7 @@ def run_argument_parser(args):
 
 
     def create_helper_model(args):
-        from .new_helper_model import make_helper_model_from_genotype_matrix
+        from .helper_index import make_helper_model_from_genotype_matrix
         from obgraph.genotype_matrix import GenotypeMatrix
 
         genotype_matrix = GenotypeMatrix.from_file(args.genotype_matrix)

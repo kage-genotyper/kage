@@ -61,12 +61,6 @@ class NegativeBinomialModel(CountModel):
         r, p = (self._r, self._p)
         h = hyperu(r, r + k + 1, mu / p)
         invalid = (h==0) | (mu==0) | (p==0)
-        if np.any(invalid):
-            print(r[invalid])
-            print(p[invalid])
-            print(k[invalid])
-            print(mu[invalid])
-            print(h[invalid])
         result =  -r * np.log(p / (1 - p)) - mu + (r + k) * np.log(mu) - gammaln(k + 1) + np.log(h)
         return result.flatten()
 

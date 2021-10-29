@@ -5,7 +5,7 @@ from .node_count_model import NodeCountModel, GenotypeNodeCountModel
 import numpy as np
 from .variants import VcfVariant, VcfVariants
 from collections import defaultdict
-from .new_helper_model import make_helper_model_from_genotype_matrix
+from .helper_index import make_helper_model_from_genotype_matrix
 from obgraph.genotype_matrix import GenotypeMatrix
 
 

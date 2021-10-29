@@ -32,5 +32,5 @@ setup(name='kage',
             'console_scripts': ['kage=kage.command_line_interface:main']
       },
       #cmdclass = {"build_ext": build_ext},
-      ext_modules = ext_modules
+      # ext_modules = ext_modules
 )
