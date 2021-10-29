@@ -2,7 +2,6 @@ import logging
 #logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 import itertools
-from kage import cython_chain_genotyper
 from itertools import repeat
 import sys, argparse, time
 from graph_kmer_index.shared_mem import from_shared_memory, to_shared_memory, remove_shared_memory, SingleSharedArray, remove_all_shared_memory, remove_shared_memory_in_session
@@ -40,6 +39,8 @@ def main():
 
 #def count_single_thread(reads, args):
 def count_single_thread(data):
+    from kage import cython_chain_genotyper
+
     reads, args = data
     start_time = time.time()
 
