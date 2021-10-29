@@ -5,7 +5,6 @@ from obgraph import Graph, VariantNotFoundException
 from obgraph.genotype_matrix import GenotypeMatrix
 from graph_kmer_index import ReverseKmerIndex, KmerIndex
 import time
-from kage import cython_chain_genotyper
 import itertools
 
 class GenotypeNodeCountModel:
@@ -593,87 +592,7 @@ class NodeCountModelCreatorFromNoChainingOnlyAlleleFrequencies(NodeCountModelCre
         return self._allele_frequencies_summed, self._allele_frequencies_sum_of_squares
 
 
-class NodeCountModelCreatorFromSimpleChaining:
-    def __init__(self, graph, reference_index, nodes_followed_by_individual, individual_genome_sequence, kmer_index, n_nodes, n_reads_to_simulate=1000, read_length=150,  k=31, skip_chaining=False, max_index_lookup_frequency=5, reference_index_scoring=None, seed=None):
-        self._graph = graph
-        self._reference_index = reference_index
-        self.kmer_index = kmer_index
-        self.nodes_followed_by_individual = nodes_followed_by_individual
-        self.genome_sequence = individual_genome_sequence
-        #self.reverse_genome_sequence = str(Seq(self.genome_sequence).reverse_complement())
-        self._node_counts_following_node = np.zeros(n_nodes+1, dtype=np.float)
-        self._node_counts_not_following_node = np.zeros(n_nodes+1, dtype=np.float)
-        self.n_reads_to_simulate = n_reads_to_simulate
-        self.read_length = read_length
-        self.genome_size = len(self.genome_sequence)
-        self._n_nodes = n_nodes
-        self._k = k
-        self._skip_chaining = skip_chaining
-        self._max_index_lookup_frequency = max_index_lookup_frequency
-        self._reference_index_scoring = reference_index_scoring
-        self._seed = seed
-        if self._seed is None:
-            self._seed = np.random.randint(0, 1000)
 
-    def get_simulated_reads(self):
-        np.random.seed(self._seed)
-        reads = []
-        prev_time = time.time()
-        read_positions_debug = []
-        for i in range(0, self.n_reads_to_simulate):
-            if i % 500000 == 0:
-                logging.info("%d/%d reads simulated (time spent on chunk: %.3f)" % (i, self.n_reads_to_simulate, time.time()-prev_time))
-                prev_time = time.time()
-
-
-            pos_start = np.random.randint(0, self.genome_size - self.read_length)
-            pos_end = pos_start + self.read_length
-
-            if i < 20:
-                read_positions_debug.append(pos_start)
-
-            reads.append(self.genome_sequence[pos_start:pos_end])
-            # Don't actually need to simulate from reverse complement, mapper is anyway reversecomplementing every sequence
-            #for read in [self.genome_sequence[pos_start:pos_end], self.reverse_genome_sequence[pos_start:pos_end]]:
-            #for read in [self.genome_sequence[pos_start:pos_end]]:
-                #yield read
-            #    reads.append(read)
-
-        logging.info("First 20 read positions: %s" % read_positions_debug)
-
-        return reads
-
-    def get_node_counts(self):
-        # Simulate reads from the individual
-        # for each read, find nodes in best chain
-        # increase those node counts
-
-        reads = self.get_simulated_reads()
-        # Set to none to not use memory on the sequence anymore
-        self.genome_sequence = None
-
-        logging.info("Getting node counts")
-        chain_positions, node_counts = cython_chain_genotyper.run(reads, self.kmer_index,
-              self._n_nodes,
-              self._k,
-              self._reference_index,
-              self._max_index_lookup_frequency,
-              True,
-              self._reference_index_scoring,
-              self._skip_chaining
-              )
-
-        #logging.info("Sum of positions: %d" % np.sum(chain_positions))
-        #logging.info("Sum of node counts: %d" % np.sum(node_counts))
-        array_nodes_followed_by_individual = np.zeros(self._n_nodes+1)
-        array_nodes_followed_by_individual[self.nodes_followed_by_individual] = 1
-        followed = np.where(array_nodes_followed_by_individual == 1)[0]
-        #logging.info("N followd: %d nodes are followed by individual" % len(followed))
-        not_followed = np.where(array_nodes_followed_by_individual == 0)[0]
-        self._node_counts_following_node[followed] = node_counts[followed]
-        self._node_counts_not_following_node[not_followed] = node_counts[not_followed]
-
-        return self._node_counts_following_node, self._node_counts_not_following_node
 
 
 class NodeCountModelCreatorAdvanced(NodeCountModelCreatorFromNoChaining):
