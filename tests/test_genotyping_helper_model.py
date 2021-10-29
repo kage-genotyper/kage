@@ -3,12 +3,12 @@ from obgraph import GenotypeFrequencies, MostSimilarVariantLookup
 from obgraph.genotype_matrix import GenotypeMatrix
 import numpy as np
 np.random.seed(1)
-from alignment_free_graph_genotyper import NodeCounts
-from alignment_free_graph_genotyper.node_count_model import NodeCountModel
-from alignment_free_graph_genotyper.variants import VcfVariants, VcfVariant
-from alignment_free_graph_genotyper.node_count_model import NodeCountModelAdvanced
-from alignment_free_graph_genotyper.combination_model_genotyper import CombinationModelGenotyper
-from alignment_free_graph_genotyper.new_helper_model import make_helper_model_from_genotype_matrix
+from kage import NodeCounts
+from kage.node_count_model import NodeCountModel
+from kage.variants import VcfVariants, VcfVariant
+from kage.node_count_model import NodeCountModelAdvanced
+from kage.combination_model_genotyper import CombinationModelGenotyper
+from kage.new_helper_model import make_helper_model_from_genotype_matrix
 
 
 
@@ -73,17 +73,18 @@ class Tester:
         for variant in self.input_variants:
             assert variant.genotype == "1/1"
 
-    def testcase_all_equally_likely_but_higher_priors_for_homo_alt(self):
-        self._make_genotype_matrix_biased_towards_genotype(2)
-        print("GENOTYPE MATRIX")
-        print(self.genotype_matrix.matrix)
-        self.prepare()
+    def testcase_all_equally_likely_but_higher_priors_for_one_genotype(self):
+        for genotype_numeric, genotype in [(1, "0/0"), (2, "1/1"), (3, "0/1")]:
+            self._make_genotype_matrix_biased_towards_genotype(genotype_numeric)
+            print("GENOTYPE MATRIX")
+            print(self.genotype_matrix.matrix)
+            self.prepare()
 
-        node_counts = NodeCounts(np.zeros(self.max_node_id+1))
-        self.run_test_with_node_counts(node_counts)
-        for variant in self.input_variants:
-            print(variant)
-            assert variant.genotype == "1/1"
+            node_counts = NodeCounts(np.zeros(self.max_node_id+1))
+            self.run_test_with_node_counts(node_counts)
+            for variant in self.input_variants:
+                print(variant)
+                assert variant.genotype == genotype
 
     def testcase2(self):
         # Case 2
@@ -107,5 +108,5 @@ class Tester:
 
 tester = Tester()
 tester.testcase_all_homo_alt()
-tester.testcase_all_equally_likely_but_higher_priors_for_homo_alt()
+tester.testcase_all_equally_likely_but_higher_priors_for_one_genotype()
 

@@ -1,4 +1,4 @@
-from alignment_free_graph_genotyper.variants import VcfVariant, VcfVariants
+from kage.variants import VcfVariant, VcfVariants
 
 def test_position_index():
     variants = VcfVariants(

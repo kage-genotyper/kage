@@ -1,10 +1,10 @@
 from obgraph.variant_to_nodes import VariantToNodes
 from obgraph import GenotypeFrequencies, MostSimilarVariantLookup
 import numpy as np
-from alignment_free_graph_genotyper import NodeCounts
-from alignment_free_graph_genotyper.node_count_model import NodeCountModel
-from alignment_free_graph_genotyper.variants import VcfVariants, VcfVariant
-from alignment_free_graph_genotyper.genotyper import Genotyper
+from kage import NodeCounts
+from kage.node_count_model import NodeCountModel
+from kage.variants import VcfVariants, VcfVariant
+from kage.genotyper import Genotyper
 
 def test_simple():
     variant_to_nodes = VariantToNodes(np.array([1, 2, 3, 4]), np.array([5, 6, 7, 8]))

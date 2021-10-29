@@ -1,9 +1,9 @@
 .cache/
 .idea/
 alignment_free_graph_genotyper.egg-info/
-alignment_free_graph_genotyper/__pycache__/
-alignment_free_graph_genotyper/cython_chain_genotyper.c
-alignment_free_graph_genotyper/cython_chain_genotyper.html
+kage/__pycache__/
+kage/cython_chain_genotyper.c
+kage/cython_chain_genotyper.html
 cython_testing.py
 tests/1.critical_nodes
 tests/1.nobg
