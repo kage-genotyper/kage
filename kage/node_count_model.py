@@ -79,6 +79,20 @@ class NodeCountModelAdvanced:
         self.certain = certain
         self.frequency_matrix = frequency_matrix
         self.has_too_many = has_too_many
+        
+    @classmethod
+    def from_dict_of_frequencies(cls, frequencies, n_nodes):
+        model = cls.create_empty(n_nodes)
+        for node, frequencies in frequencies.items():
+            model.frequencies[node] = np.sum(frequencies)
+            model.frequencies_squared[node] = np.sum(np.array(frequencies)**2)
+            model.certain[node] = len(np.where(frequencies == 1)[0])
+            if len(frequencies) > 5:
+                model.has_too_many[node] = True
+            else:
+                model.frequency_matrix[node,0:len(frequencies)] = frequencies
+
+        return model
 
     @classmethod
     def create_empty(cls, max_node_id):

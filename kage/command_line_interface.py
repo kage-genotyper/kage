@@ -150,104 +150,6 @@ def analyse_variants(args):
     analyser.analyse_unique_kmers_on_variants()
 
 
-def model_kmers_from_haplotype_nodes_single_thread(haplotype, random_seed, args):
-    from .node_count_model import NodeCountModelCreatorFromSimpleChaining
-    from obgraph.haplotype_nodes import HaplotypeToNodes
-
-    reference_index = None
-    if args.reference_index is not None:
-        reference_index = from_shared_memory(ReferenceKmerIndex, "reference_index_shared")
-
-    reference_index_scoring = None
-    if args.reference_index_scoring is not None:
-        reference_index_scoring = from_shared_memory(ReferenceKmerIndex, "reference_index_scoring_shared")
-
-    kmer_index = from_shared_memory(KmerIndex, "kmer_index_shared")
-
-    nodes = from_shared_memory(HaplotypeToNodes, "haplotype_nodes_shared")
-    nodes = nodes.get_nodes(haplotype)
-    graph = from_shared_memory(ObGraph, "graph_shared")
-
-    logging.info("Getting haplotype sequence for haplotype %d" % haplotype)
-    time_start = time.time()
-    sequence_forward = graph.get_numeric_node_sequences(nodes)
-    logging.info("Sequence type: %s" % type(sequence_forward))
-    logging.info("Done getting sequence (took %.3f sec)" % (time.time()-time_start))
-    creator = NodeCountModelCreatorFromSimpleChaining(graph, reference_index, nodes, sequence_forward, kmer_index, args.max_node_id,
-                                                      n_reads_to_simulate=args.n_reads, skip_chaining=args.skip_chaining,
-                                                      max_index_lookup_frequency=args.max_index_lookup_frequency,
-                                                      reference_index_scoring=reference_index_scoring, seed=random_seed)
-    following, not_following = creator.get_node_counts()
-    logging.info("Done with haplotype %d" % haplotype)
-    return following, not_following
-
-def model_kmers_from_haplotype_nodes(args):
-    from obgraph.haplotype_nodes import HaplotypeNodes
-    haplotypes = list(range(args.n_haplotypes)) * args.run_n_times
-    logging.info("Haplotypes that will be given to jobs and run in parallel: %s" % haplotypes)
-
-    max_node_id = args.max_node_id
-
-    logging.info("Reading haplotypenodes")
-    nodes = HaplotypeToNodes.from_file(args.haplotype_nodes)
-    to_shared_memory(nodes, "haplotype_nodes_shared")
-
-    if args.reference_index_scoring is not None:
-        reference_index_scoring = ReferenceKmerIndex.from_file(args.reference_index_scoring)
-        to_shared_memory(reference_index_scoring, "reference_index_scoring_shared")
-
-    logging.info("Reading graph")
-    graph = ObGraph.from_file(args.graph_file_name)
-    to_shared_memory(graph, "graph_shared")
-
-    logging.info("Reading reference index from file")
-    if args.reference_index is not None:
-        reference_index = ReferenceKmerIndex.from_file(args.reference_index)
-        to_shared_memory(reference_index, "reference_index_shared")
-
-    logging.info("Reading kmer index from file")
-    kmer_index = KmerIndex.from_file(args.kmer_index)
-    to_shared_memory(kmer_index, "kmer_index_shared")
-
-    n_chunks_in_each_pool = args.n_threads
-    pool = Pool(args.n_threads)
-    random_seeds = list(range(0, len(haplotypes)))
-    data_to_process = zip(haplotypes, random_seeds, repeat(args))
-    expected_node_counts_not_following_node = np.zeros(max_node_id+1, dtype=np.float)
-    expected_node_counts_following_node = np.zeros(max_node_id+1, dtype=np.float)
-    while True:
-        results = pool.starmap(model_kmers_from_haplotype_nodes_single_thread, itertools.islice(data_to_process, n_chunks_in_each_pool))
-        if results:
-            for expected_follow, expected_not_follow in results:
-                expected_node_counts_following_node += expected_follow
-                expected_node_counts_not_following_node += expected_not_follow
-        else:
-            logging.info("No results, breaking")
-            break
-
-    haplotype_nodes = HaplotypeToNodes.from_file(args.haplotype_nodes)
-    logging.info("Counting individuals following nodes")
-    n_individuals_following_node = haplotype_nodes.get_n_haplotypes_on_nodes_array(max_node_id+1)
-    n_individuals_tot = args.n_haplotypes
-    n_individuals_not_following_node = np.zeros(len(n_individuals_following_node)) + n_individuals_tot - n_individuals_following_node
-
-
-    if not args.skip_normalization:
-        nonzero = np.where(expected_node_counts_following_node != 0)[0]
-        expected_node_counts_following_node[nonzero] = expected_node_counts_following_node[nonzero] / \
-                                                       n_individuals_following_node[nonzero]
-        nonzero = np.where(expected_node_counts_not_following_node != 0)[0]
-        expected_node_counts_not_following_node[nonzero] = expected_node_counts_not_following_node[nonzero] / \
-                                                           n_individuals_not_following_node[nonzero]
-    else:
-        logging.info("Did not divide by number of individuals on each node")
-
-    assert np.min(expected_node_counts_not_following_node) >= 0
-    np.savez(args.out_file_name, node_counts_following_node=expected_node_counts_following_node,
-             node_counts_not_following_node=expected_node_counts_not_following_node)
-    logging.info("Wrote expected node counts to file %s" % args.out_file_name)
-
-
 def genotype_single_thread(data):
     variant_interval, args = data
     min_variant_id = variant_interval[0]
@@ -516,24 +418,6 @@ def run_argument_parser(args):
     subparser.add_argument("-p", "--transition-probabilities", required=True)
     subparser.set_defaults(func=analyse_variants)
 
-    subparser = subparsers.add_parser("model")
-    subparser.add_argument("-g", "--graph_file_name", required=True)
-    subparser.add_argument("-k", "--kmer-size", required=True, type=int)
-    subparser.add_argument("-i", "--kmer-index", required=True)
-    subparser.add_argument("-o", "--out-file-name", required=True)
-    subparser.add_argument("-t", "--n-threads", type=int, required=True)
-    subparser.add_argument("-m", "--max-node-id", type=int, required=True)
-    subparser.add_argument("-H", "--haplotype-nodes", required=True)
-    subparser.add_argument("-n", "--n-haplotypes", type=int, required=True)
-    subparser.add_argument("-N", "--n-reads", type=int, required=True, help="N reads to simulate per genome")
-    subparser.add_argument("-s", "--skip-chaining", type=bool, default=False, required=False)
-    subparser.add_argument("-Q", "--reference_index", required=False)
-    subparser.add_argument("-I", "--max-index-lookup-frequency", required=False, type=int, default=5)
-    subparser.add_argument("-T", "--run-n-times", required=False, help="Run the whole simulation N times. Useful when wanting to use more threads than number of haplotypes since multiple haplotypes then can be procesed in parallel.", default=1, type=int)
-    subparser.add_argument("-R", "--reference_index_scoring", required=False)
-    subparser.add_argument("-S", "--skip-normalization", required=False, default=False, type=bool, help="Do not divide by number of individuals")
-    subparser.set_defaults(func=model_kmers_from_haplotype_nodes)
-
 
     subparser = subparsers.add_parser("genotype")
     subparser.add_argument("-c", "--counts", required=True)
@@ -564,8 +448,9 @@ def run_argument_parser(args):
         np.random.seed(args.random_seed)
         genotyper = globals()[args.genotyper]
         if args.type == "simulated":
-            run_genotyper_on_simualated_data(genotyper, args.n_variants, args.average_coverage, args.coverage_std)
+            run_genotyper_on_simualated_data(genotyper, args.n_variants, args.average_coverage, args.coverage_std, args.duplication_rate)
         else:
+            raise NotImplementedError("Not implemented")
             node_counts = NodeCounts.from_file("tests/testdata_genotyping/node_counts")
             model = GenotypeNodeCountModel.from_file("tests/testdata_genotyping/genotype_model.npz")
             variant_to_nodes = VariantToNodes.from_file("tests/testdata_genotyping/variant_to_nodes")
@@ -582,11 +467,12 @@ def run_argument_parser(args):
             analyser.analyse()
 
     subparser = subparsers.add_parser("test")
-    subparser.add_argument("-g", "--genotyper", required=True, help="Classname of genotyper")
+    subparser.add_argument("-g", "--genotyper", required=False, default="CombinationModelGenotyper", help="Classname of genotyper")
     subparser.add_argument("-n", "--n_variants", required=False, type=int, default=100, help="Number of variants to test on")
     subparser.add_argument("-r", "--random_seed", required=False, type=int, default=1, help="Random seed")
     subparser.add_argument("-c", "--average_coverage", required=False, type=int, default=8, help="Average coverage")
     subparser.add_argument("-s", "--coverage_std", required=False, type=int, default=2, help="Coverage std")
+    subparser.add_argument("-d", "--duplication_rate", required=False, type=float, default=0.1, help="Ratio of variants with duplications")
     subparser.add_argument("-T", "--type", required=False, default="simulated")
     subparser.set_defaults(func=run_tests)
 
@@ -730,7 +616,7 @@ def run_argument_parser(args):
     subparser.set_defaults(func=analyse_kmer_index)
 
 
-    subparser = subparsers.add_parser("model_using_kmer_index")
+    subparser = subparsers.add_parser("model")
     subparser.add_argument("-g", "--variant-to-nodes", required=True)
     subparser.add_argument("-N", "--node-to-variants", required=False)
     subparser.add_argument("-H", "--haplotype-matrix", required=False)
@@ -787,7 +673,7 @@ def run_argument_parser(args):
 
 
     def create_helper_model(args):
-        from .new_helper_model import create_combined_matrices, find_best_helper, calc_likelihood, make_helper_model_from_genotype_matrix
+        from .new_helper_model import make_helper_model_from_genotype_matrix
         from obgraph.genotype_matrix import GenotypeMatrix
 
         genotype_matrix = GenotypeMatrix.from_file(args.genotype_matrix)
@@ -795,7 +681,8 @@ def run_argument_parser(args):
         if args.most_similar_variants is not None:
             most_similar = MostSimilarVariantLookup.from_file(args.most_similar_variants)
 
-        helpers, genotype_matrix_combo = make_helper_model_from_genotype_matrix(genotype_matrix, most_similar)
+        helpers, genotype_matrix_combo = make_helper_model_from_genotype_matrix(genotype_matrix, most_similar,
+                                                                                window_size=args.window_size)
 
         np.save(args.out_file_name, helpers)
         logging.info("Saved helper model to file: %s" % args.out_file_name)

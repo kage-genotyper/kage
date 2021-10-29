@@ -8,7 +8,7 @@ M = MAIN
 H = HELPER
 
 
-def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant_lookup=False, dummy_count=1):
+def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant_lookup=False, dummy_count=1, window_size=10):
     genotype_matrix = genotype_matrix.matrix.transpose()
 
     # genotypes are 1, 2, 3 (0 for unknown, 1 for homo ref, 2 for homo alt and 3 for hetero), we want 0, 1, 2 for homo alt, hetero, homo ref
@@ -33,7 +33,7 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
     else:
         logging.info("Making raw from genotype matrix")
         logging.info("Creating combined matrices")
-        combined = create_combined_matrices(genotype_matrix, args.window_size)
+        combined = create_combined_matrices(genotype_matrix, window_size)
         helpers = find_best_helper(combined, calc_likelihood)
 
     helper_counts = genotype_matrix[helpers] * 3
