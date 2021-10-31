@@ -12,7 +12,6 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
 
     # genotypes are 1, 2, 3 (0 for unknown, 1 for homo ref, 2 for homo alt and 3 for hetero), we want 0, 1, 2 for homo alt, hetero, homo ref
     logging.info("Converting genotype matrix to format in helper model code")
-    logging.info("Genotype matrix before conversion: %s" % genotype_matrix)
     # 0, 1 => 2
     # 2 => 0
     # 3 => 1
@@ -24,7 +23,6 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
     genotype_matrix = new_genotype_matrix
 
     logging.info("Finding best helper")
-    logging.info("Using genotype matrix %s" % genotype_matrix)
 
     if most_similar_variant_lookup is not None:
         logging.info("Making from most similar variant lookup")
