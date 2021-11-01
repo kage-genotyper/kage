@@ -447,9 +447,10 @@ def run_argument_parser(args):
     def run_tests(args):
         from .simulation import run_genotyper_on_simualated_data
         np.random.seed(args.random_seed)
+        random.seed(args.random_seed)
         genotyper = globals()[args.genotyper]
         if args.type == "simulated":
-            run_genotyper_on_simualated_data(genotyper, args.n_variants, args.average_coverage, args.coverage_std, args.duplication_rate)
+            run_genotyper_on_simualated_data(genotyper, args.n_variants, args.n_individuals, args.average_coverage, args.coverage_std, args.duplication_rate)
         else:
             raise NotImplementedError("Not implemented")
             node_counts = NodeCounts.from_file("tests/testdata_genotyping/node_counts")
@@ -470,6 +471,7 @@ def run_argument_parser(args):
     subparser = subparsers.add_parser("test")
     subparser.add_argument("-g", "--genotyper", required=False, default="CombinationModelGenotyper", help="Classname of genotyper")
     subparser.add_argument("-n", "--n_variants", required=False, type=int, default=100, help="Number of variants to test on")
+    subparser.add_argument("-i", "--n_individuals", required=False, type=int, default=50, help="Number of individuals")
     subparser.add_argument("-r", "--random_seed", required=False, type=int, default=1, help="Random seed")
     subparser.add_argument("-c", "--average_coverage", required=False, type=int, default=8, help="Average coverage")
     subparser.add_argument("-s", "--coverage_std", required=False, type=int, default=2, help="Coverage std")
