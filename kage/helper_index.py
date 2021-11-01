@@ -7,7 +7,7 @@ M = MAIN
 H = HELPER
 
 
-def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant_lookup=False, dummy_count=1):
+def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant_lookup=False, dummy_count=1, window_size=100):
     genotype_matrix = genotype_matrix.matrix.transpose()
 
     # genotypes are 1, 2, 3 (0 for unknown, 1 for homo ref, 2 for homo alt and 3 for hetero), we want 0, 1, 2 for homo alt, hetero, homo ref
@@ -28,9 +28,9 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
         logging.info("Making from most similar variant lookup")
         helpers = most_similar_variant_lookup.lookup_array
     else:
-        logging.info("Making raw from genotype matrix")
+        logging.info("Making raw from genotype matrix with window size %d" % window_size)
         logging.info("Creating combined matrices")
-        combined = create_combined_matrices(genotype_matrix, args.window_size)
+        combined = create_combined_matrices(genotype_matrix, window_size)
         helpers = find_best_helper(combined, calc_likelihood)
 
     helper_counts = genotype_matrix[helpers] * 3
@@ -45,7 +45,8 @@ def create_combined_matrices(genotype_matrix, window_size):
     helper = genotype_matrix*3
     result = []
     for i in range (1, window_size):
-        logging.info("Window size: %d/%d" % (i, window_size))
+        if i % 50 == 0:
+            logging.info("Window size now: %d/%d" % (i, window_size))
         flat_idx = genotype_matrix[i:]+helper[:-i]
         tmp = np.array([(flat_idx==k).sum(axis=1) for k in range(9)])
         tmp = (tmp.T).reshape(-1, 3, 3)

@@ -224,5 +224,19 @@ class NodeCountModelCreatorAdvanced:
             else:
                 self._has_too_many[node] = True
 
+    def create_model(self):
+        for i, variant_id in enumerate(range(self.variant_start_id, self.variant_end_id)):
+            if i % 25000 == 0:
+                logging.info("%d/%d variants processed" % (i, self.variant_end_id-self.variant_start_id))
+
+            #reference_node, variant_node = self.graph.get_variant_nodes(variant)
+            reference_node = self.variant_to_nodes.ref_nodes[variant_id]
+            variant_node = self.variant_to_nodes.var_nodes[variant_id]
+
+            if reference_node == 0 or variant_node == 0:
+                continue
+
+            self.process_variant(reference_node, variant_node)
+
     def get_results(self):
         return NodeCountModelAdvanced(self._frequencies, self._frequencies_squared, self._certain, self._frequency_matrix, self._has_too_many)

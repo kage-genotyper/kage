@@ -243,9 +243,9 @@ def genotype(args):
         to_shared_memory(GenotypeTransitionProbabilities.from_file(args.genotype_transition_probs), "genotype_transition_probs_shared" + args.shared_memory_unique_id)
 
     if args.helper_model is not None:
-        helper_model = np.load(args.helper_model + ".npy")
+        helper_model = np.load(args.helper_model)
         to_shared_memory(SingleSharedArray(helper_model), "helper_model" + args.shared_memory_unique_id)
-        helper_model_combo_matrix = np.load(args.helper_model + "_combo_matrix.npy")
+        helper_model_combo_matrix = np.load(args.helper_model_combo_matrix)
         to_shared_memory(SingleSharedArray(helper_model_combo_matrix), "helper_model_combo_matrix" + args.shared_memory_unique_id)
 
     to_shared_memory(genotype_frequencies, "genotype_frequencies_shared" + args.shared_memory_unique_id)
@@ -282,7 +282,7 @@ def genotype(args):
 def model_using_kmer_index(variant_id_interval, args):
     variant_start_id, variant_end_id = variant_id_interval
     logging.info("Processing variants with id between %d and %d" % (variant_start_id, variant_end_id))
-    from .node_count_model import NodeCountModelCreatorFromNoChaining, NodeCountModel, NodeCountModelCreatorFromNoChainingOnlyAlleleFrequencies
+    from .node_count_model import NodeCountModel
 
     allele_frequency_index = None
     if args.allele_frequency_index is not None:
@@ -439,6 +439,7 @@ def run_argument_parser(args):
     subparser.add_argument("-s", "--sample-name-output", required=False, default="DONOR", help="Sample name that will be used in the output vcf")
     subparser.add_argument("-u", "--use-naive-priors", required=False, type=bool, default=False, help="Set to True to use only population allele frequencies as priors.")
     subparser.add_argument("-f", "--helper-model", required=False)
+    subparser.add_argument("-F", "--helper-model-combo-matrix", required=False)
 
 
     subparser.set_defaults(func=genotype)
