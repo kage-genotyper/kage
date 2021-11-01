@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-
+from .joint_distribution import create_combined_matrices
 MAIN = -1
 HELPER = -2
 M = MAIN
@@ -33,7 +33,7 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
         logging.info("Making raw from genotype matrix")
         logging.info("Creating combined matrices")
         combined = create_combined_matrices(genotype_matrix, args.window_size)
-        helpers = find_best_helper(combined, calc_likelihood)
+        helpers = find_best_helper(combined, calc_likelihood, len(genotype_matrix))
 
     helper_counts = genotype_matrix[helpers] * 3
     flat_idx = genotype_matrix + helper_counts
@@ -41,50 +41,24 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
 
     return helpers, genotype_combo_matrix
 
-
-def create_combined_matrices(genotype_matrix, window_size):
-    logging.info("Multiplying genotype matrix")
-    helper = genotype_matrix*3
-    result = []
-    for i in range (1, window_size):
-        logging.info("Window size: %d/%d" % (i, window_size))
-        flat_idx = genotype_matrix[i:]+helper[:-i]
-        tmp = np.array([(flat_idx==k).sum(axis=1) for k in range(9)])
-        tmp = (tmp.T).reshape(-1, 3, 3)
-        result.append(tmp)
-    result = result
-    """variants, helper-g, main-g"""
-    return result
-
 def calc_likelihood(count_matrix):
-    """
-    Axis -2 is helper genotype
-    Axis -1 is main genotype
-    """
     count_matrix = count_matrix+1
     p = count_matrix/count_matrix.sum(axis=M, keepdims=True)
     return np.sum(count_matrix*np.log(p), axis=(M, H))
     
 def calc_argmax(count_matrix):
-    """
-    Axis -2 is helper genotype
-    Axis -1 is main genotype
-    """
     return np.sum(np.max(count_matrix, axis=M), axis=-1)/count_matrix.sum(axis=(M, H))
 
 
-def find_best_helper(combined, score_func):
-    N = len(combined[0])+1
+def find_best_helper(combined, score_func, N, with_model=False):
     best_idx, best_score = np.empty(N, dtype="int"), -np.inf*np.ones(N)
     for j, counts in enumerate(combined, 1):
-        scores = score_func(counts)
-        do_update = scores>best_score[j:]
+        scores = score_func(counts, j) if with_model else score_func(counts)
+        do_update = scores > best_score[j:]
         best_score[j:][do_update] = scores[do_update]
         best_idx[j:][do_update] = np.flatnonzero(do_update)
-        rev_scores = score_func(counts.swapaxes(-2, -1))
+        rev_scores = score_func(counts.swapaxes(-2, -1), -j) if with_model else score_func(counts.swapaxes(-2, -1))
         do_update = rev_scores>best_score[:-j]
         best_score[:-j][do_update] = rev_scores[do_update]
         best_idx[:-j][do_update] = np.flatnonzero(do_update)+j
-    ### best_idx[i] is the variant that helps predict variant i the best
     return best_idx
-
