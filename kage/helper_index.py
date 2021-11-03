@@ -1,6 +1,8 @@
 import logging
 import numpy as np
 from .joint_distribution import create_combined_matrices
+from .helper_index_using_duplicate_counts import get_weighted_calc_func, get_prob_weights
+
 MAIN = -1
 HELPER = -2
 M = MAIN
@@ -19,7 +21,15 @@ class CombinationMatrix:
         return cls(np.load(file_name))
 
 
-def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant_lookup=False, dummy_count=0.1, window_size=100):
+def calc_likelihood(count_matrix):
+    count_matrix = count_matrix+1
+    p = count_matrix/count_matrix.sum(axis=M, keepdims=True)
+    return np.sum(count_matrix*np.log(p), axis=(M, H))
+    
+def calc_argmax(count_matrix):
+    return np.sum(np.max(count_matrix, axis=M), axis=-1)/count_matrix.sum(axis=(M, H))
+
+def convert_genotype_matrix(genotype_matrix):
     genotype_matrix = genotype_matrix.matrix.transpose()
 
     # genotypes are 1, 2, 3 (0 for unknown, 1 for homo ref, 2 for homo alt and 3 for hetero), we want 0, 1, 2 for homo alt, hetero, homo ref
@@ -32,13 +42,20 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
     new_genotype_matrix[np.where(genotype_matrix == 1)] = 0
     new_genotype_matrix[np.where(genotype_matrix == 2)] = 2
     new_genotype_matrix[np.where(genotype_matrix == 3)] = 1
-    genotype_matrix = new_genotype_matrix
+    return new_genotype_matrix
 
-    n_individuals = genotype_matrix.shape[1]
-    logging.info("%d individuals in genotype matrix" % n_individuals)
-    dummy_count = n_individuals / 500
-    logging.info("Using dummy count %.4f" % dummy_count)
+def make_helper_model_from_genotype_matrix_and_node_counts(old_genotype_matrix, node_counts, variant_to_nodes, dummy_count=1):
+    genotype_matrix = convert_genotype_matrix(old_genotype_matrix)
+    nodes_tuple = (variant_to_nodes.ref_nodes, variant_to_nodes.var_nodes)
+    expected_ref, expected_alt = (node_counts.certain[nodes]+node_counts.frequencies[nodes] for nodes in nodes_tuple)
+    genotype_counts = np.array([np.sum(genotype_matrix==i, axis=-1) for i in range(3)]).T+dummy_count
+    genotype_probs = genotype_counts/genotype_counts.sum(axis=-1, keepdims=True)
+    weights = get_prob_weights(expected_ref, expected_alt, genotype_probs)
+    score_func = get_weighted_calc_func(calc_likelihood, weights, 0.4)
+    return make_helper_model_from_genotype_matrix(old_genotype_matrix, None, 1, score_func=score_func)
 
+def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant_lookup=False, dummy_count=1, score_func=calc_likelihood, window_size=1000):
+    genotype_matrix = convert_genotype_matrix(genotype_matrix)
     logging.info("Finding best helper")
 
     if most_similar_variant_lookup is not None:
@@ -55,15 +72,6 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
     genotype_combo_matrix = np.array([(flat_idx == k).sum(axis=1) for k in range(9)]).T.reshape(-1, 3, 3) + dummy_count
 
     return helpers, genotype_combo_matrix
-
-def calc_likelihood(count_matrix):
-    count_matrix = count_matrix+1
-    p = count_matrix/count_matrix.sum(axis=M, keepdims=True)
-    return np.sum(count_matrix*np.log(p), axis=(M, H))
-    
-def calc_argmax(count_matrix):
-    return np.sum(np.max(count_matrix, axis=M), axis=-1)/count_matrix.sum(axis=(M, H))
-
 
 def find_best_helper(combined, score_func, N, with_model=False):
     best_idx, best_score = np.empty(N, dtype="int"), -np.inf*np.ones(N)
