@@ -27,17 +27,11 @@ class Tester:
         self.variant_to_nodes = VariantToNodes(np.array([1, 2, 3, 4]), np.array([5, 6, 7, 8]))
         self.most_simliar_variant_lookup = MostSimilarVariantLookup(np.arange(self.n_variants)-1, np.ones(self.n_variants))
         self.node_count_model = NodeCountModelAdvanced(np.zeros(self.max_node_id), np.zeros(self.max_node_id), np.zeros(self.max_node_id), np.zeros((self.max_node_id, 5)), np.zeros(self.max_node_id, dtype=np.bool))
-<<<<<<< HEAD
-        self.helper_variants, self.genotype_combo_matrix = make_helper_model_from_genotype_matrix(self.genotype_matrix, self.most_simliar_variant_lookup)
-        print("Combo matrix")
-        print(self.genotype_combo_matrix)
-=======
-        # self.helper_variants, self.genotype_combo_matrix = make_helper_model_from_genotype_matrix(self.genotype_matrix, self.most_simliar_variant_lookup)
+       # self.helper_variants, self.genotype_combo_matrix = make_helper_model_from_genotype_matrix(self.genotype_matrix, self.most_simliar_variant_lookup)
         self.helper_variants, self.genotype_combo_matrix = make_helper_model_from_genotype_matrix_and_node_counts(self.genotype_matrix, self.node_count_model, self.variant_to_nodes)
         print("Combo matrix")
         print(self.genotype_combo_matrix)
 
->>>>>>> 1e76f3c873c1b82850a19511b543f3847dab4511
 
         self.input_variants = VcfVariants(
             [
