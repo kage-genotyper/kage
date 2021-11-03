@@ -32,7 +32,7 @@ def convert_genotype_matrix(genotype_matrix):
     new_genotype_matrix[np.where(genotype_matrix == 3)] = 1
     return new_genotype_matrix
 
-def make_helper_model_from_genotype_matrix_and_node_counts(old_genotype_matrix, node_counts, variant_to_nodes, dummy_count=None):
+def make_helper_model_from_genotype_matrix_and_node_counts(old_genotype_matrix, node_counts, variant_to_nodes, dummy_count=1):
     genotype_matrix = convert_genotype_matrix(old_genotype_matrix)
     nodes_tuple = (variant_to_nodes.ref_nodes, variant_to_nodes.var_nodes)
 
@@ -40,7 +40,7 @@ def make_helper_model_from_genotype_matrix_and_node_counts(old_genotype_matrix, 
     
     genotype_counts = np.array([np.sum(genotype_matrix==i, axis=-1) for i in range(3)]).T
     mean_genotype_counts = np.mean(genotype_counts, axis=0)
-    mean_genotype_counts /= np.sum(mean_genotype_counts)
+    mean_genotype_counts *= dummy_count/np.sum(mean_genotype_counts)
     genotype_counts = genotype_counts+mean_genotype_counts
     genotype_probs = genotype_counts/genotype_counts.sum(axis=-1, keepdims=True)
     weights = get_prob_weights(expected_ref, expected_alt, genotype_probs)
