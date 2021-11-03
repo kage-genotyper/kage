@@ -34,17 +34,16 @@ class SimpleRecallPrecisionAnalyser:
                     self._false_positive[variant.type] += 1
 
 
-        print("--- REPORT ---")
+        logging.info("--- REPORT ---")
         for type in ["SNP", "DELETION", "INSERTION"]:
             precision = self._true_positive[type] / (self._true_positive[type] + self._false_positive[type])
             recall = self._true_positive[type] / (self._true_positive[type] + self._false_negative[type])
-            print("%s. Recall: %.4f, Precision: %.4f" % (type, recall, precision))
+            logging.info("%s. Recall: %.4f, Precision: %.4f" % (type, recall, precision))
 
 
-class KmerAnalyser:
+class GenotypeDebugger:
     def __init__(self, variant_nodes, k, variants, kmer_index, reverse_kmer_index, predicted_genotypes, truth_genotypes,
-                 truth_regions, node_counts, node_count_model, genotype_frequencies, most_similar_variants, whitelist,
-                 transition_probs):
+                 truth_regions, node_counts, node_count_model, helper_variants, combination_matrix, probs):
         self.variant_nodes= variant_nodes
         self.node_count_model = node_count_model
         self.k = k
@@ -67,39 +66,54 @@ class KmerAnalyser:
         self.false_negatives_with_zero_counts_and_other_truth_variant_close = defaultdict(int)
         self.false_negatives_with_zero_counts_and_other_truth_variant_close_only_one_side = defaultdict(int)
         self.node_counts = node_counts
-        self.genotype_frequencies = genotype_frequencies
-        self.most_similar_variants = most_similar_variants
+        #self.genotype_frequencies = genotype_frequencies
+        #self.most_similar_variants = most_similar_variants
         self.n_missing_kmers = 0
         self.n_ref_nodes_zero_in_model = 0
         self.truth_genotypes.make_position_index()
-        self.whitelist = whitelist
-        self.transition_probs = transition_probs
+        #self.whitelist = whitelist
+        #self.transition_probs = transition_probs
+        self.helper_variants = helper_variants
+        self.combination_matrix = combination_matrix
+        self.probs = probs
 
     def print_report(self):
         for type in ["SNP", "DELETION", "INSERTION"]:
-            print("Type: %s" % type)
-            print("N truth variants: %d" % self.n_truth_variants[type])
-            print("N predicted variants: %d" % self.n_predicted_variants[type])
-            print("N correctly predicted: %d" % self.n_correct_genotypes[type])
-            print("N false postives: %d" % self.false_positives[type])
-            print("N false negatives: %d" % self.false_negatives[type])
-            print("N false negatives with zero counts: %d" % self.false_negatives_with_zero_counts[type])
-            print("N false negatives with zero counts and truth variant close: %d (only one side: %d)" % (self.false_negatives_with_zero_counts_and_other_truth_variant_close[type], self.false_negatives_with_zero_counts_and_other_truth_variant_close_only_one_side[type]))
-            #print("Recall: %.4f" % (self.n_correct_genotypes[type] / self.n_truth_variants[type]))
-            print("Precision (all genotype types): %.4f" % (self.n_correct_genotypes[type] / self.n_predicted_variants[type]))
+            logging.info("Type: %s" % type)
+            logging.info("N truth variants: %d" % self.n_truth_variants[type])
+            logging.info("N predicted variants: %d" % self.n_predicted_variants[type])
+            logging.info("N correctly predicted: %d" % self.n_correct_genotypes[type])
+            logging.info("N false postives: %d" % self.false_positives[type])
+            logging.info("N false negatives: %d" % self.false_negatives[type])
+            logging.info("N false negatives with zero counts: %d" % self.false_negatives_with_zero_counts[type])
+            logging.info("N false negatives with zero counts and truth variant close: %d (only one side: %d)" % (self.false_negatives_with_zero_counts_and_other_truth_variant_close[type], self.false_negatives_with_zero_counts_and_other_truth_variant_close_only_one_side[type]))
+            #logging.info("Recall: %.4f" % (self.n_correct_genotypes[type] / self.n_truth_variants[type]))
+            logging.info("Precision (all genotype types): %.4f" % (self.n_correct_genotypes[type] / self.n_predicted_variants[type]))
 
     def print_info_about_variant(self, reference_node, variant_node, variant, variant_id):
         reference_kmers = set(self.reverse_kmer_index.get_node_kmers(reference_node))
         variant_kmers = set(self.reverse_kmer_index.get_node_kmers(variant_node))
 
 
-        logging.warning("Predicted: %s. Variant id: %d" % (self.predicted_genotypes.get(variant), variant_id))
-        logging.warning("Node counts on %d/%d:             %d/%d" % (
+        logging.warning("")
+        logging.warning("Predicted: %s. Correct is %s. Variant id: %d" % (self.predicted_genotypes.get(variant), self.truth_genotypes.get(variant), variant_id))
+        logging.warning("Node counts on ref/alt %d/%d: %d/%d" % (
         reference_node, variant_node, self.node_counts.node_counts[reference_node],
         self.node_counts.node_counts[variant_node]))
 
-        logging.info("Model counts ref node (homo ref, homo alt, hetero): %.2f/%.2f/%.2f" % (self.node_count_model.counts_homo_ref[reference_node], self.node_count_model.counts_homo_alt[reference_node], self.node_count_model.counts_hetero[reference_node]))
-        logging.info("Model counts alt node (homo ref, homo alt, hetero): %.2f/%.2f/%.2f" % (self.node_count_model.counts_homo_ref[variant_node], self.node_count_model.counts_homo_alt[variant_node], self.node_count_model.counts_hetero[variant_node]))
+        logging.info("Genotype probs (log): %s" % self.probs[variant_id])
+
+        logging.info("Model on ref node: %s" % self.node_count_model.describe_node(reference_node))
+        logging.info("Model on alt node: %s" % self.node_count_model.describe_node(variant_node))
+
+        most_similar = self.helper_variants[variant_id]
+        logging.info("Most similar variant: %d" % most_similar)
+        logging.info("Predicted/true most similar: %s / %s" % (self.predicted_genotypes[most_similar], self.truth_genotypes[most_similar]))
+        logging.info("Combination matrix: \n%s" % self.combination_matrix[self.helper_variants[variant_id]])
+        logging.info("Genotype probs most similar (log): %s" % self.probs[most_similar])
+
+        #logging.info("Model counts ref node (homo ref, homo alt, hetero): %.2f/%.2f/%.2f" % (self.node_count_model.counts_homo_ref[reference_node], self.node_count_model.counts_homo_alt[reference_node], self.node_count_model.counts_hetero[reference_node]))
+        #logging.info("Model counts alt node (homo ref, homo alt, hetero): %.2f/%.2f/%.2f" % (self.node_count_model.counts_homo_ref[variant_node], self.node_count_model.counts_homo_alt[variant_node], self.node_count_model.counts_hetero[variant_node]))
 
         #logging.warning("Model counts following nodes:     %.3f/%.3f" % (
         #self.node_count_model.node_counts_following_node[reference_node],
@@ -107,11 +121,11 @@ class KmerAnalyser:
         #logging.warning("Model counts not following nodes: %.3f/%.3f" % (
         #self.node_count_model.node_counts_not_following_node[reference_node],
         #self.node_count_model.node_counts_not_following_node[variant_node]))
-        most_similar = self.most_similar_variants.get_most_similar_variant(variant_id)
-        logging.warning("Most similar to variant %d with similarity %.4f and call %s" % (most_similar, self.most_similar_variants.prob_of_having_the_same_genotype_as_most_similar(variant_id), self.predicted_genotypes[most_similar]))
-        logging.warning("Genotype frequencies: %.3f/%.3f/%.3f" % self.genotype_frequencies.get_frequencies_for_variant(variant_id))
-        logging.warning("Most similar frequencies: %.3f/%.3f/%.3f" % self.genotype_frequencies.get_frequencies_for_variant(most_similar))
-        logging.warning("Transition probabilities from most similar: %s" % self.transition_probs.get_transition_probabilities(variant_id, self.predicted_genotypes[most_similar].get_numeric_genotype()))
+        #most_similar = self.most_similar_variants.get_most_similar_variant(variant_id)
+        #logging.warning("Most similar to variant %d with similarity %.4f and call %s" % (most_similar, self.most_similar_variants.prob_of_having_the_same_genotype_as_most_similar(variant_id), self.predicted_genotypes[most_similar]))
+        #logging.warning("Genotype frequencies: %.3f/%.3f/%.3f" % self.genotype_frequencies.get_frequencies_for_variant(variant_id))
+        #logging.warning("Most similar frequencies: %.3f/%.3f/%.3f" % self.genotype_frequencies.get_frequencies_for_variant(most_similar))
+        #logging.warning("Transition probabilities from most similar: %s" % self.transition_probs.get_transition_probabilities(variant_id, self.predicted_genotypes[most_similar].get_numeric_genotype()))
         logging.warning("Kmers on ref/variant node %d/%d: %s / %s" % (reference_node, variant_node, reference_kmers, variant_kmers))
         logging.warning("Kmer sequences on variant node:   %s" % [(hash, kmer_hash_to_sequence(hash, 31)) for hash in variant_kmers])
         logging.warning("Kmer sequences on reference node: %s" % [(hash, kmer_hash_to_sequence(hash, 31)) for hash in reference_kmers])
@@ -123,9 +137,9 @@ class KmerAnalyser:
 
     def analyse_variant(self, reference_node, variant_node, variant, variant_id):
 
-        if self.whitelist is not None and self.whitelist[variant_id] == 0:
-            # ignore
-            return
+        #if self.whitelist is not None and self.whitelist[variant_id] == 0:
+        #    # ignore
+        #    return
 
         if not self.truth_regions.is_inside_regions(variant.position):
             return
@@ -140,21 +154,26 @@ class KmerAnalyser:
         if self.truth_genotypes.has_variant(variant):
             self.n_truth_variants[variant.type] += 1
 
+        #logging.info(self.predicted_genotypes.get(variant))
+        #logging.info(self.truth_genotypes.get(variant))
+
         if self.predicted_genotypes.has_variant(variant):
             self.n_predicted_variants[variant.type] += 1
 
             if self.truth_genotypes.has_variant(variant):
                 if self.truth_genotypes.get(variant) == self.predicted_genotypes.get(variant):
                     self.n_correct_genotypes[variant.type] += 1
-                #else:
-                #    logging.warning("Wrong genotype: %s / %s" % (self.truth_genotypes.get(variant), self.predicted_genotypes.get(variant)))
+                else:
+                    logging.warning("Wrong genotype: %s / %s" % (self.truth_genotypes.get(variant), self.predicted_genotypes.get(variant)))
+                    self.print_info_about_variant(reference_node, variant_node, variant, variant_id)
+
             elif self.predicted_genotypes.get(variant).genotype == "0|0":
                 self.n_correct_genotypes[variant.type] += 1
 
         #if self.node_count_model.node_counts_following_node[reference_node] == 0:
         #    self.n_ref_nodes_zero_in_model += 1
 
-        if False and variant.type != "SNP" and self.predicted_genotypes.has_variant(variant) and self.truth_genotypes.has_variant(variant):
+        if self.predicted_genotypes.has_variant(variant) and self.truth_genotypes.has_variant(variant):
             if self.truth_regions.is_inside_regions(variant.position) and self.predicted_genotypes.get(variant).genotype == "0|0" and self.truth_genotypes.get(variant).genotype != "0|0" and self.truth_genotypes.get(variant).genotype != self.predicted_genotypes.get(variant).genotype:
                 logging.warning("----------------------------")
                 logging.warning("False negative genotype!")
@@ -169,7 +188,7 @@ class KmerAnalyser:
                             self.false_negatives_with_zero_counts_and_other_truth_variant_close_only_one_side[variant.type] += 1
                             #self.print_info_about_variant(reference_node, variant_node, variant, variant_id)
 
-        if variant.type != "SNP" and self.predicted_genotypes.has_variant(variant) and not self.truth_genotypes.has_variant(variant):
+        if self.predicted_genotypes.has_variant(variant) and (not self.truth_genotypes.has_variant(variant) or (self.truth_genotypes.has_variant(variant) and self.truth_genotypes.get(variant).genotype == "0|0")):
 
             if self.truth_regions.is_inside_regions(variant.position) and self.predicted_genotypes.get(variant).genotype != "0|0":
                 logging.warning("----------------------------")
@@ -181,7 +200,7 @@ class KmerAnalyser:
 
         if len(reference_kmers.intersection(variant_kmers)) > 0:
             logging.warning("----------")
-            logging.warning("Variant and reference node share kmers on %d/%d: %s / %s" % (reference_node, variant_node, reference_kmers, variant_kmers))
+            logging.warning("Variant and reference node share kmers on variant %s, nodes %d/%d: %s / %s" % (variant, reference_node, variant_node, reference_kmers, variant_kmers))
             # Check if they have any of the same kmers
             if len(reference_kmers) == 0:
                 logging.warning("Variant %s %d/%d has 0 reference kmers" % (variant, reference_node, variant_node))
