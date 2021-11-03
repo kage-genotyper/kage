@@ -93,6 +93,10 @@ class NodeCountModelAdvanced:
 
         return model
 
+    def describe_node(self, node):
+        description = "Frequencies: %.3f, certain: %d, has too many? %s" % (self.frequencies[node], self.certain[node], self.has_too_many[node])
+        return description
+
     @classmethod
     def create_empty(cls, max_node_id):
         frequencies = np.zeros(max_node_id + 1, dtype=np.float)

@@ -8,7 +8,7 @@ from graph_kmer_index.shared_mem import from_shared_memory, to_shared_memory, re
 from obgraph import Graph as ObGraph
 from graph_kmer_index import KmerIndex, ReverseKmerIndex
 from graph_kmer_index import ReferenceKmerIndex
-from .analysis import KmerAnalyser
+from .analysis import GenotypeDebugger
 from .variants import VcfVariants, TruthRegions
 from obgraph.haplotype_nodes import HaplotypeToNodes
 from .reads import read_chunks_from_fasta
@@ -130,24 +130,21 @@ def analyse_variants(args):
     from .node_count_model import NodeCountModel
     from obgraph.genotype_matrix import MostSimilarVariantLookup
     from obgraph.variant_to_nodes import VariantToNodes
+    from .helper_index import CombinationMatrix
 
     whitelist = None
-    if args.whitelist is not None:
-        whitelist = np.load(args.whitelist)
 
-    transition_probs = GenotypeTransitionProbabilities.from_file(args.transition_probabilities)
-    most_similar_variants = MostSimilarVariantLookup.from_file(args.most_similar_variants)
     variant_nodes = VariantToNodes.from_file(args.variant_nodes)
     kmer_index = KmerIndex.from_file(args.kmer_index)
     reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
-    try:
-        node_count_model = GenotypeNodeCountModel.from_file(args.node_count_model)
-    except KeyError:
-        node_count_model = NodeCountModel.from_file(args.node_count_model)
+    model = NodeCountModelAdvanced.from_file(args.model)
+    helper_variants = np.load(args.helper_variants)
+    combination_matrix = CombinationMatrix.from_file(args.combination_matrix)
+    probs = np.load(args.probs)
 
-    analyser = KmerAnalyser(variant_nodes, args.kmer_size, VcfVariants.from_vcf(args.vcf), kmer_index, reverse_index, VcfVariants.from_vcf(args.predicted_vcf),
-                            VcfVariants.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NodeCounts.from_file(args.node_counts),
-                            node_count_model, GenotypeFrequencies.from_file(args.genotype_frequencies), most_similar_variants, whitelist, transition_probs=transition_probs)
+    analyser = GenotypeDebugger(variant_nodes, args.kmer_size, VcfVariants.from_vcf(args.vcf), kmer_index, reverse_index, VcfVariants.from_vcf(args.predicted_vcf),
+                                VcfVariants.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NodeCounts.from_file(args.node_counts),
+                                model, helper_variants, combination_matrix, probs)
     analyser.analyse_unique_kmers_on_variants()
 
 
@@ -271,12 +268,13 @@ def genotype(args):
         i += 1
         for variant_id in range(min_variant_id, max_variant_id+1):
             variant_store[variant_id].set_genotype(genotypes[variant_id-min_variant_id], is_numeric=True)
-            variant_store[variant_id].set_filter_by_prob(probs[variant_id-min_variant_id], criteria_for_pass=args.min_genotype_quality)
+            #variant_store[variant_id].set_filter_by_prob(probs[variant_id-min_variant_id], criteria_for_pass=args.min_genotype_quality)
 
     VcfVariants(variant_store, header_lines=variants.get_header(), skip_index=True).\
-        to_vcf_file(args.out_file_name, ignore_homo_ref=True, add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">'], sample_name_output=args.sample_name_output)
+        to_vcf_file(args.out_file_name, ignore_homo_ref=False, add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">'], sample_name_output=args.sample_name_output)
     #np.save(args.out_file_name + ".allele_frequencies", genotyper._predicted_allele_frequencies)
     #logging.info("Wrote predicted allele frequencies to %s" % args.out_file_name + ".allele_frequencies")
+    np.save(args.out_file_name + ".probs", results[0][3])
 
 
 def model_using_kmer_index(variant_id_interval, args):
@@ -412,11 +410,10 @@ def run_argument_parser(args):
     subparser.add_argument("-T", "--truth-vcf", required=True)
     subparser.add_argument("-t", "--truth-regions-file", required=True)
     subparser.add_argument("-n", "--node-counts", required=True)
-    subparser.add_argument("-m", "--node-count-model", required=True)
-    subparser.add_argument("-G", "--genotype-frequencies", required=True)
-    subparser.add_argument("-M", "--most-similar-variants", required=True)
-    subparser.add_argument("-w", "--whitelist", required=False, help="Only consider these variants")
-    subparser.add_argument("-p", "--transition-probabilities", required=True)
+    subparser.add_argument("-m", "--model", required=True)
+    subparser.add_argument("-f", "--helper-variants", required=True)
+    subparser.add_argument("-F", "--combination-matrix", required=True)
+    subparser.add_argument("-p", "--probs", required=True)
     subparser.set_defaults(func=analyse_variants)
 
 

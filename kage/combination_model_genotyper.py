@@ -81,8 +81,9 @@ class CombinationModelGenotyper(Genotyper):
         combination_model_both = ComboModelBothAlleles(*models)
         logging.info("Creating helper model")
         helper_model = HelperModel(combination_model_both, self._helper_model, self._helper_model_combo_matrix, self._tricky_variants)
-        genotypes = helper_model.predict(observed_ref_nodes, observed_alt_nodes)
+        genotypes, probabilities = helper_model.predict(observed_ref_nodes, observed_alt_nodes, return_probs=True)
         self._predicted_genotypes = translate_to_numeric(genotypes)
+        self._prob_correct = probabilities
 
     def genotype(self):
         logging.debug("Min variant id is %d" % self._min_variant_id)

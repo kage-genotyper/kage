@@ -7,7 +7,19 @@ M = MAIN
 H = HELPER
 
 
-def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant_lookup=False, dummy_count=1, window_size=100):
+class CombinationMatrix:
+    def __init__(self, matrix):
+        self.matrix = matrix
+
+    def __getitem__(self, variant_id):
+        return self.matrix[variant_id]
+
+    @classmethod
+    def from_file(cls, file_name):
+        return cls(np.load(file_name))
+
+
+def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant_lookup=False, dummy_count=0.1, window_size=100):
     genotype_matrix = genotype_matrix.matrix.transpose()
 
     # genotypes are 1, 2, 3 (0 for unknown, 1 for homo ref, 2 for homo alt and 3 for hetero), we want 0, 1, 2 for homo alt, hetero, homo ref
@@ -21,6 +33,11 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
     new_genotype_matrix[np.where(genotype_matrix == 2)] = 2
     new_genotype_matrix[np.where(genotype_matrix == 3)] = 1
     genotype_matrix = new_genotype_matrix
+
+    n_individuals = genotype_matrix.shape[1]
+    logging.info("%d individuals in genotype matrix" % n_individuals)
+    dummy_count = n_individuals / 500
+    logging.info("Using dummy count %.4f" % dummy_count)
 
     logging.info("Finding best helper")
 
@@ -51,6 +68,7 @@ def calc_argmax(count_matrix):
 def find_best_helper(combined, score_func, N, with_model=False):
     best_idx, best_score = np.empty(N, dtype="int"), -np.inf*np.ones(N)
     for j, counts in enumerate(combined, 1):
+        logging.info("Window %d" % j)
         scores = score_func(counts, j) if with_model else score_func(counts)
         do_update = scores > best_score[j:]
         best_score[j:][do_update] = scores[do_update]

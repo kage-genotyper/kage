@@ -7,8 +7,11 @@ M = MAIN
 H = HELPER
 
 class Model:
-    def predict(self, k1, k2):
-        return np.argmax(self.score(k1, k2), axis=-1)
+    def predict(self, k1, k2, return_probs=False):
+        scores = self.score(k1, k2)
+        result = np.argmax(scores, axis=-1)
+        if return_probs:
+            return result, scores
 
     def score(self, k1, k2):
         return np.array([self.logpmf(k1, k2, g) for g in [0, 1, 2]]).T
@@ -37,7 +40,8 @@ class HelperModel(Model):
     def score(self, k1, k2):
         count_probs = np.array([self._model.logpmf(k1, k2, g) for g in [0, 1, 2]]).T
         log_probs =  self._genotype_probs + count_probs[self._helper_variants].reshape(-1, 3, 1)+count_probs.reshape(-1, 1, 3)
-        return logsumexp(log_probs, axis=H)
+        result = logsumexp(log_probs, axis=H)
+        return result - logsumexp(result, axis=-1, keepdims=True)
 
     def logpmf(self, ref_counts, alt_counts, genotype):
         count_probs = np.array([self._model.logpmf(ref_counts, alt_counts, g) for g in [0, 1, 2]]).T

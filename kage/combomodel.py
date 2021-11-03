@@ -5,7 +5,7 @@ from scipy.special import gamma, factorial, gammaln, logsumexp, hyp2f1, hyp1f1, 
 from itertools import combinations
 
 class CountModel:
-    error_rate=0.01
+    error_rate=0.005
 
 class MultiplePoissonModel(CountModel):
     def __init__(self, base_lambda, repeat_dist, certain_counts):
