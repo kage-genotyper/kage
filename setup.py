@@ -1,6 +1,6 @@
 from setuptools import setup, Extension
-#from distutils.extension import Extension
-#from Cython.Distutils import build_ext
+from distutils.extension import Extension
+from Cython.Distutils import build_ext
 
 ext_modules=[
     Extension("kage.cython_chain_genotyper",
@@ -11,9 +11,14 @@ ext_modules=[
                 )
 ]
 
+
+with open("Readme.md", 'r') as f:
+    long_description = f.read()
+
 setup(name='kage',
       version='0.0.1',
       description='KAGE',
+      long_description=long_description,
       url='http://github.com/ivargr/kage',
       author='Ivar Grytten',
       author_email='',
@@ -31,6 +36,6 @@ setup(name='kage',
       entry_points={
             'console_scripts': ['kage=kage.command_line_interface:main']
       },
-      #cmdclass = {"build_ext": build_ext},
-      # ext_modules = ext_modules
+      cmdclass = {"build_ext": build_ext},
+      ext_modules = ext_modules
 )

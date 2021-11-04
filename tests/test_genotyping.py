@@ -41,12 +41,12 @@ class Tester:
         )
 
     def _make_random_genotype_matrix(self):
-        matrix = np.random.randint(1, 4, (self.n_individuals, self.n_variants))
+        matrix = np.random.randint(1, 4, (self.n_variants, self.n_individuals))
         self.genotype_matrix = GenotypeMatrix(matrix)
 
     def _make_genotype_matrix_biased_towards_genotype(self, genotype):
-        assert genotype in [1, 2, 3]
-        matrix = np.zeros((self.n_individuals, self.n_variants)) + genotype
+        assert genotype in [0, 1, 2]
+        matrix = np.zeros((self.n_variants, self.n_individuals)) + genotype
         self.genotype_matrix = GenotypeMatrix(matrix)
 
     def run_test_with_node_counts(self, node_counts):
@@ -74,7 +74,7 @@ class Tester:
             assert variant.genotype == "1/1"
 
     def testcase_all_equally_likely_but_higher_priors_for_one_genotype(self):
-        for genotype_numeric, genotype in [(1, "0/0"), (2, "1/1"), (3, "0/1")]:
+        for genotype_numeric, genotype in [(0, "0/0"), (2, "1/1"), (1, "0/1")]:
             self._make_genotype_matrix_biased_towards_genotype(genotype_numeric)
             print("GENOTYPE MATRIX")
             print(self.genotype_matrix.matrix)
@@ -105,8 +105,11 @@ class Tester:
         for variant in input_variants:
             assert variant.genotype == "0/0"
 
-
 tester = Tester()
-tester.testcase_all_homo_alt()
-tester.testcase_all_equally_likely_but_higher_priors_for_one_genotype()
+
+def test1():
+    tester.testcase_all_homo_alt()
+
+def test2():
+    tester.testcase_all_equally_likely_but_higher_priors_for_one_genotype()
 
