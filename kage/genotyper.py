@@ -2,7 +2,7 @@ import logging
 from scipy.special import comb
 
 from .node_count_model import GenotypeNodeCountModel
-from .variants import VcfVariant, VcfVariants
+from obgraph.variants import VcfVariant, VcfVariants
 from collections import defaultdict
 import numpy as np
 from scipy.stats import poisson, binom

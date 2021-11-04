@@ -5,9 +5,9 @@ from obgraph.variant_to_nodes import VariantToNodes
 from obgraph import GenotypeFrequencies, MostSimilarVariantLookup
 from .node_count_model import NodeCountModel, GenotypeNodeCountModel
 import numpy as np
-from .variants import VcfVariant, VcfVariants
+from obgraph.variants import VcfVariant, VcfVariants
 from collections import defaultdict
-from .helper_index import make_helper_model_from_genotype_matrix
+from .helper_index import make_helper_model_from_genotype_matrix, make_helper_model_from_genotype_matrix_and_node_counts
 from obgraph.genotype_matrix import GenotypeMatrix
 
 
@@ -24,10 +24,12 @@ def run_genotyper_on_simualated_data(genotyper, n_variants, n_individuals, avera
     g.genotype_and_modify_variants(variants)
 
     truth_variants.compute_similarity_to_other_variants(variants)
+    accuracy = truth_variants.compute_similarity_to_other_variants(variants)
 
     logging.info("")
-    logging.info("Genotyping accuracy: %.4f " % truth_variants.compute_similarity_to_other_variants(variants))
+    logging.info("Genotyping accuracy: %.4f " % accuracy)
 
+    return accuracy
 
 class GenotypingDataSimulator:
     def __init__(self, n_variants, n_individuals=50, average_coverage=7, coverage_std=3, duplication_rate=0.1):
@@ -49,20 +51,20 @@ class GenotypingDataSimulator:
         self.genotype_matrix = GenotypeMatrix(matrix)
 
     def _make_nonrandom_genotype_matrix(self, correlation_between_variants=0.9):
-        matrix = np.zeros((self._n_individuals, self._n_variants))
-        genotypes = [1, 2, 3]
+        matrix = np.zeros((self._n_variants, self._n_individuals))
+        genotypes = [0, 1, 2]
         for individual in range(self._n_individuals):
             # at first variant, give random genotype
             # at next variant, there is a certain prob that individual will have previous genotype % 3
             for variant in range(self._n_variants):
                 if variant == 0:
-                    genotype = np.random.randint(1, 4)
+                    genotype = np.random.randint(0, 3)
                 else:
                     if random.random() < correlation_between_variants:
-                        genotype = 1 + (matrix[individual, variant-1] % 3)
+                        genotype = (matrix[variant-1, individual] % 3)
                     else:
-                        genotype = np.random.randint(1, 4)
-                matrix[individual, variant] = genotype
+                        genotype = np.random.randint(0, 3)
+                matrix[variant, individual] = genotype
 
         self.genotype_matrix = GenotypeMatrix(matrix)
 
@@ -78,10 +80,11 @@ class GenotypingDataSimulator:
                                                                np.array([1.0] * self._n_variants))
         self.most_simliar_variant_lookup = MostSimilarVariantLookup(np.arange(self._n_variants) - 1,
                                                                     np.ones(self._n_variants))
-        self.helper_variants, self.genotype_combo_matrix = make_helper_model_from_genotype_matrix(self.genotype_matrix,
-                                                                                                  self.most_simliar_variant_lookup)
-
         self._simulate_variants()
+
+        self.helper_variants, self.genotype_combo_matrix = make_helper_model_from_genotype_matrix_and_node_counts(
+            self.genotype_matrix, self._model, variant_to_nodes)
+
 
         return self._variants, NodeCounts(self._node_counts), \
                self._model, most_simliar_variant_lookup, variant_to_nodes, \
@@ -100,12 +103,12 @@ class GenotypingDataSimulator:
             if variant == 0 or random.random() < consistency_rate:
                 individual = np.random.randint(0, self._n_individuals)
 
-            genotypes.append(genotype_matrix[individual, variant])
+            genotypes.append(genotype_matrix[variant, individual])
 
         return self._numeric_genotypes_to_literal(genotypes)
 
     def _numeric_genotypes_to_literal(self, genotypes):
-        map = {1: "0/0", 2: "1/1", 3: "0/1"}
+        map = {0: "0/0", 2: "1/1", 1: "0/1"}
         return [map[genotype] for genotype in genotypes]
 
     def _simulate_variants(self):

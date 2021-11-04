@@ -5,12 +5,10 @@ import numpy as np
 np.random.seed(1)
 from kage import NodeCounts
 from kage.node_count_model import NodeCountModel
-from kage.variants import VcfVariants, VcfVariant
+from obgraph.variants import VcfVariants, VcfVariant
 from kage.node_count_model import NodeCountModelAdvanced
 from kage.combination_model_genotyper import CombinationModelGenotyper
 from kage.helper_index import make_helper_model_from_genotype_matrix,make_helper_model_from_genotype_matrix_and_node_counts
-
-
 
 class Tester:
     def __init__(self):

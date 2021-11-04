@@ -29,23 +29,12 @@ def calc_likelihood(count_matrix):
 def calc_argmax(count_matrix):
     return np.sum(np.max(count_matrix, axis=M), axis=-1)/count_matrix.sum(axis=(M, H))
 
-def convert_genotype_matrix(genotype_matrix):
-    genotype_matrix = genotype_matrix.matrix.transpose()
 
-    # genotypes are 1, 2, 3 (0 for unknown, 1 for homo ref, 2 for homo alt and 3 for hetero), we want 0, 1, 2 for homo alt, hetero, homo ref
-    logging.info("Converting genotype matrix to format in helper model code")
-    # 0, 1 => 2
-    # 2 => 0
-    # 3 => 1
-    new_genotype_matrix = np.zeros_like(genotype_matrix)
-    new_genotype_matrix[np.where(genotype_matrix == 0)] = -1
-    new_genotype_matrix[np.where(genotype_matrix == 1)] = 0
-    new_genotype_matrix[np.where(genotype_matrix == 2)] = 2
-    new_genotype_matrix[np.where(genotype_matrix == 3)] = 1
-    return new_genotype_matrix
-
-def make_helper_model_from_genotype_matrix_and_node_counts(old_genotype_matrix, node_counts, variant_to_nodes, dummy_count=1):
-    genotype_matrix = convert_genotype_matrix(old_genotype_matrix)
+def make_helper_model_from_genotype_matrix_and_node_counts(genotype_matrix, node_counts, variant_to_nodes, window_size=1000, dummy_count=5):
+    logging.info("Using dummy count scale %d" % dummy_count)
+    genotype_matrix = genotype_matrix.matrix
+    #print(genotype_matrix.matrix)
+    #genotype_matrix = convert_genotype_matrix(old_genotype_matrix)
     nodes_tuple = (variant_to_nodes.ref_nodes, variant_to_nodes.var_nodes)
     expected_ref, expected_alt = (node_counts.certain[nodes]+node_counts.frequencies[nodes] for nodes in nodes_tuple)
     
@@ -56,10 +45,10 @@ def make_helper_model_from_genotype_matrix_and_node_counts(old_genotype_matrix, 
     genotype_probs = genotype_counts/genotype_counts.sum(axis=-1, keepdims=True)
     weights = get_prob_weights(expected_ref, expected_alt, genotype_probs)
     score_func = get_weighted_calc_func(calc_likelihood, weights, 0.4)
-    return make_helper_model_from_genotype_matrix(old_genotype_matrix, None, score_func=score_func, dummy_count=mean_genotype_counts*mean_genotype_counts[:, None])
+    return make_helper_model_from_genotype_matrix(genotype_matrix, None, score_func=score_func, dummy_count=mean_genotype_counts*mean_genotype_counts[:, None])
 
 def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant_lookup=False, dummy_count=1, score_func=calc_likelihood, window_size=1000):
-    genotype_matrix = convert_genotype_matrix(genotype_matrix)
+    #genotype_matrix = convert_genotype_matrix(genotype_matrix)
     logging.info("Finding best helper")
 
     if most_similar_variant_lookup is not None:
@@ -80,7 +69,8 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
 def find_best_helper(combined, score_func, N, with_model=False):
     best_idx, best_score = np.empty(N, dtype="int"), -np.inf*np.ones(N)
     for j, counts in enumerate(combined, 1):
-        logging.info("Window %d" % j)
+        if j % 50 == 0:
+            logging.info("Window %d" % j)
         scores = score_func(counts, j) if with_model else score_func(counts)
         do_update = scores > best_score[j:]
         best_score[j:][do_update] = scores[do_update]

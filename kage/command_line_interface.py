@@ -9,7 +9,7 @@ from obgraph import Graph as ObGraph
 from graph_kmer_index import KmerIndex, ReverseKmerIndex
 from graph_kmer_index import ReferenceKmerIndex
 from .analysis import GenotypeDebugger
-from .variants import VcfVariants, TruthRegions
+from obgraph.variants import VcfVariants, TruthRegions
 from obgraph.haplotype_nodes import HaplotypeToNodes
 from .reads import read_chunks_from_fasta
 import platform
@@ -27,6 +27,9 @@ import SharedArray as sa
 from obgraph.haplotype_matrix import HaplotypeMatrix
 from obgraph.variant_to_nodes import NodeToVariants
 import random
+from obgraph.genotype_matrix import GenotypeMatrix
+from .helper_index import make_helper_model_from_genotype_matrix, make_helper_model_from_genotype_matrix_and_node_counts
+from obgraph.genotype_matrix import GenotypeMatrix
 
 np.random.seed(1)
 
@@ -155,15 +158,15 @@ def genotype_single_thread(data):
 
     genotyper_class = globals()[args.genotyper]
 
-    genotype_transition_probs = None
-    if args.genotype_transition_probs is not None:
-        genotype_transition_probs = from_shared_memory(GenotypeTransitionProbabilities, "genotype_transition_probs_shared" + args.shared_memory_unique_id)
+    #genotype_transition_probs = None
+    #if args.genotype_transition_probs is not None:
+    #    genotype_transition_probs = from_shared_memory(GenotypeTransitionProbabilities, "genotype_transition_probs_shared" + args.shared_memory_unique_id)
 
-    genotype_frequencies = from_shared_memory(GenotypeFrequencies, "genotype_frequencies_shared" + args.shared_memory_unique_id)
+    #genotype_frequencies = from_shared_memory(GenotypeFrequencies, "genotype_frequencies_shared" + args.shared_memory_unique_id)
 
-    most_similar_variant_lookup = None
-    if args.most_similar_variant_lookup is not None:
-        most_similar_variant_lookup = from_shared_memory(MostSimilarVariantLookup, "most_similar_variant_lookup_shared" + args.shared_memory_unique_id)
+    #most_similar_variant_lookup = None
+    #if args.most_similar_variant_lookup is not None:
+    #    most_similar_variant_lookup = from_shared_memory(MostSimilarVariantLookup, "most_similar_variant_lookup_shared" + args.shared_memory_unique_id)
 
     helper_model = None
     helper_model_combo_matrix = None
@@ -192,8 +195,8 @@ def genotype_single_thread(data):
         tricky_variants = None
 
 
-    genotyper = genotyper_class(model, min_variant_id, max_variant_id, variant_to_nodes, node_counts, genotype_frequencies,
-                            most_similar_variant_lookup, avg_coverage=args.average_coverage, genotype_transition_probs=genotype_transition_probs,
+    genotyper = genotyper_class(model, min_variant_id, max_variant_id, variant_to_nodes, node_counts, None,
+                            None, avg_coverage=args.average_coverage, genotype_transition_probs=None,
                                 tricky_variants=tricky_variants, use_naive_priors=args.use_naive_priors,
                                 helper_model=helper_model, helper_model_combo=helper_model_combo_matrix
     )
@@ -206,10 +209,10 @@ def genotype(args):
     args.shared_memory_unique_id = str(random.randint(0, 1e15))
     logging.info("Random id for shared memory: %s" % args.shared_memory_unique_id)
 
-    genotype_frequencies = GenotypeFrequencies.from_file(args.genotype_frequencies)
-    if args.most_similar_variant_lookup is not None:
-        most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
-        to_shared_memory(most_similar_variant_lookup, "most_similar_variant_lookup_shared" + args.shared_memory_unique_id)
+    #genotype_frequencies = GenotypeFrequencies.from_file(args.genotype_frequencies)
+    #if args.most_similar_variant_lookup is not None:
+    #    most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
+    #    to_shared_memory(most_similar_variant_lookup, "most_similar_variant_lookup_shared" + args.shared_memory_unique_id)
 
 
     if args.model_advanced is not None:
@@ -236,8 +239,8 @@ def genotype(args):
         tricky_variants = np.load(args.tricky_variants)
         to_shared_memory(SingleSharedArray(tricky_variants), "tricky_variants_shared" + args.shared_memory_unique_id)
 
-    if args.genotype_transition_probs is not None:
-        to_shared_memory(GenotypeTransitionProbabilities.from_file(args.genotype_transition_probs), "genotype_transition_probs_shared" + args.shared_memory_unique_id)
+    #if args.genotype_transition_probs is not None:
+    #    to_shared_memory(GenotypeTransitionProbabilities.from_file(args.genotype_transition_probs), "genotype_transition_probs_shared" + args.shared_memory_unique_id)
 
     if args.helper_model is not None:
         helper_model = np.load(args.helper_model)
@@ -245,7 +248,7 @@ def genotype(args):
         helper_model_combo_matrix = np.load(args.helper_model_combo_matrix)
         to_shared_memory(SingleSharedArray(helper_model_combo_matrix), "helper_model_combo_matrix" + args.shared_memory_unique_id)
 
-    to_shared_memory(genotype_frequencies, "genotype_frequencies_shared" + args.shared_memory_unique_id)
+    #to_shared_memory(genotype_frequencies, "genotype_frequencies_shared" + args.shared_memory_unique_id)
     if model is not None:
         to_shared_memory(model, "model_shared" + args.shared_memory_unique_id)
     to_shared_memory(variant_to_nodes, "variant_to_nodes_shared" + args.shared_memory_unique_id)
@@ -340,7 +343,6 @@ def model_using_kmer_index_multiprocess(args):
         expected_node_counts_following_node = np.zeros(max_node_id + 1, dtype=np.float)
     elif args.version == "v3":
         resulting_model = NodeCountModelAdvanced.create_empty(max_node_id)
-        logging.info("REsulting model: %s" % resulting_model)
     elif args.version == "v2":
         allele_frequencies = np.zeros(max_node_id + 1, dtype=np.float)
         allele_frequencies_squared = np.zeros(max_node_id + 1, dtype=np.float)
@@ -423,15 +425,15 @@ def run_argument_parser(args):
     subparser.add_argument("-v", "--vcf", required=True, help="Vcf to genotype")
     subparser.add_argument("-m", "--model", required=False, help="Node count model")
     subparser.add_argument("-A", "--model_advanced", required=False, help="Node count model")
-    subparser.add_argument("-G", "--genotype-frequencies", required=True, help="Genotype frequencies")
-    subparser.add_argument("-M", "--most_similar_variant_lookup", required=False, help="Most similar variant lookup")
+    #subparser.add_argument("-G", "--genotype-frequencies", required=True, help="Genotype frequencies")
+    #subparser.add_argument("-M", "--most_similar_variant_lookup", required=False, help="Most similar variant lookup")
     subparser.add_argument("-o", "--out-file-name", required=True, help="Will write genotyped variants to this file")
     subparser.add_argument("-C", "--genotyper", required=False, default="Genotyper", help="Genotyper to use")
     subparser.add_argument("-t", "--n-threads", type=int, required=False, default=1)
     subparser.add_argument("-z", "--chunk-size", type=int, default=100000, help="Number of variants to process in each chunk")
     subparser.add_argument("-a", "--average-coverage", type=float, default=15, help="Expected average read coverage")
     subparser.add_argument("-q", "--min-genotype-quality", type=float, default=0.95, help="Min prob of genotype being correct")
-    subparser.add_argument("-p", "--genotype-transition-probs", required=False)
+    #subparser.add_argument("-p", "--genotype-transition-probs", required=False)
     subparser.add_argument("-x", "--tricky-variants", required=False)
     subparser.add_argument("-s", "--sample-name-output", required=False, default="DONOR", help="Sample name that will be used in the output vcf")
     subparser.add_argument("-u", "--use-naive-priors", required=False, type=bool, default=False, help="Set to True to use only population allele frequencies as priors.")
@@ -564,7 +566,7 @@ def run_argument_parser(args):
     subparser.set_defaults(func=remove_shared_memory_command_line)
 
     def filter_variants(args):
-        from .variants import VcfVariant
+        from obgraph.variants import VcfVariant
         f = open(args.vcf)
         n_snps_filtered = 0
         n_indels_filtered = 0
@@ -636,7 +638,6 @@ def run_argument_parser(args):
 
     def model_using_transition_probs(args):
         from .node_count_model import GenotypeModelCreatorFromTransitionProbabilities
-        from obgraph.genotype_matrix import GenotypeMatrix
         from obgraph.variant_to_nodes import NodeToVariants
         graph = ObGraph.from_file(args.graph)
         genotype_matrix = GenotypeMatrix.from_file(args.genotype_matrix)
@@ -673,17 +674,69 @@ def run_argument_parser(args):
     subparser.set_defaults(func=filter_vcf)
 
 
-    def create_helper_model(args):
-        from .helper_index import make_helper_model_from_genotype_matrix
-        from obgraph.genotype_matrix import GenotypeMatrix
+    def create_helper_model_single_thread(data):
+        interval, args = data
+        from_variant, to_variant = interval
+        model = from_shared_memory(NodeCountModelAdvanced, "model"+args.shared_memory_unique_id)
+        variant_to_nodes = from_shared_memory(VariantToNodes, "variant_to_nodes"+args.shared_memory_unique_id)
+        genotype_matrix = from_shared_memory(GenotypeMatrix, "genotype_matrix"+args.shared_memory_unique_id)
 
+        # read genotype matrix etc from shared memory
+        submatrix = GenotypeMatrix(genotype_matrix.matrix[from_variant:to_variant,:])
+        sub_variant_to_nodes = variant_to_nodes.slice(from_variant, to_variant)
+        subhelpers, subcombo = make_helper_model_from_genotype_matrix_and_node_counts(submatrix,
+                                                                                      model,
+                                                                                      sub_variant_to_nodes,
+                                                                                      args.window_size)
+        # variant ids in results are now from 0 to (to_variant-from_variant)
+        subhelpers += from_variant
+        return from_variant, to_variant, subhelpers, subcombo
+
+    def create_helper_model(args):
+        args.shared_memory_unique_id = str(random.randint(0, 1e15))
+
+        model = NodeCountModelAdvanced.from_file(args.node_count_model)
+        variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
         genotype_matrix = GenotypeMatrix.from_file(args.genotype_matrix)
+        # NB: Transpose
+        genotype_matrix.matrix = genotype_matrix.matrix.transpose()
+
+        logging.info("Genotype matrix shape: %s" % str(genotype_matrix.matrix.shape))
+        # convert to format used in helper code
+        #genotype_matrix = genotype_matrix.convert_to_other_format()
+        logging.info("Genotype matrix shape after conversion: %s" % str(genotype_matrix.matrix.shape))
         most_similar = None
         if args.most_similar_variants is not None:
             most_similar = MostSimilarVariantLookup.from_file(args.most_similar_variants)
 
-        helpers, genotype_matrix_combo = make_helper_model_from_genotype_matrix(genotype_matrix, most_similar,
-                                                                                window_size=args.window_size)
+        if args.n_threads > 1:
+            n_threads = args.n_threads
+            n_variants = len(variant_to_nodes.ref_nodes)
+            intervals = [int(i) for i in np.linspace(0, n_variants, n_threads)]
+            variant_intervals = [(from_id, to_id) for from_id, to_id in zip(intervals[0:-1], intervals[1:])]
+            logging.info("Will process variant intervals: %s" % variant_intervals)
+
+            helpers = np.zeros(n_variants, dtype=np.uint32)
+            genotype_matrix_combo = np.zeros((n_variants, 3, 3), dtype=np.uint16)
+
+            # put data in shared memory
+            to_shared_memory(genotype_matrix, "genotype_matrix"+args.shared_memory_unique_id)
+            to_shared_memory(variant_to_nodes, "variant_to_nodes"+args.shared_memory_unique_id)
+            to_shared_memory(model, "model"+args.shared_memory_unique_id)
+
+            pool = Pool(args.n_threads)
+            # genotyped_variants = VcfVariants(header_lines=variants.get_header())
+
+            for from_variant, to_variant, subhelpers, subcombo in pool.imap(create_helper_model_single_thread,
+                                                                              zip(variant_intervals, repeat(args))):
+                helpers[from_variant:to_variant] = subhelpers
+                genotype_matrix_combo[from_variant:to_variant] = subcombo
+
+        else:
+            helpers, genotype_matrix_combo = make_helper_model_from_genotype_matrix_and_node_counts(genotype_matrix,
+                                                                                                model,
+                                                                                                variant_to_nodes,
+                                                                                                args.window_size)
 
         np.save(args.out_file_name, helpers)
         logging.info("Saved helper model to file: %s" % args.out_file_name)
@@ -693,8 +746,11 @@ def run_argument_parser(args):
 
     subparser = subparsers.add_parser("create_helper_model")
     subparser.add_argument("-g", "--genotype-matrix", required=False)
+    subparser.add_argument("-n", "--node-count-model", required=True)
+    subparser.add_argument("-v", "--variant-to-nodes", required=True)
     subparser.add_argument("-m", "--most-similar-variants", required=False)
     subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.add_argument("-t", "--n-threads", required=False, default=1, type=int)
     subparser.add_argument("-w", "--window-size", required=False, default=50, type=int,
                            help="Number of variants before/after considered as potential helper variant")
     subparser.set_defaults(func=create_helper_model)

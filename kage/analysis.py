@@ -1,7 +1,7 @@
-from .variants import get_variant_type
+from obgraph.variants import get_variant_type
 import logging
 from collections import defaultdict
-from .variants import TruthRegions, VcfVariant, VcfVariants
+from obgraph.variants import TruthRegions, VcfVariant, VcfVariants
 from graph_kmer_index import kmer_hash_to_sequence, sequence_to_kmer_hash
 
 from obgraph import VariantNotFoundException
