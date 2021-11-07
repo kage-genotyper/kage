@@ -107,8 +107,9 @@ class GenotypeDebugger:
         logging.info("Model on alt node: %s" % self.node_count_model.describe_node(variant_node))
 
         most_similar = self.helper_variants[variant_id]
+        most_similar_variant = self.predicted_genotypes[most_similar]
         logging.info("Most similar variant: %d" % most_similar)
-        logging.info("Predicted/true most similar: %s / %s" % (self.predicted_genotypes[most_similar], self.truth_genotypes[most_similar]))
+        logging.info("Predicted/true most similar: %s / %s" % (self.predicted_genotypes[most_similar], self.truth_genotypes.get(most_similar_variant)))
         logging.info("Combination matrix: \n%s" % self.combination_matrix[self.helper_variants[variant_id]])
         logging.info("Genotype probs most similar (log): %s" % self.probs[most_similar])
 

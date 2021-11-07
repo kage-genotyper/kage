@@ -45,7 +45,7 @@ def make_helper_model_from_genotype_matrix_and_node_counts(genotype_matrix, node
     genotype_probs = genotype_counts/genotype_counts.sum(axis=-1, keepdims=True)
     weights = get_prob_weights(expected_ref, expected_alt, genotype_probs)
     score_func = get_weighted_calc_func(calc_likelihood, weights, 0.4)
-    return make_helper_model_from_genotype_matrix(genotype_matrix, None, score_func=score_func, dummy_count=mean_genotype_counts*mean_genotype_counts[:, None])
+    return make_helper_model_from_genotype_matrix(genotype_matrix, None, score_func=score_func, dummy_count=mean_genotype_counts*mean_genotype_counts[:, None], window_size=window_size)
 
 def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant_lookup=False, dummy_count=1, score_func=calc_likelihood, window_size=1000):
     #genotype_matrix = convert_genotype_matrix(genotype_matrix)
@@ -58,7 +58,7 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
         logging.info("Making raw from genotype matrix with window size %d" % window_size)
         logging.info("Creating combined matrices")
         combined = create_combined_matrices(genotype_matrix, window_size)
-        helpers = find_best_helper(combined, calc_likelihood, len(genotype_matrix))
+        helpers = find_best_helper(combined, score_func, len(genotype_matrix), with_model=score_func!=calc_likelihood)
 
     helper_counts = genotype_matrix[helpers] * 3
     flat_idx = genotype_matrix + helper_counts

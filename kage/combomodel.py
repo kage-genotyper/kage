@@ -5,7 +5,7 @@ from scipy.special import gamma, factorial, gammaln, logsumexp, hyp2f1, hyp1f1, 
 from itertools import combinations
 
 class CountModel:
-    error_rate=0.005
+    error_rate = 0.005
 
 class MultiplePoissonModel(CountModel):
     def __init__(self, base_lambda, repeat_dist, certain_counts):
@@ -78,9 +78,10 @@ class PoissonModel(CountModel):
         return poisson.logpmf(k, (self._expected_count+n_copies+self.error_rate)*self._base_lambda)
 
 class ComboModel(CountModel):
-    def __init__(self, models, model_indexes):
+    def __init__(self, models, model_indexes, tricky_variants=None):
         self._models = models
         self._model_indexes = model_indexes
+        self._tricky_variants = tricky_variants
 
     @classmethod
     def from_counts(cls, base_lambda, p_sum, p_sq_sum, do_gamma_calc, certain_counts, allele_frequencies):
@@ -105,4 +106,5 @@ class ComboModel(CountModel):
         for i, model in enumerate(self._models):
             mask = (self._model_indexes == i)
             logpmf[mask] = model.logpmf(k[mask], n_copies)
+
         return logpmf

@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.special import logsumexp
+import logging
 
 MAIN = -1
 HELPER = -2
@@ -39,6 +40,11 @@ class HelperModel(Model):
 
     def score(self, k1, k2):
         count_probs = np.array([self._model.logpmf(k1, k2, g) for g in [0, 1, 2]]).T
+
+        if self._tricky_variants is not None:
+            logging.info("Using tricky variants in HelperModel.score")
+            count_probs = np.where(self._tricky_variants.reshape(-1, 1), np.log(1/3), count_probs)
+
         log_probs =  self._genotype_probs + count_probs[self._helper_variants].reshape(-1, 3, 1)+count_probs.reshape(-1, 1, 3)
         result = logsumexp(log_probs, axis=H)
         return result - logsumexp(result, axis=-1, keepdims=True)

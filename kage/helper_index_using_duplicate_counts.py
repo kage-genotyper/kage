@@ -4,7 +4,7 @@ from scipy.stats import binom
 
 class BinomialModel:
 
-    error_rate = 0.01
+    error_rate = 0.5
     def __init__(self, expected_ref, expected_alt):
         self._expected_ref = 2*np.asanyarray(expected_ref)
         self._expected_alt = 2*np.asanyarray(expected_alt)

@@ -236,6 +236,7 @@ def genotype(args):
     variant_chunks = ((chunk[0].vcf_line_number, chunk[-1].vcf_line_number) for chunk in variant_chunks)
 
     if args.tricky_variants is not None:
+        logging.info("Using tricky variants")
         tricky_variants = np.load(args.tricky_variants)
         to_shared_memory(SingleSharedArray(tricky_variants), "tricky_variants_shared" + args.shared_memory_unique_id)
 
@@ -524,8 +525,8 @@ def run_argument_parser(args):
                 model.counts_hetero[var_node]
             ])
             """
-            model_counts_ref = model.frequencies[ref_node]
-            model_counts_var = model.frequencies[var_node]
+            model_counts_ref = 1 + model.certain[ref_node] + model.frequencies[ref_node]
+            model_counts_var = 1 + model.certain[var_node] + model.frequencies[var_node]
 
             if args.only_allow_unique:
                 #if model.counts_homo_ref[var_node] > 0 or model.counts_homo_alt[ref_node] > 0:
@@ -535,7 +536,8 @@ def run_argument_parser(args):
 
             #if model_counts_ref[2] > max_counts_model and model_counts_var[2] > max_counts_model:
             #if model_counts_ref[2] < model_counts_ref[1] * 1.1 or model_counts_var[2] < model_counts_var[1] * 1.1:
-            if model_counts_ref > model_counts_var * 5.0 or model_counts_var > model_counts_ref * 5.0:
+            if model_counts_ref > model_counts_var * 3.0 or model_counts_var > model_counts_ref * 3.0 or model_counts_var+model_counts_ref > 10:
+                #logging.warning(model_counts_ref)
                 #logging.warning(model_counts_ref)
                 tricky_variants[variant_id] = 1
                 n_tricky_model += 1
@@ -684,10 +686,17 @@ def run_argument_parser(args):
         # read genotype matrix etc from shared memory
         submatrix = GenotypeMatrix(genotype_matrix.matrix[from_variant:to_variant,:])
         sub_variant_to_nodes = variant_to_nodes.slice(from_variant, to_variant)
-        subhelpers, subcombo = make_helper_model_from_genotype_matrix_and_node_counts(submatrix,
+        use_duplicate_counts = args.use_duplicate_counts
+        if use_duplicate_counts:
+            logging.info("Making helper using duplicate count info")
+            subhelpers, subcombo = make_helper_model_from_genotype_matrix_and_node_counts(submatrix,
                                                                                       model,
                                                                                       sub_variant_to_nodes,
                                                                                       args.window_size)
+        else:
+            logging.info("Making helper without using duplicate count info")
+            subhelpers, subcombo = make_helper_model_from_genotype_matrix(submatrix.matrix, None, dummy_count=1, window_size=args.window_size)
+
         # variant ids in results are now from 0 to (to_variant-from_variant)
         subhelpers += from_variant
         return from_variant, to_variant, subhelpers, subcombo
@@ -751,6 +760,7 @@ def run_argument_parser(args):
     subparser.add_argument("-m", "--most-similar-variants", required=False)
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.add_argument("-t", "--n-threads", required=False, default=1, type=int)
+    subparser.add_argument("-u", "--use-duplicate-counts", required=False, type=bool, default=False)
     subparser.add_argument("-w", "--window-size", required=False, default=50, type=int,
                            help="Number of variants before/after considered as potential helper variant")
     subparser.set_defaults(func=create_helper_model)
