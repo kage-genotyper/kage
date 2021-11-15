@@ -108,3 +108,20 @@ class ComboModel(CountModel):
             logpmf[mask] = model.logpmf(k[mask], n_copies)
 
         return logpmf
+
+
+class ComboModelWithIncreasedZeroProb(ComboModel):
+    def logpmf(self, k, n_copies=1):
+        p_variant_has_zero_counts = 0.005
+        logging.info("Using p variant has zero counts: %.5f" % p_variant_has_zero_counts)
+        p = super().logpmf(k, n_copies)
+
+        # subtract prob of variant having zero where k == 0, add 1- to all
+        p = p - np.log(1 - p_variant_has_zero_counts)
+        print(p)
+        return np.where(k == 0, np.logaddexp(p, np.log(p_variant_has_zero_counts)), p)
+
+
+
+
+

@@ -30,7 +30,7 @@ def calc_argmax(count_matrix):
     return np.sum(np.max(count_matrix, axis=M), axis=-1)/count_matrix.sum(axis=(M, H))
 
 
-def make_helper_model_from_genotype_matrix_and_node_counts(genotype_matrix, node_counts, variant_to_nodes, window_size=1000, dummy_count=5):
+def make_helper_model_from_genotype_matrix_and_node_counts(genotype_matrix, node_counts, variant_to_nodes, window_size=1000, dummy_count=10):
     logging.info("Using dummy count scale %d" % dummy_count)
     genotype_matrix = genotype_matrix.matrix
     #print(genotype_matrix.matrix)

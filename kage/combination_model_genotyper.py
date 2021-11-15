@@ -3,7 +3,7 @@ import numpy as np
 from scipy.stats import binom
 from .genotyper import Genotyper
 from .node_count_model import GenotypeNodeCountModel, NodeCountModelAlleleFrequencies, NodeCountModelAdvanced
-from .combomodel import ComboModel
+from .combomodel import ComboModel, ComboModelWithIncreasedZeroProb
 from .models import HelperModel, ComboModelBothAlleles
 
 genotypes = ["0/0", "1/1", "0/1"]
@@ -83,6 +83,12 @@ class CombinationModelGenotyper(Genotyper):
         helper_model = HelperModel(combination_model_both, self._helper_model, self._helper_model_combo_matrix, self._tricky_variants)
         genotypes, probabilities = helper_model.predict(observed_ref_nodes, observed_alt_nodes, return_probs=True)
         self._predicted_genotypes = translate_to_numeric(genotypes)
+
+        min_alt_node_counts = 0
+        too_low_alt_counts = np.where(observed_alt_nodes < min_alt_node_counts)[0]
+        logging.info("There are %d variants with alt node counts less than minimum required (%d). Genotyping these as homo ref." % (len(too_low_alt_counts), min_alt_node_counts))
+        self._predicted_genotypes[too_low_alt_counts] = 0
+
         self._prob_correct = probabilities
 
     def genotype(self):
