@@ -50,21 +50,23 @@ def make_helper_model_from_genotype_matrix_and_node_counts(genotype_matrix, node
     score_func = get_weighted_calc_func(calc_likelihood, weights, 0.4)
     return make_helper_model_from_genotype_matrix(genotype_matrix, None, score_func=score_func, dummy_count=mean_genotype_counts, window_size=window_size)
 
+
+def get_helper_posterior(genotype_combo_matrix):
+    helper_sum = np.sum(genotype_combo_matrix, axis=M, keepdims=True)
+    assert helper_sum[0].shape==(3, 1)
+    global_helper_prior = np.sum(helper_sum, axis=0, keepdims=True) + np.array([10, 2, 1])[:, None]/13
+    assert global_helper_prior.shape == (1, 3, 1)
+    helper_posterior = global_helper_prior/global_helper_prior.sum()*4+helper_sum
+    helper_posterior = helper_posterior/helper_posterior.sum(axis=H, keepdims=True)
+    assert np.allclose(helper_posterior.sum(axis=H), 1), helper_posterior
+    return helper_posterior
+
 def get_population_priors(genotype_combo_matrix, weight=7):
     """n_variants x helper x main"""
     print(genotype_combo_matrix.shape)
     mean = np.mean(genotype_combo_matrix+np.eye(3)*0.1+0.01, axis=0)
-    weighted = mean/mean.sum(axis=-1, keepdims=True)*weight #helper_sum*weight
-    print(weighted)
-    helper_sum = np.sum(genotype_combo_matrix, axis=-1, keepdims=True)
-    assert helper_sum[0].shape==(3, 1)
-    global_helper_prior = np.mean(helper_sum, axis=0, keepdims=True)
-    assert global_helper_prior.shape == (1, 3, 1)
-    helper_posterior = global_helper_prior/global_helper_prior.sum()*4+helper_sum
-    helper_posterior += np.array([3, 2, 1])[:, None]*0.01
-    helper_posterior = helper_posterior/helper_posterior.sum(axis=-2, keepdims=True)
-    assert np.allclose(helper_posterior.sum(axis=-2), 1), helper_posterior
-    return weighted, helper_posterior
+    weighted = mean/mean.sum(axis=M, keepdims=True)*weight #helper_sum*weight
+    return weighted
 
 def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant_lookup=False, dummy_count=1, score_func=calc_likelihood, window_size=1000):
     #genotype_matrix = convert_genotype_matrix(genotype_matrix)
@@ -83,7 +85,8 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
     flat_idx = genotype_matrix + helper_counts
 
     genotype_combo_matrix = np.array([(flat_idx == k).sum(axis=1) for k in range(9)]).T.reshape(-1, 3, 3)
-    prior, helper_posterior = get_population_priors(genotype_combo_matrix)
+    prior = get_population_priors(genotype_combo_matrix)
+    helper_posterior  = get_helper_posterior(genotype_combo_matrix)
     print("########")
     print(genotype_combo_matrix[0])
     print(prior)
