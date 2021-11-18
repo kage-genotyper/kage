@@ -53,8 +53,7 @@ def make_helper_model_from_genotype_matrix_and_node_counts(genotype_matrix, node
 def get_population_priors(genotype_combo_matrix, weight=7):
     """n_variants x helper x main"""
     print(genotype_combo_matrix.shape)
-    mean = np.mean(genotype_combo_matrix, axis=0)
-    mean += np.eye(3)*0.1+0.01
+    mean = np.mean(genotype_combo_matrix+np.eye(3)*0.1+0.01, axis=0)
     weighted = mean/mean.sum(axis=-1, keepdims=True)*weight #helper_sum*weight
     print(weighted)
     helper_sum = np.sum(genotype_combo_matrix, axis=-1, keepdims=True)
@@ -63,7 +62,8 @@ def get_population_priors(genotype_combo_matrix, weight=7):
     assert global_helper_prior.shape == (1, 3, 1)
     helper_posterior = global_helper_prior/global_helper_prior.sum()*4+helper_sum
     helper_posterior += np.array([3, 2, 1])[:, None]*0.01
-    helper_posterior = helper_posterior/helper_posterior.sum(axis=-1, keepdims=True)
+    helper_posterior = helper_posterior/helper_posterior.sum(axis=-2, keepdims=True)
+    assert np.allclose(helper_posterior.sum(axis=-2), 1), helper_posterior
     return weighted, helper_posterior
 
 def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant_lookup=False, dummy_count=1, score_func=calc_likelihood, window_size=1000):
