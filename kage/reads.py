@@ -3,6 +3,7 @@ from graph_kmer_index.shared_mem import SingleSharedArray, to_shared_memory, fro
 import random
 import numpy as np
 import gzip
+import time
 
 
 class Reads:
@@ -36,6 +37,8 @@ def read_chunks_from_fasta(fasta_file_name, chunk_size=10, include_read_names=Fa
 
     out_array = np.empty(chunk_size, dtype="<U" + str(max_read_length))
 
+    prev_time = time.time()
+
     for line in file:
         if is_gzipped:
             line = line.decode("utf-8")
@@ -65,7 +68,8 @@ def read_chunks_from_fasta(fasta_file_name, chunk_size=10, include_read_names=Fa
         i += 1
         read_id += 1
         if i >= chunk_size and chunk_size > 0:
-            logging.info("Returning chunk of %d reads" % chunk_size)
+            logging.info("Returning chunk of %d reads (took %.5f sec)" % (chunk_size, time.time()-prev_time))
+            prev_time = time.time()
             if write_to_shared_memory:
                 out = SingleSharedArray(out_array)
                 shared_name = "shared_array_" + str(random.randint(1000000, 10000000000))
@@ -77,7 +81,7 @@ def read_chunks_from_fasta(fasta_file_name, chunk_size=10, include_read_names=Fa
             out_array = np.empty(chunk_size, dtype="<U" + str(max_read_length))
             i = 0
 
-    logging.info("Returning chunk of %d reads" % i)
+    logging.info("Returning chunk of %d reads (took %.5f sec)" % (chunk_size, time.time() - prev_time))
 
     if write_to_shared_memory:
         out = SingleSharedArray(out_array[0:i])

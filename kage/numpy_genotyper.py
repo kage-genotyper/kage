@@ -50,12 +50,6 @@ class NumpyGenotyper(Genotyper):
         marginal_probs = np.zeros((3, len(ref_nodes)))  # marginal probs go into matrix, each row is one genotype, columns are variants
 
         model = self._node_count_model
-        assert model is not None
-
-
-        logging.info("%.3f, %.3f, %.3f, %.3f" % (model.frequencies[1511], model.frequencies[1512], model.certain[1511], model.certain[1512]))
-        logging.info("%d, %s" % (model.has_too_many[1511], model.frequency_matrix[1511,:]))
-        logging.info("%d, %s" % (model.has_too_many[1512], model.frequency_matrix[1512,:]))
 
         zero_threshold = 10e-6
 

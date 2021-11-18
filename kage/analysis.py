@@ -96,6 +96,9 @@ class GenotypeDebugger:
 
 
         logging.warning("")
+        logging.warning("")
+        logging.warning("")
+        logging.warning("")
         logging.warning("Predicted: %s. Correct is %s. Variant id: %d" % (self.predicted_genotypes.get(variant), self.truth_genotypes.get(variant), variant_id))
         logging.warning("Node counts on ref/alt %d/%d: %d/%d" % (
         reference_node, variant_node, self.node_counts.node_counts[reference_node],
@@ -165,8 +168,10 @@ class GenotypeDebugger:
                 if self.truth_genotypes.get(variant) == self.predicted_genotypes.get(variant):
                     self.n_correct_genotypes[variant.type] += 1
                 else:
-                    logging.warning("Wrong genotype: %s / %s" % (self.truth_genotypes.get(variant), self.predicted_genotypes.get(variant)))
-                    self.print_info_about_variant(reference_node, variant_node, variant, variant_id)
+                    if variant.type != "SNP":
+                        #logging.warning("Wrong genotype: %s / %s" % (
+                        #    self.truth_genotypes.get(variant), self.predicted_genotypes.get(variant)))
+                        self.print_info_about_variant(reference_node, variant_node, variant, variant_id)
 
             elif self.predicted_genotypes.get(variant).genotype == "0|0":
                 self.n_correct_genotypes[variant.type] += 1
@@ -174,7 +179,7 @@ class GenotypeDebugger:
         #if self.node_count_model.node_counts_following_node[reference_node] == 0:
         #    self.n_ref_nodes_zero_in_model += 1
 
-        if self.predicted_genotypes.has_variant(variant) and self.truth_genotypes.has_variant(variant):
+        if variant.type != "SNP" and self.predicted_genotypes.has_variant(variant) and self.truth_genotypes.has_variant(variant):
             if self.truth_regions.is_inside_regions(variant.position) and self.predicted_genotypes.get(variant).genotype == "0|0" and self.truth_genotypes.get(variant).genotype != "0|0" and self.truth_genotypes.get(variant).genotype != self.predicted_genotypes.get(variant).genotype:
                 logging.warning("----------------------------")
                 logging.warning("False negative genotype!")
@@ -189,7 +194,7 @@ class GenotypeDebugger:
                             self.false_negatives_with_zero_counts_and_other_truth_variant_close_only_one_side[variant.type] += 1
                             #self.print_info_about_variant(reference_node, variant_node, variant, variant_id)
 
-        if self.predicted_genotypes.has_variant(variant) and (not self.truth_genotypes.has_variant(variant) or (self.truth_genotypes.has_variant(variant) and self.truth_genotypes.get(variant).genotype == "0|0")):
+        if variant.type != "SNP" and self.predicted_genotypes.has_variant(variant) and (not self.truth_genotypes.has_variant(variant) or (self.truth_genotypes.has_variant(variant) and self.truth_genotypes.get(variant).genotype == "0|0")):
 
             if self.truth_regions.is_inside_regions(variant.position) and self.predicted_genotypes.get(variant).genotype != "0|0":
                 logging.warning("----------------------------")

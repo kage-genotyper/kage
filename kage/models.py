@@ -42,7 +42,7 @@ class HelperModel(Model):
         count_probs = np.array([self._model.logpmf(k1, k2, g) for g in [0, 1, 2]]).T
 
         if self._tricky_variants is not None:
-            logging.info("Using tricky variants in HelperModel.score")
+            logging.info("Using tricky variants in HelperModel.score. There are %d tricky variants" % np.sum(self._tricky_variants))
             count_probs = np.where(self._tricky_variants.reshape(-1, 1), np.log(1/3), count_probs)
 
         log_probs =  self._genotype_probs + count_probs[self._helper_variants].reshape(-1, 3, 1)+count_probs.reshape(-1, 1, 3)
@@ -51,8 +51,5 @@ class HelperModel(Model):
 
     def logpmf(self, ref_counts, alt_counts, genotype):
         count_probs = np.array([self._model.logpmf(ref_counts, alt_counts, g) for g in [0, 1, 2]]).T
-        if self._tricky_variants is not None:
-            logging.info("Using tricky variants")
-            count_probs = np.where(self._tricky_variants.reshape(-1, 1), np.log(1/3), count_probs)
         log_probs =  self._genotype_probs+count_probs[self._helper_variants].reshape(-1, 3, 1)+count_probs.reshape(-1, 1, 3)
         return logsumexp(log_probs, axis=H)[..., genotype]

@@ -155,6 +155,7 @@ def genotype_single_thread(data):
     variant_interval, args = data
     min_variant_id = variant_interval[0]
     max_variant_id = variant_interval[1]
+    logging.info("Starting genotyping thread from variant %d to %d" % (min_variant_id, max_variant_id))
 
     genotyper_class = globals()[args.genotyper]
 
@@ -162,6 +163,7 @@ def genotype_single_thread(data):
     if args.genotype_transition_probs is not None:
         genotype_transition_probs = from_shared_memory(GenotypeTransitionProbabilities, "genotype_transition_probs_shared" + args.shared_memory_unique_id)
 
+    genotype_frequencies = None
     if args.genotype_frequencies is not None:
         genotype_frequencies = from_shared_memory(GenotypeFrequencies, "genotype_frequencies_shared" + args.shared_memory_unique_id)
 
@@ -197,8 +199,8 @@ def genotype_single_thread(data):
     else:
         tricky_variants = None
 
-
-    genotyper = genotyper_class(model, min_variant_id, max_variant_id, variant_to_nodes, node_counts, None,
+    logging.info("All indexes loaded, calling genotyper")
+    genotyper = genotyper_class(model, min_variant_id, max_variant_id, variant_to_nodes, node_counts, genotype_frequencies,
                             None, avg_coverage=args.average_coverage, genotype_transition_probs=None,
                                 tricky_variants=tricky_variants, use_naive_priors=args.use_naive_priors,
                                 helper_model=helper_model, helper_model_combo=helper_model_combo_matrix
@@ -509,7 +511,7 @@ def run_argument_parser(args):
         max_counts_model = args.max_counts_model
 
         for variant_id in range(0, len(variant_to_nodes.ref_nodes)):
-            if variant_id % 10000 == 0:
+            if variant_id % 100000 == 0:
                 logging.info("%d variants processed, %d tricky due to model, %d tricky due to kmers. N non-unique filtered: %d" % (variant_id, n_tricky_model, n_tricky_kmers, n_nonunique))
 
             ref_node = variant_to_nodes.ref_nodes[variant_id]
@@ -532,13 +534,14 @@ def run_argument_parser(args):
 
             if args.only_allow_unique:
                 #if model.counts_homo_ref[var_node] > 0 or model.counts_homo_alt[ref_node] > 0:
-                if model_counts_ref > 0 or model_counts_var > 0:
+                if model_counts_ref > 1 or model_counts_var > 1:
                     n_nonunique += 1
                     tricky_variants[variant_id] = 1
 
             #if model_counts_ref[2] > max_counts_model and model_counts_var[2] > max_counts_model:
             #if model_counts_ref[2] < model_counts_ref[1] * 1.1 or model_counts_var[2] < model_counts_var[1] * 1.1:
-            if model_counts_ref > model_counts_var * 3.0 or model_counts_var > model_counts_ref * 3.0 or model_counts_var+model_counts_ref > 10:
+            m = args.max_counts_model
+            if False and (model_counts_ref > model_counts_var * m or model_counts_var > model_counts_ref * m or model_counts_var+model_counts_ref > m*3):
                 #logging.warning(model_counts_ref)
                 #logging.warning(model_counts_ref)
                 tricky_variants[variant_id] = 1
@@ -558,7 +561,7 @@ def run_argument_parser(args):
     subparser.add_argument("-v", "--variant-to-nodes", required=True)
     subparser.add_argument("-m", "--node-count-model", required=True)
     subparser.add_argument("-r", "--reverse-kmer-index", required=True)
-    subparser.add_argument("-M", "--max-counts-model", required=False, type=int, default=8, help="If model count exceeds this number, variant is tricky")
+    subparser.add_argument("-M", "--max-counts-model", required=False, type=int, default=3, help="If model count exceeds this number, variant is tricky")
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.add_argument("-u", "--only-allow-unique", required=False, type=bool, help="Only allow variants where all kmers are unique")
     subparser.set_defaults(func=find_tricky_variants)
@@ -728,7 +731,7 @@ def run_argument_parser(args):
             logging.info("Will process variant intervals: %s" % variant_intervals)
 
             helpers = np.zeros(n_variants, dtype=np.uint32)
-            genotype_matrix_combo = np.zeros((n_variants, 3, 3), dtype=np.uint16)
+            genotype_matrix_combo = np.zeros((n_variants, 3, 3), dtype=np.float)
 
             # put data in shared memory
             to_shared_memory(genotype_matrix, "genotype_matrix"+args.shared_memory_unique_id)
