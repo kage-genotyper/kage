@@ -42,10 +42,29 @@ def make_helper_model_from_genotype_matrix_and_node_counts(genotype_matrix, node
     mean_genotype_counts = np.mean(genotype_counts, axis=0)
     mean_genotype_counts *= dummy_count/np.sum(mean_genotype_counts)
     genotype_counts = genotype_counts+mean_genotype_counts
-    genotype_probs = genotype_counts/genotype_counts.sum(axis=-1, keepdims=True)
+    mean_genotype_counts = (np.tile(mean_genotype_counts, 3).reshape(3, 3)/3)[None, ...]
+
+    genotype_probs =  genotype_counts/genotype_counts.sum(axis=-1, keepdims=True)
     weights = get_prob_weights(expected_ref, expected_alt, genotype_probs)
+    
     score_func = get_weighted_calc_func(calc_likelihood, weights, 0.4)
-    return make_helper_model_from_genotype_matrix(genotype_matrix, None, score_func=score_func, dummy_count=mean_genotype_counts*mean_genotype_counts[:, None], window_size=window_size)
+    return make_helper_model_from_genotype_matrix(genotype_matrix, None, score_func=score_func, dummy_count=mean_genotype_counts, window_size=window_size)
+
+def get_population_priors(genotype_combo_matrix, weight=7):
+    """n_variants x helper x main"""
+    print(genotype_combo_matrix.shape)
+    mean = np.mean(genotype_combo_matrix, axis=0)
+    mean += np.eye(3)*0.1+0.01
+    weighted = mean/mean.sum(axis=-1, keepdims=True)*weight #helper_sum*weight
+    print(weighted)
+    helper_sum = np.sum(genotype_combo_matrix, axis=-1, keepdims=True)
+    assert helper_sum[0].shape==(3, 1)
+    global_helper_prior = np.mean(helper_sum, axis=0, keepdims=True)
+    assert global_helper_prior.shape == (1, 3, 1)
+    helper_posterior = global_helper_prior/global_helper_prior.sum()*4+helper_sum
+    helper_posterior += np.array([3, 2, 1])[:, None]*0.01
+    helper_posterior = helper_posterior/helper_posterior.sum(axis=-1, keepdims=True)
+    return weighted, helper_posterior
 
 def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant_lookup=False, dummy_count=1, score_func=calc_likelihood, window_size=1000):
     #genotype_matrix = convert_genotype_matrix(genotype_matrix)
@@ -62,9 +81,18 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
 
     helper_counts = genotype_matrix[helpers] * 3
     flat_idx = genotype_matrix + helper_counts
-    genotype_combo_matrix = np.array([(flat_idx == k).sum(axis=1) for k in range(9)]).T.reshape(-1, 3, 3) + dummy_count
 
-    return helpers, genotype_combo_matrix
+    genotype_combo_matrix = np.array([(flat_idx == k).sum(axis=1) for k in range(9)]).T.reshape(-1, 3, 3)
+    prior, helper_posterior = get_population_priors(genotype_combo_matrix)
+    print("########")
+    print(genotype_combo_matrix[0])
+    print(prior)
+    print("HHHHH", helper_posterior[0])
+    population_posterior = (genotype_combo_matrix+prior)
+    population_posterior = population_posterior/population_posterior.sum(axis=-1, keepdims=True)*helper_posterior
+    print(population_posterior[0])
+
+    return helpers, population_posterior
 
 def find_best_helper(combined, score_func, N, with_model=False):
     best_idx, best_score = np.empty(N, dtype="int"), -np.inf*np.ones(N)
