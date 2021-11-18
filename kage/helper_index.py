@@ -92,7 +92,7 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
     print(prior)
     print("HHHHH", helper_posterior[0])
     population_posterior = (genotype_combo_matrix+prior)
-    population_posterior = population_posterior/population_posterior.sum(axis=-1, keepdims=True)*helper_posterior
+    population_posterior = population_posterior/population_posterior.sum(axis=M, keepdims=True)*helper_posterior
     print(population_posterior[0])
 
     return helpers, population_posterior
