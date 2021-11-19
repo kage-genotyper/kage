@@ -15,6 +15,7 @@ from .reads import read_chunks_from_fasta
 import platform
 from pathos.multiprocessing import Pool
 import numpy as np
+np.set_printoptions(suppress=True)
 from .node_counts import NodeCounts
 from .node_count_model import NodeCountModel, GenotypeNodeCountModel, NodeCountModelAlleleFrequencies, NodeCountModelAdvanced, NodeCountModelCreatorAdvanced
 from obgraph.genotype_matrix import MostSimilarVariantLookup, GenotypeFrequencies, GenotypeTransitionProbabilities
