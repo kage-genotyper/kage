@@ -28,6 +28,8 @@ class ComboModelBothAlleles(Model):
     def logpmf(self, k1, k2, genotype):
         ref_probs = self._model_ref.logpmf(k1, 2-genotype)
         alt_probs = self._model_alt.logpmf(k2, genotype)
+        logging.debug("Ref probs for k1/k2: %s/%s and genotype %d: %s" % (k1, k2, genotype, ref_probs))
+        logging.debug("Alt probs for k1/k2: %s/%s and genotype %d: %s" % (k1, k2, genotype, alt_probs))
         return ref_probs+alt_probs
 
 
@@ -37,14 +39,17 @@ class HelperModel(Model):
         self._helper_variants = helper_variants
         self._genotype_probs = np.log(genotype_combo_matrix/genotype_combo_matrix.sum(axis=(-1, -2), keepdims=True))
         self._tricky_variants = tricky_variants
+        self.count_probs = None
 
     def score(self, k1, k2):
         count_probs = np.array([self._model.logpmf(k1, k2, g) for g in [0, 1, 2]]).T
+        self.count_probs = count_probs
 
         if self._tricky_variants is not None:
             logging.info("Using tricky variants in HelperModel.score. There are %d tricky variants" % np.sum(self._tricky_variants))
             count_probs = np.where(self._tricky_variants.reshape(-1, 1), np.log(1/3), count_probs)
 
+        logging.debug("Count probs: %s" % count_probs)
         log_probs =  self._genotype_probs + count_probs[self._helper_variants].reshape(-1, 3, 1)+count_probs.reshape(-1, 1, 3)
         result = logsumexp(log_probs, axis=H)
         return result - logsumexp(result, axis=-1, keepdims=True)

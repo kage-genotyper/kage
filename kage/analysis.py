@@ -43,7 +43,7 @@ class SimpleRecallPrecisionAnalyser:
 
 class GenotypeDebugger:
     def __init__(self, variant_nodes, k, variants, kmer_index, reverse_kmer_index, predicted_genotypes, truth_genotypes,
-                 truth_regions, node_counts, node_count_model, helper_variants, combination_matrix, probs):
+                 truth_regions, node_counts, node_count_model, helper_variants, combination_matrix, probs, count_probs):
         self.variant_nodes= variant_nodes
         self.node_count_model = node_count_model
         self.k = k
@@ -76,6 +76,7 @@ class GenotypeDebugger:
         self.helper_variants = helper_variants
         self.combination_matrix = combination_matrix
         self.probs = probs
+        self.count_probs = count_probs
 
     def print_report(self):
         for type in ["SNP", "DELETION", "INSERTION"]:
@@ -105,6 +106,7 @@ class GenotypeDebugger:
         self.node_counts.node_counts[variant_node]))
 
         logging.info("Genotype probs (log): %s" % self.probs[variant_id])
+        logging.info("Count    probs (log): %s" % self.count_probs[variant_id])
 
         logging.info("Model on ref node: %s" % self.node_count_model.describe_node(reference_node))
         logging.info("Model on alt node: %s" % self.node_count_model.describe_node(variant_node))
@@ -113,8 +115,16 @@ class GenotypeDebugger:
         most_similar_variant = self.predicted_genotypes[most_similar]
         logging.info("Most similar variant: %d" % most_similar)
         logging.info("Predicted/true most similar: %s / %s" % (self.predicted_genotypes[most_similar], self.truth_genotypes.get(most_similar_variant)))
-        logging.info("Combination matrix: \n%s" % self.combination_matrix[self.helper_variants[variant_id]])
+        helper_ref = self.variant_nodes.ref_nodes[most_similar]
+        helper_alt = self.variant_nodes.var_nodes[most_similar]
+        helper_count_ref = self.node_counts[helper_ref]
+        helper_count_alt = self.node_counts[helper_alt]
+        logging.info("Node counts on helper nodes %d/%d: %d/%d" % (helper_ref, helper_alt, helper_count_ref, helper_count_alt))
+        logging.info("Model on helper ref: %s" % self.node_count_model.describe_node(helper_ref))
+        logging.info("Model on helper alt: %s" % self.node_count_model.describe_node(helper_alt))
+        logging.info("Combination matrix: \n%s" % self.combination_matrix[variant_id])
         logging.info("Genotype probs most similar (log): %s" % self.probs[most_similar])
+        logging.info("Count    probs most similar (log): %s" % self.count_probs[most_similar])
 
         #logging.info("Model counts ref node (homo ref, homo alt, hetero): %.2f/%.2f/%.2f" % (self.node_count_model.counts_homo_ref[reference_node], self.node_count_model.counts_homo_alt[reference_node], self.node_count_model.counts_hetero[reference_node]))
         #logging.info("Model counts alt node (homo ref, homo alt, hetero): %.2f/%.2f/%.2f" % (self.node_count_model.counts_homo_ref[variant_node], self.node_count_model.counts_homo_alt[variant_node], self.node_count_model.counts_hetero[variant_node]))

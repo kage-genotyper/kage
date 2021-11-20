@@ -63,6 +63,9 @@ class CombinationModelGenotyper(Genotyper):
         observed_ref_nodes = self._node_counts.get_node_count_array()[ref_nodes]
         observed_alt_nodes = self._node_counts.get_node_count_array()[alt_nodes]
 
+        logging.debug("Observed ref node counts: %s" % observed_ref_nodes)
+        logging.debug("Observed var node counts: %s" % observed_alt_nodes)
+
         # marginal probs go into a matrix, each row is one genotype, columns are variants
         marginal_probs = np.zeros((3, len(ref_nodes)))
         model = self._node_count_model
@@ -85,6 +88,7 @@ class CombinationModelGenotyper(Genotyper):
         genotypes, probabilities = helper_model.predict(observed_ref_nodes, observed_alt_nodes, return_probs=True)
         logging.info("Translating to numeric")
         self._predicted_genotypes = translate_to_numeric(genotypes)
+        self._count_probs = helper_model.count_probs
 
         min_alt_node_counts = 0
         too_low_alt_counts = np.where(observed_alt_nodes < min_alt_node_counts)[0]
@@ -94,10 +98,10 @@ class CombinationModelGenotyper(Genotyper):
         self._prob_correct = probabilities
 
     def genotype(self):
-        logging.debug("Min variant id is %d" % self._min_variant_id)
-        logging.debug("Max variant id is %d" % self._max_variant_id)
+        logging.info("Min variant id is %d" % self._min_variant_id)
+        logging.info("Max variant id is %d" % self._max_variant_id)
         self.predict()
-        return self._predicted_genotypes, self._prob_correct
+        return self._predicted_genotypes, self._prob_correct, self._count_probs
 
     def genotype_and_modify_variants(self, variants):
         self.genotype()

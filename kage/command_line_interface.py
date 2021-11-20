@@ -145,10 +145,11 @@ def analyse_variants(args):
     helper_variants = np.load(args.helper_variants)
     combination_matrix = CombinationMatrix.from_file(args.combination_matrix)
     probs = np.load(args.probs)
+    count_probs = np.load(args.count_probs)
 
     analyser = GenotypeDebugger(variant_nodes, args.kmer_size, VcfVariants.from_vcf(args.vcf), kmer_index, reverse_index, VcfVariants.from_vcf(args.predicted_vcf),
                                 VcfVariants.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NodeCounts.from_file(args.node_counts),
-                                model, helper_variants, combination_matrix, probs)
+                                model, helper_variants, combination_matrix, probs, count_probs)
     analyser.analyse_unique_kmers_on_variants()
 
 
@@ -206,8 +207,8 @@ def genotype_single_thread(data):
                                 tricky_variants=tricky_variants, use_naive_priors=args.use_naive_priors,
                                 helper_model=helper_model, helper_model_combo=helper_model_combo_matrix
     )
-    genotypes, probs = genotyper.genotype()
-    return min_variant_id, max_variant_id, genotypes, probs
+    genotypes, probs, count_probs = genotyper.genotype()
+    return min_variant_id, max_variant_id, genotypes, probs, count_probs
 
 
 def genotype(args):
@@ -267,12 +268,12 @@ def genotype(args):
     results = []
 
 
-    for min_variant_id, max_variant_id, genotypes, probs in pool.imap(genotype_single_thread, zip(variant_chunks, repeat(args))):
-        results.append((min_variant_id, max_variant_id, genotypes, probs))
+    for min_variant_id, max_variant_id, genotypes, probs, count_probs in pool.imap(genotype_single_thread, zip(variant_chunks, repeat(args))):
+        results.append((min_variant_id, max_variant_id, genotypes, probs, count_probs))
         #genotyped_variants.add_variants(result)
 
     i = 0
-    for min_variant_id, max_variant_id, genotypes, probs in results:
+    for min_variant_id, max_variant_id, genotypes, probs, count_probs in results:
         logging.info("Merging results, %d/%d" % (i, len(results)))
         i += 1
         for variant_id in range(min_variant_id, max_variant_id+1):
@@ -284,6 +285,7 @@ def genotype(args):
     #np.save(args.out_file_name + ".allele_frequencies", genotyper._predicted_allele_frequencies)
     #logging.info("Wrote predicted allele frequencies to %s" % args.out_file_name + ".allele_frequencies")
     np.save(args.out_file_name + ".probs", results[0][3])
+    np.save(args.out_file_name + ".count_probs", results[0][4])
 
 
 def model_using_kmer_index(variant_id_interval, args):
@@ -422,6 +424,7 @@ def run_argument_parser(args):
     subparser.add_argument("-f", "--helper-variants", required=True)
     subparser.add_argument("-F", "--combination-matrix", required=True)
     subparser.add_argument("-p", "--probs", required=True)
+    subparser.add_argument("-c", "--count_probs", required=True)
     subparser.set_defaults(func=analyse_variants)
 
 
