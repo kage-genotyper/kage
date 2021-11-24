@@ -32,6 +32,7 @@ import random
 from obgraph.genotype_matrix import GenotypeMatrix
 from .helper_index import make_helper_model_from_genotype_matrix, make_helper_model_from_genotype_matrix_and_node_counts
 from obgraph.genotype_matrix import GenotypeMatrix
+from obgraph.numpy_variants import NumpyVariants
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -245,20 +246,14 @@ def genotype(args):
     node_counts = NodeCounts.from_file(args.counts)
     max_variant_id = len(variant_to_nodes.ref_nodes)-1
 
-    variant_store = []
-    if args.vcf.endswith(".vcf"):
-        variants = VcfVariants.from_vcf(args.vcf, make_generator=True, skip_index=True)
-        variant_chunks = variants.get_chunks(chunk_size=args.chunk_size, add_variants_to_list=variant_store)
-        variant_chunks = ((chunk[0].vcf_line_number, chunk[-1].vcf_line_number) for chunk in variant_chunks)
-    else:
-        from obgraph.numpy_variants import NumpyVariants
-        variants = NumpyVariants.from_file(args.vcf)
-        logging.info("Max variant id is assumed to be %d" % max_variant_id)
-        #variant_chunks = list([int(i) for i in np.linspace(0, max_variant_id, args.n_threads + 1)])
-        #variant_chunks = [(from_pos, to_pos) for from_pos, to_pos in zip(variant_chunks[0:-1], variant_chunks[1:])]
-        variant_chunks = [(0, max_variant_id)]
-        logging.info("Will genotype intervals %s" % variant_chunks)
+    variants = NumpyVariants.from_file(args.vcf)
+    logging.info("Max variant id is assumed to be %d" % max_variant_id)
+    #variant_chunks = list([int(i) for i in np.linspace(0, max_variant_id, args.n_threads + 1)])
+    #variant_chunks = [(from_pos, to_pos) for from_pos, to_pos in zip(variant_chunks[0:-1], variant_chunks[1:])]
+    variant_chunks = [(0, max_variant_id)]
+    logging.info("Will genotype intervals %s" % variant_chunks)
 
+    tricky_variants = None
     if args.tricky_variants is not None:
         logging.info("Using tricky variants")
         tricky_variants = np.load(args.tricky_variants)
@@ -267,53 +262,50 @@ def genotype(args):
     if args.genotype_transition_probs is not None:
         to_shared_memory(GenotypeTransitionProbabilities.from_file(args.genotype_transition_probs), "genotype_transition_probs_shared" + args.shared_memory_unique_id)
 
+    helper_model = None
+    helper_model_combo_matrix = None
     if args.helper_model is not None:
         helper_model = np.load(args.helper_model)
         to_shared_memory(SingleSharedArray(helper_model), "helper_model" + args.shared_memory_unique_id)
         helper_model_combo_matrix = np.load(args.helper_model_combo_matrix)
         to_shared_memory(SingleSharedArray(helper_model_combo_matrix), "helper_model_combo_matrix" + args.shared_memory_unique_id)
 
+    genotype_frequencies = None
     if args.genotype_frequencies is not None:
         genotype_frequencies = GenotypeFrequencies.from_file(args.genotype_frequencies)
         to_shared_memory(genotype_frequencies, "genotype_frequencies_shared" + args.shared_memory_unique_id)
     if model is not None:
         to_shared_memory(model, "model_shared" + args.shared_memory_unique_id)
-    to_shared_memory(variant_to_nodes, "variant_to_nodes_shared" + args.shared_memory_unique_id)
-    to_shared_memory(node_counts, "node_counts_shared" + args.shared_memory_unique_id)
+    #to_shared_memory(variant_to_nodes, "variant_to_nodes_shared" + args.shared_memory_unique_id)
+    #to_shared_memory(node_counts, "node_counts_shared" + args.shared_memory_unique_id)
 
     #pool = Pool(args.n_threads)
     results = []
 
 
-    for min_variant_id, max_variant_id, genotypes, probs, count_probs in map(genotype_single_thread, zip(variant_chunks, repeat(args))):
-        results.append((min_variant_id, max_variant_id, genotypes, probs, count_probs))
-        #genotyped_variants.add_variants(result)
+    #for min_variant_id, max_variant_id, genotypes, probs, count_probs in map(genotype_single_thread, zip(variant_chunks, repeat(args))):
+    #    results.append((min_variant_id, max_variant_id, genotypes, probs, count_probs))
+    #    #genotyped_variants.add_variants(result)
 
-    i = 0
-    numpy_genotypes = np.empty(max_variant_id+1, dtype="|S3")
+
+    genotyper_class = globals()[args.genotyper]
+    genotyper = genotyper_class(model, 0, max_variant_id, variant_to_nodes, node_counts, genotype_frequencies,
+                                None, avg_coverage=args.average_coverage, genotype_transition_probs=None,
+                                tricky_variants=tricky_variants, use_naive_priors=args.use_naive_priors,
+                                helper_model=helper_model, helper_model_combo=helper_model_combo_matrix
+                                )
+    genotypes, probs, count_probs = genotyper.genotype()
+
+    #numpy_genotypes = np.empty(max_variant_id+1, dtype="|S3")
     numeric_genotypes = ["0/0", "0/0", "1/1", "0/1"]
-    for job_min_variant_id, job_max_variant_id, genotypes, probs, count_probs in results:
-        logging.info("Merging results, %d/%d" % (i, len(results)))
-        i += 1
-        for variant_id in range(job_min_variant_id, job_max_variant_id+1):
-            if args.vcf.endswith(".vcf"):
-                variant_store[variant_id].set_genotype(genotypes[variant_id-job_min_variant_id], is_numeric=True)
-            numpy_genotypes[variant_id] = numeric_genotypes[genotypes[variant_id-job_min_variant_id]]
-            #variant_store[variant_id].set_filter_by_prob(probs[variant_id-min_variant_id], criteria_for_pass=args.min_genotype_quality)
-
-    if args.vcf.endswith(".vcf"):
-        VcfVariants(variant_store, header_lines=variants.get_header(), skip_index=True).\
-            to_vcf_file(args.out_file_name, ignore_homo_ref=False, add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">'], sample_name_output=args.sample_name_output)
-    else:
-        variants.to_vcf_with_genotypes(args.out_file_name, args.sample_name_output, numpy_genotypes, add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">'],
+    numpy_genotypes = np.array([numeric_genotypes[g] for g in genotypes], dtype="|S3")
+    variants.to_vcf_with_genotypes(args.out_file_name, args.sample_name_output, numpy_genotypes, add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">'],
                                        ignore_homo_ref=False)
 
     close_shared_pool()
     logging.info("Genotyping took %d sec" % (time.perf_counter()-start_time))
-    #np.save(args.out_file_name + ".allele_frequencies", genotyper._predicted_allele_frequencies)
-    #logging.info("Wrote predicted allele frequencies to %s" % args.out_file_name + ".allele_frequencies")
-    np.save(args.out_file_name + ".probs", results[0][3])
-    np.save(args.out_file_name + ".count_probs", results[0][4])
+    np.save(args.out_file_name + ".probs", probs)
+    np.save(args.out_file_name + ".count_probs", count_probs)
 
 
 def model_using_kmer_index(variant_id_interval, args):
