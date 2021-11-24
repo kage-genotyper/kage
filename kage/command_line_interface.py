@@ -33,6 +33,7 @@ from .helper_index import make_helper_model_from_genotype_matrix, make_helper_mo
 from obgraph.genotype_matrix import GenotypeMatrix
 
 np.random.seed(1)
+np.seterr(all="ignore")
 
 logging.info("Using Python version " + platform.python_version())
 
@@ -208,6 +209,7 @@ def genotype_single_thread(data):
                                 helper_model=helper_model, helper_model_combo=helper_model_combo_matrix
     )
     genotypes, probs, count_probs = genotyper.genotype()
+    logging.info("N genotypes returned: %d" % len(genotypes))
     return min_variant_id, max_variant_id, genotypes, probs, count_probs
 
 
@@ -236,22 +238,20 @@ def genotype(args):
 
     variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
     node_counts = NodeCounts.from_file(args.counts)
+    max_variant_id = len(variant_to_nodes.ref_nodes)-1
 
     variant_store = []
     if args.vcf.endswith(".vcf"):
         variants = VcfVariants.from_vcf(args.vcf, make_generator=True, skip_index=True)
+        variant_chunks = variants.get_chunks(chunk_size=args.chunk_size, add_variants_to_list=variant_store)
+        variant_chunks = ((chunk[0].vcf_line_number, chunk[-1].vcf_line_number) for chunk in variant_chunks)
     else:
         from obgraph.numpy_variants import NumpyVariants
         variants = NumpyVariants.from_file(args.vcf)
-
-    #variant_chunks = variants.get_chunks(chunk_size=args.chunk_size, add_variants_to_list=variant_store)
-    #variant_chunks = ((chunk[0].vcf_line_number, chunk[-1].vcf_line_number) for chunk in variant_chunks)
-
-    max_variant_id = len(variant_to_nodes.ref_nodes)
-    logging.info("Max variant id is assumed to be %d" % max_variant_id)
-    variant_chunks = list([int(i) for i in np.linspace(0, max_variant_id, args.n_threads + 1)])
-    variant_chunks = [(from_pos, to_pos) for from_pos, to_pos in zip(variant_chunks[0:-1], variant_chunks[1:])]
-    logging.info("Will genotype intervals %s" % variant_chunks)
+        logging.info("Max variant id is assumed to be %d" % max_variant_id)
+        variant_chunks = list([int(i) for i in np.linspace(0, max_variant_id, args.n_threads + 1)])
+        variant_chunks = [(from_pos, to_pos) for from_pos, to_pos in zip(variant_chunks[0:-1], variant_chunks[1:])]
+        logging.info("Will genotype intervals %s" % variant_chunks)
 
     if args.tricky_variants is not None:
         logging.info("Using tricky variants")
@@ -284,13 +284,14 @@ def genotype(args):
         #genotyped_variants.add_variants(result)
 
     i = 0
-    numpy_genotypes = np.empty(max_variant_id+1, dtype=str)
+    numpy_genotypes = np.empty(max_variant_id+1, dtype="|S3")
     numeric_genotypes = ["0/0", "0/0", "1/1", "0/1"]
     for job_min_variant_id, job_max_variant_id, genotypes, probs, count_probs in results:
         logging.info("Merging results, %d/%d" % (i, len(results)))
         i += 1
         for variant_id in range(job_min_variant_id, job_max_variant_id+1):
-            variant_store[variant_id].set_genotype(genotypes[variant_id-job_min_variant_id], is_numeric=True)
+            if args.vcf.endswith(".vcf"):
+                variant_store[variant_id].set_genotype(genotypes[variant_id-job_min_variant_id], is_numeric=True)
             numpy_genotypes[variant_id] = numeric_genotypes[genotypes[variant_id-job_min_variant_id]]
             #variant_store[variant_id].set_filter_by_prob(probs[variant_id-min_variant_id], criteria_for_pass=args.min_genotype_quality)
 
