@@ -1,4 +1,6 @@
 import logging
+import time
+
 import numpy as np
 from scipy.stats import binom
 from .genotyper import Genotyper
@@ -73,14 +75,14 @@ class CombinationModelGenotyper(Genotyper):
 
         logging.info("Using advanced node count model")
         # One model for ref nodes and one for alt nodes
-        models = [None, None]
+        start_time = time.perf_counter()
         models = [ComboModel.from_counts(self._estimated_mapped_haplotype_coverage, model.frequencies[nodes],
                                          model.frequencies_squared[nodes],
                                          model.has_too_many[nodes],
                                          model.certain[nodes],
                                          model.frequency_matrix[nodes])
                   for nodes in (ref_nodes, alt_nodes)]
-
+        logging.info("Time spent initing ComboModels: %.4f" % (time.perf_counter()-start_time))
         combination_model_both = ComboModelBothAlleles(*models)
         logging.info("Creating helper model")
         helper_model = HelperModel(combination_model_both, self._helper_model, self._helper_model_combo_matrix, self._tricky_variants)

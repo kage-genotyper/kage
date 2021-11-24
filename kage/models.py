@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 from scipy.special import logsumexp
 import logging
@@ -28,8 +30,6 @@ class ComboModelBothAlleles(Model):
     def logpmf(self, k1, k2, genotype):
         ref_probs = self._model_ref.logpmf(k1, 2-genotype)
         alt_probs = self._model_alt.logpmf(k2, genotype)
-        logging.debug("Ref probs for k1/k2: %s/%s and genotype %d: %s" % (k1, k2, genotype, ref_probs))
-        logging.debug("Alt probs for k1/k2: %s/%s and genotype %d: %s" % (k1, k2, genotype, alt_probs))
         return ref_probs+alt_probs
 
 
@@ -50,9 +50,12 @@ class HelperModel(Model):
             count_probs = np.where(self._tricky_variants.reshape(-1, 1), np.log(1/3), count_probs)
 
         logging.debug("Count probs: %s" % count_probs)
+        time_start = time.perf_counter()
         log_probs =  self._genotype_probs + count_probs[self._helper_variants].reshape(-1, 3, 1)+count_probs.reshape(-1, 1, 3)
         result = logsumexp(log_probs, axis=H)
-        return result - logsumexp(result, axis=-1, keepdims=True)
+        result = result - logsumexp(result, axis=-1, keepdims=True)
+        logging.info("Time spent to compute probs using helper probs in HelperModel.score: %.4f" % (time.perf_counter()-time_start))
+        return result
 
     def logpmf(self, ref_counts, alt_counts, genotype):
         count_probs = np.array([self._model.logpmf(ref_counts, alt_counts, g) for g in [0, 1, 2]]).T

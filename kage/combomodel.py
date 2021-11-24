@@ -1,8 +1,22 @@
 import logging
+import time
+from graph_kmer_index.shared_mem import run_numpy_based_function_in_parallel
+
 import numpy as np
 from scipy.stats import nbinom, poisson, binom
 from scipy.special import gamma, factorial, gammaln, logsumexp, hyp2f1, hyp1f1, hyperu, factorial
 from itertools import combinations
+
+
+def parallel_poisson_logpmf(k, rates):
+    return run_numpy_based_function_in_parallel(poisson.logpmf, 16, [k, rates])
+
+def logsumexp_wrappper(probs):
+    return logsumexp(probs, axis=1)
+
+def parallel_logsumexp(probs):
+    return run_numpy_based_function_in_parallel(logsumexp_wrappper, 16, [probs])
+
 
 class CountModel:
     error_rate = 0.005
@@ -28,17 +42,33 @@ class MultiplePoissonModel(CountModel):
         assert np.allclose(repeat_dist.sum(axis=1), 1), repeat_dist.sum(axis=1)
         return np.log(repeat_dist)
 
+    @staticmethod
+    def calc_repeat_log_dist_fast_parallel(allele_frequencies, n_threads=16):
+        return run_numpy_based_function_in_parallel(MultiplePoissonModel.calc_repeat_log_dist_fast, n_threads, [allele_frequencies])
+
     @classmethod
     def from_counts(cls, base_lambda, certain_counts, allele_frequencies):
-        repeat_dist = cls.calc_repeat_log_dist_fast(allele_frequencies)
+        repeat_dist = cls.calc_repeat_log_dist_fast_parallel(allele_frequencies)
         return cls(base_lambda, repeat_dist, 2*certain_counts)
 
     def logpmf(self, k, n_copies=1):
         assert k.shape == (self._n_variants, ), (k.shape, self._n_variants)
+        t = time.perf_counter()
         rates = (self._certain_counts + n_copies + np.arange(self._max_duplicates+1)[None, :]+self.error_rate)*self._base_lambda
-        log_probs = poisson.logpmf(k[:, None], rates)
+        logging.info("Time getting rates: %.4f" % (time.perf_counter()-t))
+        t = time.perf_counter()
+        #log_probs = poisson.logpmf(k[:, None], rates)
+        log_probs = parallel_poisson_logpmf(k[:, None], rates)
+        logging.info("Time poisson logpmf: %.4f" % (time.perf_counter()-t))
+        t = time.perf_counter()
         tot_probs = log_probs+self._repeat_dist
-        return logsumexp(tot_probs, axis=1)
+        logging.info("Time tot probs: %.4f" % (time.perf_counter()-t))
+        t = time.perf_counter()
+        #result = logsumexp(tot_probs, axis=1)
+        result = parallel_logsumexp(tot_probs)
+        logging.info("Time logsumexp: %.4f" % (time.perf_counter()-t))
+        return result
+
 
 class NegativeBinomialModel(CountModel):
     def __init__(self, base_lambda, r, p, certain_counts):
@@ -87,27 +117,54 @@ class ComboModel(CountModel):
     def from_counts(cls, base_lambda, p_sum, p_sq_sum, do_gamma_calc, certain_counts, allele_frequencies):
         models = []
         model_indices = np.empty(certain_counts.size, dtype="int")
+        t = time.perf_counter()
         multi_poisson_mask = ~do_gamma_calc
+        logging.info("Time to get mask: %.4f" % (time.perf_counter()-t))
+        t = time.perf_counter()
         models.append(
             MultiplePoissonModel.from_counts(base_lambda, certain_counts[multi_poisson_mask], allele_frequencies[multi_poisson_mask]))
         model_indices[multi_poisson_mask] = 0
+        logging.info("Time spent on creating MultiplePoisson model: %.3f" % (time.perf_counter()-t))
+        t = time.perf_counter()
+
         nb_mask = do_gamma_calc & (p_sum**2 <= (p_sum-p_sq_sum)*10)
         models.append(
             NegativeBinomialModel.from_counts(base_lambda, p_sum[nb_mask], p_sq_sum[nb_mask], certain_counts[nb_mask]))
         model_indices[nb_mask] = 1
+        logging.info("Time spent on creating negative binomial model: %.3f" % (time.perf_counter()-t))
+        t = time.perf_counter()
+
         poisson_mask = do_gamma_calc & (~nb_mask)
         models.append(
             PoissonModel.from_counts(base_lambda, certain_counts[poisson_mask], p_sum[poisson_mask]))
         model_indices[poisson_mask] = 2
+        logging.info("Time spent on creating Pisson model: %.3f" % (time.perf_counter()-t))
+        t = time.perf_counter()
+
         return cls(models, model_indices)
 
     def logpmf(self, k, n_copies=1):
         logpmf = np.zeros(k.size)
         for i, model in enumerate(self._models):
             mask = (self._model_indexes == i)
+            start_time = time.perf_counter()
             logpmf[mask] = model.logpmf(k[mask], n_copies)
+            logging.info("Time spent on ComboModel.logpmf %s: %.4f" % (model.__class__, time.perf_counter()-start_time))
 
         return logpmf
+
+
+class ComboModelParallel(CountModel):
+    """Same interface as ComboModel, but has N ComboModels internally, which runs in parallel"""
+    def __init__(self, combo_models):
+        pass
+
+    @classmethod
+    def from_counts(cls, base_lambda, p_sum, p_sq_sum, do_gamma_calc, certain_counts, allele_frequencies):
+        pass
+
+    def logpmf(self, k, n_copies=1):
+        pass
 
 
 class ComboModelWithIncreasedZeroProb(ComboModel):

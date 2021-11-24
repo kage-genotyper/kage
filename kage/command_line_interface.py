@@ -4,7 +4,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(mes
 import itertools
 from itertools import repeat
 import sys, argparse, time
-from graph_kmer_index.shared_mem import from_shared_memory, to_shared_memory, remove_shared_memory, SingleSharedArray, remove_all_shared_memory, remove_shared_memory_in_session
+from graph_kmer_index.shared_mem import from_shared_memory, to_shared_memory, remove_shared_memory, \
+    SingleSharedArray, remove_all_shared_memory, remove_shared_memory_in_session, get_shared_pool, close_shared_pool
 from obgraph import Graph as ObGraph
 from graph_kmer_index import KmerIndex, ReverseKmerIndex
 from graph_kmer_index import ReferenceKmerIndex
@@ -214,6 +215,7 @@ def genotype_single_thread(data):
 
 
 def genotype(args):
+    start_time = time.perf_counter()
     logging.info("Using genotyper %s" % args.genotyper)
     args.shared_memory_unique_id = str(random.randint(0, 1e15))
     logging.info("Random id for shared memory: %s" % args.shared_memory_unique_id)
@@ -222,6 +224,9 @@ def genotype(args):
         most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
         to_shared_memory(most_similar_variant_lookup, "most_similar_variant_lookup_shared" + args.shared_memory_unique_id)
 
+    t = time.perf_counter()
+    p = get_shared_pool(args.n_threads)   #Pool(16)
+    logging.info("Time spent making pool: %.4f" % (time.perf_counter()-t))
 
     if args.model_advanced is not None:
         model = NodeCountModelAdvanced.from_file(args.model_advanced)
@@ -249,8 +254,9 @@ def genotype(args):
         from obgraph.numpy_variants import NumpyVariants
         variants = NumpyVariants.from_file(args.vcf)
         logging.info("Max variant id is assumed to be %d" % max_variant_id)
-        variant_chunks = list([int(i) for i in np.linspace(0, max_variant_id, args.n_threads + 1)])
-        variant_chunks = [(from_pos, to_pos) for from_pos, to_pos in zip(variant_chunks[0:-1], variant_chunks[1:])]
+        #variant_chunks = list([int(i) for i in np.linspace(0, max_variant_id, args.n_threads + 1)])
+        #variant_chunks = [(from_pos, to_pos) for from_pos, to_pos in zip(variant_chunks[0:-1], variant_chunks[1:])]
+        variant_chunks = [(0, max_variant_id)]
         logging.info("Will genotype intervals %s" % variant_chunks)
 
     if args.tricky_variants is not None:
@@ -275,11 +281,11 @@ def genotype(args):
     to_shared_memory(variant_to_nodes, "variant_to_nodes_shared" + args.shared_memory_unique_id)
     to_shared_memory(node_counts, "node_counts_shared" + args.shared_memory_unique_id)
 
-    pool = Pool(args.n_threads)
+    #pool = Pool(args.n_threads)
     results = []
 
 
-    for min_variant_id, max_variant_id, genotypes, probs, count_probs in pool.imap(genotype_single_thread, zip(variant_chunks, repeat(args))):
+    for min_variant_id, max_variant_id, genotypes, probs, count_probs in map(genotype_single_thread, zip(variant_chunks, repeat(args))):
         results.append((min_variant_id, max_variant_id, genotypes, probs, count_probs))
         #genotyped_variants.add_variants(result)
 
@@ -302,6 +308,8 @@ def genotype(args):
         variants.to_vcf_with_genotypes(args.out_file_name, args.sample_name_output, numpy_genotypes, add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">'],
                                        ignore_homo_ref=False)
 
+    close_shared_pool()
+    logging.info("Genotyping took %d sec" % (time.perf_counter()-start_time))
     #np.save(args.out_file_name + ".allele_frequencies", genotyper._predicted_allele_frequencies)
     #logging.info("Wrote predicted allele frequencies to %s" % args.out_file_name + ".allele_frequencies")
     np.save(args.out_file_name + ".probs", results[0][3])
@@ -458,8 +466,7 @@ def run_argument_parser(args):
     subparser.add_argument("-M", "--most_similar_variant_lookup", required=False, help="Most similar variant lookup")
     subparser.add_argument("-o", "--out-file-name", required=True, help="Will write genotyped variants to this file")
     subparser.add_argument("-C", "--genotyper", required=False, default="Genotyper", help="Genotyper to use")
-    subparser.add_argument("-t", "--n-threads", type=int, required=False, default=1)
-    subparser.add_argument("-z", "--chunk-size", type=int, default=100000, help="Number of variants to process in each chunk")
+    subparser.add_argument("-t", "--n-threads", type=int, required=False, default=8)
     subparser.add_argument("-a", "--average-coverage", type=float, default=15, help="Expected average read coverage")
     subparser.add_argument("-q", "--min-genotype-quality", type=float, default=0.95, help="Min prob of genotype being correct")
     subparser.add_argument("-p", "--genotype-transition-probs", required=False)
