@@ -95,13 +95,13 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
 
     genotype_combo_matrix = np.array([(flat_idx == k).sum(axis=1) for k in range(9)]).T.reshape(-1, 3, 3)
     print("########")
-    prior = get_population_priors(genotype_combo_matrix)
+    population_prior = get_population_priors(genotype_combo_matrix)
     helper_posterior  = get_helper_posterior(genotype_combo_matrix)
     print("Genotype combo matrix raw:")
     print(genotype_combo_matrix[0])
-    print("Population prior: \n%s" % prior)
+    print("Population prior: \n%s" % population_prior)
     print("Helper posterior:\n%s", helper_posterior[0])
-    population_posterior = (genotype_combo_matrix+prior)
+    population_posterior = genotype_combo_matrix + population_prior
     population_posterior = population_posterior/population_posterior.sum(axis=M, keepdims=True)*helper_posterior
     print("Genotype combo matrix posterior: ")
     print(population_posterior[0])
