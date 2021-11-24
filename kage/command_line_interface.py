@@ -45,94 +45,6 @@ def main():
     run_argument_parser(sys.argv[1:])
 
 
-#def count_single_thread(reads, args):
-def count_single_thread(data):
-    from kage import cython_chain_genotyper
-
-    reads, args = data
-    start_time = time.time()
-
-    read_shared_memory_name = None
-    if isinstance(reads, str):
-        # this is a memory address
-        read_shared_memory_name = reads
-        reads = from_shared_memory(SingleSharedArray, reads).array
-
-    if len(reads) == 0:
-        logging.info("Skipping thread, no more reads")
-        return None, None
-
-    reference_index = None
-    if args.reference_index is not None:
-        reference_index = from_shared_memory(ReferenceKmerIndex, "reference_index_shared" + args.shared_memory_unique_id)
-
-    reference_index_scoring = None
-    if args.reference_index_scoring is not None:
-        reference_index_scoring = from_shared_memory(ReferenceKmerIndex, "reference_index_scoring_shared"+args.shared_memory_unique_id)
-
-    kmer_index = from_shared_memory(KmerIndex, "kmer_index_shared"+args.shared_memory_unique_id)
-    logging.info("Time spent on getting indexes from memory: %.5f" % (time.time()-start_time))
-
-    node_counts = cython_chain_genotyper.run(reads, kmer_index, args.max_node_id, args.kmer_size,
-                                                              reference_index,args.max_index_lookup_frequency, 0,
-                                                              reference_index_scoring,
-                                                              args.skip_chaining,
-                                                              args.scale_by_frequency)
-    logging.info("Time spent on getting node counts: %.5f" % (time.time()-start_time))
-    shared_counts = from_shared_memory(NodeCounts, "counts_shared"+args.shared_memory_unique_id)
-    shared_counts.node_counts += node_counts
-
-    if read_shared_memory_name is not None:
-        try:
-            remove_shared_memory(read_shared_memory_name)
-        except FileNotFoundError:
-            logging.info("file not found")
-
-    return True
-    return NodeCounts(node_counts)
-
-
-def count(args):
-    args.shared_memory_unique_id = str(random.randint(0, 1e15))
-    logging.info("Shared memory unique id: %s" % args.shared_memory_unique_id)
-
-    truth_positions = None
-    if args.truth_alignments is not None:
-        from numpy_alignments import NumpyAlignments
-        truth_alignments = NumpyAlignments.from_file(args.truth_alignments)
-        truth_positions = truth_alignments.positions
-
-    if args.reference_index is not None:
-        reference_index = ReferenceKmerIndex.from_file(args.reference_index)
-        to_shared_memory(reference_index, "reference_index_shared" + args.shared_memory_unique_id)
-
-    if args.reference_index_scoring is not None:
-        reference_index_scoring = ReferenceKmerIndex.from_file(args.reference_index_scoring)
-        to_shared_memory(reference_index_scoring, "reference_index_scoring_shared" + args.shared_memory_unique_id)
-
-    kmer_index = KmerIndex.from_file(args.kmer_index)
-    to_shared_memory(kmer_index, "kmer_index_shared" + args.shared_memory_unique_id)
-
-    max_node_id = args.max_node_id
-    reads = read_chunks_from_fasta(args.reads, chunk_size=args.chunk_size, write_to_shared_memory=True)
-
-    counts = NodeCounts(np.zeros(args.max_node_id+1, dtype=np.float))
-    to_shared_memory(counts, "counts_shared" + args.shared_memory_unique_id)
-
-    pool = Pool(args.n_threads)
-    node_counts = np.zeros(max_node_id+1, dtype=float)
-    for result in pool.imap(count_single_thread, zip(reads, repeat(args))):
-        if result is not None:
-            #logging.info("Got result. Length of counts: %d" % len(result.node_counts))
-            t1 = time.time()
-            #node_counts += result.node_counts
-        else:
-            logging.info("No results")
-
-    #counts = NodeCounts(node_counts)
-    counts = from_shared_memory(NodeCounts, "counts_shared" + args.shared_memory_unique_id)
-    counts.to_file(args.node_counts_out_file_name)
-
 
 def analyse_variants(args):
     from .node_count_model import NodeCountModel
@@ -413,23 +325,6 @@ def run_argument_parser(args):
         formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=50, width=100))
 
     subparsers = parser.add_subparsers()
-    subparser = subparsers.add_parser("count")
-    subparser.add_argument("-i", "--kmer_index", required=True)
-    subparser.add_argument("-r", "--reads", required=True)
-    subparser.add_argument("-k", "--kmer_size", required=False, type=int, default=31)
-    subparser.add_argument("-n", "--node_counts_out_file_name", required=True)
-    subparser.add_argument("-M", "--max_node_id", type=int, default=2000000, required=False)
-    subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
-    subparser.add_argument("-c", "--chunk-size", type=int, default=10000, required=False, help="Number of reads to process in the same chunk")
-    subparser.add_argument("-T", "--truth_alignments", required=False)
-    subparser.add_argument("-Q", "--reference_index", required=False)
-    subparser.add_argument("-R", "--reference_index_scoring", required=False)
-    subparser.add_argument("-I", "--max-index-lookup-frequency", required=False, type=int, default=5)
-    subparser.add_argument("-s", "--skip-chaining", required=False, type=bool, default=False)
-    subparser.add_argument("-f", "--scale-by-frequency", required=False, type=bool, default=False)
-    subparser.set_defaults(func=count)
-
-
 
     subparser = subparsers.add_parser("analyse_variants")
     subparser.add_argument("-g", "--variant-nodes", required=True)
