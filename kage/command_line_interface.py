@@ -238,7 +238,12 @@ def genotype(args):
     node_counts = NodeCounts.from_file(args.counts)
 
     variant_store = []
-    variants = VcfVariants.from_vcf(args.vcf, make_generator=True, skip_index=True)
+    if args.vcf.endswith(".vcf"):
+        variants = VcfVariants.from_vcf(args.vcf, make_generator=True, skip_index=True)
+    else:
+        from obgraph.numpy_variants import NumpyVariants
+        variants = NumpyVariants.from_file(args.vcf)
+
     #variant_chunks = variants.get_chunks(chunk_size=args.chunk_size, add_variants_to_list=variant_store)
     #variant_chunks = ((chunk[0].vcf_line_number, chunk[-1].vcf_line_number) for chunk in variant_chunks)
 
@@ -279,15 +284,23 @@ def genotype(args):
         #genotyped_variants.add_variants(result)
 
     i = 0
-    for min_variant_id, max_variant_id, genotypes, probs, count_probs in results:
+    numpy_genotypes = np.empty(max_variant_id+1, dtype=str)
+    numeric_genotypes = ["0/0", "0/0", "1/1", "0/1"]
+    for job_min_variant_id, job_max_variant_id, genotypes, probs, count_probs in results:
         logging.info("Merging results, %d/%d" % (i, len(results)))
         i += 1
-        for variant_id in range(min_variant_id, max_variant_id+1):
-            variant_store[variant_id].set_genotype(genotypes[variant_id-min_variant_id], is_numeric=True)
+        for variant_id in range(job_min_variant_id, job_max_variant_id+1):
+            variant_store[variant_id].set_genotype(genotypes[variant_id-job_min_variant_id], is_numeric=True)
+            numpy_genotypes[variant_id] = numeric_genotypes[genotypes[variant_id-job_min_variant_id]]
             #variant_store[variant_id].set_filter_by_prob(probs[variant_id-min_variant_id], criteria_for_pass=args.min_genotype_quality)
 
-    VcfVariants(variant_store, header_lines=variants.get_header(), skip_index=True).\
-        to_vcf_file(args.out_file_name, ignore_homo_ref=False, add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">'], sample_name_output=args.sample_name_output)
+    if args.vcf.endswith(".vcf"):
+        VcfVariants(variant_store, header_lines=variants.get_header(), skip_index=True).\
+            to_vcf_file(args.out_file_name, ignore_homo_ref=False, add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">'], sample_name_output=args.sample_name_output)
+    else:
+        variants.to_vcf_with_genotypes(args.out_file_name, args.sample_name_output, numpy_genotypes, add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">'],
+                                       ignore_homo_ref=False)
+
     #np.save(args.out_file_name + ".allele_frequencies", genotyper._predicted_allele_frequencies)
     #logging.info("Wrote predicted allele frequencies to %s" % args.out_file_name + ".allele_frequencies")
     np.save(args.out_file_name + ".probs", results[0][3])
