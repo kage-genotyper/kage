@@ -21,7 +21,8 @@ class Reads:
         reads = (line.strip() for line in open(fasta_file_name) if not line.startswith(">"))
         return cls(reads)
 
-def read_chunks_from_fasta(fasta_file_name, chunk_size=10, include_read_names=False, assign_numeric_read_names=False, write_to_shared_memory=False, max_read_length=150):
+def read_chunks_from_fasta(fasta_file_name, chunk_size=10, include_read_names=False, assign_numeric_read_names=False,
+                           write_to_shared_memory=False, max_read_length=150, save_as_bytes=False):
 
     is_gzipped = False
     if fasta_file_name.endswith(".gz"):
@@ -35,7 +36,10 @@ def read_chunks_from_fasta(fasta_file_name, chunk_size=10, include_read_names=Fa
     read_id = 0
     current_read_name = None
 
-    out_array = np.empty(chunk_size, dtype="<U" + str(max_read_length))
+    if save_as_bytes:
+        out_array = np.empty(chunk_size, dtype="|S" + str(max_read_length))  # max_read_length bytes for each element
+    else:
+        out_array = np.empty(chunk_size, dtype="<U" + str(max_read_length))
 
     prev_time = time.time()
 

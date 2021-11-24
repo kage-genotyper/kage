@@ -222,8 +222,6 @@ def run(reads,
                         continue
 
                     node_counts[nodes[l]] += 1
-                    if nodes[l] == 57087:
-                        logging.info("Kmer hit from read %s" % read)
 
     return node_counts
 
