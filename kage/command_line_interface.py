@@ -239,8 +239,14 @@ def genotype(args):
 
     variant_store = []
     variants = VcfVariants.from_vcf(args.vcf, make_generator=True, skip_index=True)
-    variant_chunks = variants.get_chunks(chunk_size=args.chunk_size, add_variants_to_list=variant_store)
-    variant_chunks = ((chunk[0].vcf_line_number, chunk[-1].vcf_line_number) for chunk in variant_chunks)
+    #variant_chunks = variants.get_chunks(chunk_size=args.chunk_size, add_variants_to_list=variant_store)
+    #variant_chunks = ((chunk[0].vcf_line_number, chunk[-1].vcf_line_number) for chunk in variant_chunks)
+
+    max_variant_id = len(variant_to_nodes.ref_nodes)
+    logging.info("Max variant id is assumed to be %d" % max_variant_id)
+    variant_chunks = list([int(i) for i in np.linspace(0, max_variant_id, args.n_threads + 1)])
+    variant_chunks = [(from_pos, to_pos) for from_pos, to_pos in zip(variant_chunks[0:-1], variant_chunks[1:])]
+    logging.info("Will genotype intervals %s" % variant_chunks)
 
     if args.tricky_variants is not None:
         logging.info("Using tricky variants")
