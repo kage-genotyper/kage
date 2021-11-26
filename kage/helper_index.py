@@ -55,17 +55,17 @@ def make_helper_model_from_genotype_matrix_and_node_counts(genotype_matrix, node
 def get_helper_posterior(genotype_combo_matrix, global_helper_weight=1):
     helper_sum = np.mean(genotype_combo_matrix, axis=M, keepdims=True)
     assert helper_sum[0].shape==(3, 1)
-    global_helper_prior = np.mean(helper_sum, axis=0, keepdims=True) + 0.1*np.array([10, 5, 4])[:, None]/19
+    global_helper_prior = np.mean(helper_sum, axis=0, keepdims=True) + 0.1*np.array([182, 20, 13])[:, None]/215  # numbers based on real data
     print("Global helper prior: \n%s" % global_helper_prior)
     print("Helper sum: \n%s" % helper_sum)
     assert global_helper_prior.shape == (1, 3, 1)
     #helper_posterior = global_helper_prior/global_helper_prior.sum()*global_helper_weight+helper_sum
-    helper_posterior = global_helper_prior * global_helper_weight + helper_sum
+    helper_posterior = global_helper_prior   # global_helper_prior * global_helper_weight + helper_sum
     helper_posterior = helper_posterior/helper_posterior.sum(axis=H, keepdims=True)
     assert np.allclose(helper_posterior.sum(axis=H), 1), helper_posterior
     return helper_posterior
 
-def get_population_priors(genotype_combo_matrix, weight=15, weight_diagonal=0, weight_left_column=0, weight_global=60):
+def get_population_priors(genotype_combo_matrix, weight=18.75, weight_diagonal=0, weight_left_column=0, weight_global=1000):
     """n_variants x helper x main"""
     prior = np.eye(3) * weight_diagonal
     prior[:,0] = weight_left_column  # going to 0/0 is high
@@ -111,12 +111,15 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
 def find_best_helper(combined, score_func, N, with_model=False):
     best_idx, best_score = np.empty(N, dtype="int"), -np.inf*np.ones(N)
     for j, counts in enumerate(combined, 1):
+        if j < 4:
+            continue
         if j % 50 == 0:
             logging.info("Window %d" % j)
         scores = score_func(counts, j) if with_model else score_func(counts)
         do_update = scores > best_score[j:]
         best_score[j:][do_update] = scores[do_update]
         best_idx[j:][do_update] = np.flatnonzero(do_update)
+        # reverse
         rev_scores = score_func(counts.swapaxes(-2, -1), -j) if with_model else score_func(counts.swapaxes(-2, -1))
         do_update = rev_scores>best_score[:-j]
         best_score[:-j][do_update] = rev_scores[do_update]

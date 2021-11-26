@@ -3,6 +3,7 @@ import time
 
 import numpy as np
 from scipy.stats import binom
+from .util import log_memory_usage_now
 from .genotyper import Genotyper
 from .node_count_model import GenotypeNodeCountModel, NodeCountModelAlleleFrequencies, NodeCountModelAdvanced
 from .combomodel import ComboModel, ComboModelWithIncreasedZeroProb
@@ -65,13 +66,7 @@ class CombinationModelGenotyper(Genotyper):
         observed_ref_nodes = self._node_counts.get_node_count_array()[ref_nodes]
         observed_alt_nodes = self._node_counts.get_node_count_array()[alt_nodes]
 
-        logging.debug("Observed ref node counts: %s" % observed_ref_nodes)
-        logging.debug("Observed var node counts: %s" % observed_alt_nodes)
-
         model = self._node_count_model
-
-
-        logging.info("Using advanced node count model")
         # One model for ref nodes and one for alt nodes
         start_time = time.perf_counter()
         models = [ComboModel.from_counts(self._estimated_mapped_haplotype_coverage, model.frequencies[nodes],
@@ -80,13 +75,10 @@ class CombinationModelGenotyper(Genotyper):
                                          model.certain[nodes],
                                          model.frequency_matrix[nodes])
                   for nodes in (ref_nodes, alt_nodes)]
-        logging.info("Time spent initing ComboModels: %.4f" % (time.perf_counter()-start_time))
+
         combination_model_both = ComboModelBothAlleles(*models)
-        logging.info("Creating helper model")
         helper_model = HelperModel(combination_model_both, self._helper_model, self._helper_model_combo_matrix, self._tricky_variants)
-        logging.info("Calling helper_model.predict")
         genotypes, probabilities = helper_model.predict(observed_ref_nodes, observed_alt_nodes, return_probs=True)
-        logging.info("Translating to numeric")
         self._predicted_genotypes = translate_to_numeric(genotypes)
         self._count_probs = helper_model.count_probs
 

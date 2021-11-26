@@ -1,8 +1,9 @@
 import time
-
+from graph_kmer_index.shared_mem import run_numpy_based_function_in_parallel
 import numpy as np
 from scipy.special import logsumexp
 import logging
+from .util import log_memory_usage_now
 
 MAIN = -1
 HELPER = -2
@@ -13,6 +14,7 @@ class Model:
     def predict(self, k1, k2, return_probs=False):
         scores = self.score(k1, k2)
         result = np.argmax(scores, axis=-1)
+
         if return_probs:
             return result, scores
 
@@ -49,11 +51,14 @@ class HelperModel(Model):
             logging.info("Using tricky variants in HelperModel.score. There are %d tricky variants" % np.sum(self._tricky_variants))
             count_probs = np.where(self._tricky_variants.reshape(-1, 1), np.log(1/3), count_probs)
 
-        logging.debug("Count probs: %s" % count_probs)
         time_start = time.perf_counter()
         log_probs =  self._genotype_probs + count_probs[self._helper_variants].reshape(-1, 3, 1)+count_probs.reshape(-1, 1, 3)
-        result = logsumexp(log_probs, axis=H)
-        result = result - logsumexp(result, axis=-1, keepdims=True)
+        logging.info("Time spent on log_probs in HelperModel.score: %.4f" % (time.perf_counter()-time_start))
+        time_start = time.perf_counter()
+        #result = logsumexp(log_probs, axis=H)
+        #result = result - logsumexp(result, axis=-1, keepdims=True)
+        result = run_numpy_based_function_in_parallel(lambda p: logsumexp(p, axis=H), 16, [log_probs])
+        result = run_numpy_based_function_in_parallel(lambda result: result - logsumexp(result, axis=-1, keepdims=True), 16, [result])
         logging.info("Time spent to compute probs using helper probs in HelperModel.score: %.4f" % (time.perf_counter()-time_start))
         return result
 

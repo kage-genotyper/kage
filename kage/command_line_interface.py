@@ -1,5 +1,6 @@
 import logging
 import sys
+from .util import log_memory_usage_now
 #logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 import itertools
@@ -54,78 +55,37 @@ def analyse_variants(args):
 
     whitelist = None
 
+    logging.info("Reading variant nodes")
     variant_nodes = VariantToNodes.from_file(args.variant_nodes)
+    logging.info("Reading kmer index")
     kmer_index = KmerIndex.from_file(args.kmer_index)
+    logging.info("Reading reverse index")
     reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
+    logging.info("Reading model")
     model = NodeCountModelAdvanced.from_file(args.model)
+    logging.info("REading helper variants")
     helper_variants = np.load(args.helper_variants)
+    logging.info("Reading combination matrix")
     combination_matrix = CombinationMatrix.from_file(args.combination_matrix)
+    logging.info("Reading probs")
     probs = np.load(args.probs)
+    logging.info("Reading count probs")
     count_probs = np.load(args.count_probs)
 
-    analyser = GenotypeDebugger(variant_nodes, args.kmer_size, VcfVariants.from_vcf(args.vcf), kmer_index, reverse_index, VcfVariants.from_vcf(args.predicted_vcf),
-                                VcfVariants.from_vcf(args.truth_vcf), TruthRegions(args.truth_regions_file), NodeCounts.from_file(args.node_counts),
+    logging.info("REading predicted genotyppes")
+    predicted_genotypes = VcfVariants.from_vcf(args.predicted_vcf)
+
+    logging.info("Reading true genotypes")
+    true_genotypes = VcfVariants.from_vcf(args.truth_vcf)
+
+    logging.info("Reading all genotypes")
+    all_variants = VcfVariants.from_vcf(args.vcf)
+
+    analyser = GenotypeDebugger(variant_nodes, args.kmer_size, all_variants, kmer_index, reverse_index, predicted_genotypes,
+                                true_genotypes, TruthRegions(args.truth_regions_file), NodeCounts.from_file(args.node_counts),
                                 model, helper_variants, combination_matrix, probs, count_probs)
     analyser.analyse_unique_kmers_on_variants()
 
-
-def genotype_single_thread(data):
-    variant_interval, args = data
-    min_variant_id = variant_interval[0]
-    max_variant_id = variant_interval[1]
-    logging.info("Starting genotyping thread from variant %d to %d" % (min_variant_id, max_variant_id))
-
-    genotyper_class = globals()[args.genotyper]
-
-    genotype_transition_probs = None
-    if args.genotype_transition_probs is not None:
-        genotype_transition_probs = from_shared_memory(GenotypeTransitionProbabilities, "genotype_transition_probs_shared" + args.shared_memory_unique_id)
-
-    genotype_frequencies = None
-    if args.genotype_frequencies is not None:
-        genotype_frequencies = from_shared_memory(GenotypeFrequencies, "genotype_frequencies_shared" + args.shared_memory_unique_id)
-
-    most_similar_variant_lookup = None
-    if args.most_similar_variant_lookup is not None:
-        most_similar_variant_lookup = from_shared_memory(MostSimilarVariantLookup, "most_similar_variant_lookup_shared" + args.shared_memory_unique_id)
-
-    helper_model = None
-    helper_model_combo_matrix = None
-
-    if args.model_advanced is not None:
-        model = from_shared_memory(NodeCountModelAdvanced, "model_shared" + args.shared_memory_unique_id)
-    elif args.model is not None:
-        logging.info("Reading model from shared memory")
-        if "allele_frequencies" in args.model:
-            model = from_shared_memory(NodeCountModelAlleleFrequencies, "model_shared" + args.shared_memory_unique_id)
-        else:
-            model = from_shared_memory(GenotypeNodeCountModel, "model_shared" + args.shared_memory_unique_id)
-        logging.info(str(model))
-    else:
-        logging.warning("Model is None")
-        model = None
-
-    if args.helper_model is not None:
-        helper_model = from_shared_memory(SingleSharedArray, "helper_model" + args.shared_memory_unique_id).array
-        helper_model_combo_matrix = from_shared_memory(SingleSharedArray, "helper_model_combo_matrix" + args.shared_memory_unique_id).array
-
-    variant_to_nodes = from_shared_memory(VariantToNodes, "variant_to_nodes_shared" + args.shared_memory_unique_id)
-    node_counts = from_shared_memory(NodeCounts, "node_counts_shared" + args.shared_memory_unique_id)
-
-    if args.tricky_variants is not None:
-        tricky_variants = from_shared_memory(SingleSharedArray, "tricky_variants_shared" + args.shared_memory_unique_id).array
-    else:
-        tricky_variants = None
-
-    logging.info("All indexes loaded, calling genotyper")
-    genotyper = genotyper_class(model, min_variant_id, max_variant_id, variant_to_nodes, node_counts, genotype_frequencies,
-                            None, avg_coverage=args.average_coverage, genotype_transition_probs=None,
-                                tricky_variants=tricky_variants, use_naive_priors=args.use_naive_priors,
-                                helper_model=helper_model, helper_model_combo=helper_model_combo_matrix
-    )
-    genotypes, probs, count_probs = genotyper.genotype()
-    logging.info("N genotypes returned: %d" % len(genotypes))
-    return min_variant_id, max_variant_id, genotypes, probs, count_probs
 
 
 def genotype(args):
@@ -136,7 +96,7 @@ def genotype(args):
 
     if args.most_similar_variant_lookup is not None:
         most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
-        to_shared_memory(most_similar_variant_lookup, "most_similar_variant_lookup_shared" + args.shared_memory_unique_id)
+
 
     t = time.perf_counter()
     p = get_shared_pool(args.n_threads)   #Pool(16)
@@ -144,7 +104,6 @@ def genotype(args):
 
     if args.model_advanced is not None:
         model = NodeCountModelAdvanced.from_file(args.model_advanced)
-        to_shared_memory(model, "model_shared"+args.shared_memory_unique_id)
     else:
         try:
             model = GenotypeNodeCountModel.from_file(args.model) if args.model is not None else None
@@ -154,6 +113,7 @@ def genotype(args):
             except KeyError:
                 model = NodeCountModelAlleleFrequencies.from_file(args.model)
                 logging.info("Model is allele frequency model")
+
 
     variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
     node_counts = NodeCounts.from_file(args.counts)
@@ -170,35 +130,22 @@ def genotype(args):
     if args.tricky_variants is not None:
         logging.info("Using tricky variants")
         tricky_variants = np.load(args.tricky_variants)
-        to_shared_memory(SingleSharedArray(tricky_variants), "tricky_variants_shared" + args.shared_memory_unique_id)
 
-    if args.genotype_transition_probs is not None:
-        to_shared_memory(GenotypeTransitionProbabilities.from_file(args.genotype_transition_probs), "genotype_transition_probs_shared" + args.shared_memory_unique_id)
 
     helper_model = None
     helper_model_combo_matrix = None
     if args.helper_model is not None:
         helper_model = np.load(args.helper_model)
-        to_shared_memory(SingleSharedArray(helper_model), "helper_model" + args.shared_memory_unique_id)
         helper_model_combo_matrix = np.load(args.helper_model_combo_matrix)
-        to_shared_memory(SingleSharedArray(helper_model_combo_matrix), "helper_model_combo_matrix" + args.shared_memory_unique_id)
+
 
     genotype_frequencies = None
     if args.genotype_frequencies is not None:
         genotype_frequencies = GenotypeFrequencies.from_file(args.genotype_frequencies)
-        to_shared_memory(genotype_frequencies, "genotype_frequencies_shared" + args.shared_memory_unique_id)
-    if model is not None:
-        to_shared_memory(model, "model_shared" + args.shared_memory_unique_id)
-    #to_shared_memory(variant_to_nodes, "variant_to_nodes_shared" + args.shared_memory_unique_id)
-    #to_shared_memory(node_counts, "node_counts_shared" + args.shared_memory_unique_id)
+
 
     #pool = Pool(args.n_threads)
     results = []
-
-
-    #for min_variant_id, max_variant_id, genotypes, probs, count_probs in map(genotype_single_thread, zip(variant_chunks, repeat(args))):
-    #    results.append((min_variant_id, max_variant_id, genotypes, probs, count_probs))
-    #    #genotyped_variants.add_variants(result)
 
 
     genotyper_class = globals()[args.genotyper]
@@ -627,6 +574,9 @@ def run_argument_parser(args):
 
     def create_helper_model(args):
         args.shared_memory_unique_id = str(random.randint(0, 1e15))
+        n_threads = args.n_threads
+        pool = Pool(args.n_threads)
+        logging.info("Made pool")
 
         model = NodeCountModelAdvanced.from_file(args.node_count_model)
         variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
@@ -643,7 +593,6 @@ def run_argument_parser(args):
             most_similar = MostSimilarVariantLookup.from_file(args.most_similar_variants)
 
         if args.n_threads > 1:
-            n_threads = args.n_threads
             n_variants = len(variant_to_nodes.ref_nodes)
             intervals = [int(i) for i in np.linspace(0, n_variants, n_threads)]
             variant_intervals = [(from_id, to_id) for from_id, to_id in zip(intervals[0:-1], intervals[1:])]
@@ -652,16 +601,18 @@ def run_argument_parser(args):
             helpers = np.zeros(n_variants, dtype=np.uint32)
             genotype_matrix_combo = np.zeros((n_variants, 3, 3), dtype=np.float)
 
+            logging.info("Putting data in shared memory")
             # put data in shared memory
             to_shared_memory(genotype_matrix, "genotype_matrix"+args.shared_memory_unique_id)
             to_shared_memory(variant_to_nodes, "variant_to_nodes"+args.shared_memory_unique_id)
             to_shared_memory(model, "model"+args.shared_memory_unique_id)
+            logging.info("Put data in shared memory")
 
-            pool = Pool(args.n_threads)
             # genotyped_variants = VcfVariants(header_lines=variants.get_header())
 
             for from_variant, to_variant, subhelpers, subcombo in pool.imap(create_helper_model_single_thread,
                                                                               zip(variant_intervals, repeat(args))):
+                logging.info("Done with one chunk")
                 helpers[from_variant:to_variant] = subhelpers
                 genotype_matrix_combo[from_variant:to_variant] = subcombo
 
@@ -670,6 +621,7 @@ def run_argument_parser(args):
                                                                                                 model,
                                                                                                 variant_to_nodes,
                                                                                                 args.window_size)
+        genotype_matrix_combo = genotype_matrix_combo.astype(np.float32)
 
         np.save(args.out_file_name, helpers)
         logging.info("Saved helper model to file: %s" % args.out_file_name)

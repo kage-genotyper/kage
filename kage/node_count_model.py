@@ -121,7 +121,7 @@ class NodeCountModelAdvanced:
         except FileNotFoundError:
             data = np.load(file_name)
 
-        return cls(data["frequencies"], data["frequencies_squared"], data["certain"], data["frequency_matrix"], data["has_too_many"])
+        return cls(data["frequencies"], data["frequencies_squared"], data["certain"], data["frequency_matrix"].astype(np.float32), data["has_too_many"])
 
     def to_file(self, file_name):
         np.savez(file_name, frequencies=self.frequencies, frequencies_squared=self.frequencies_squared, certain=self.certain,
@@ -177,6 +177,7 @@ class NodeCountModelCreatorAdvanced:
 
         for node in (reference_node, variant_node):
             allele_frequencies_found = []
+            #allele_frequencies_found = [0.001]  # a dummy frequency  found
 
             expected_count_following = 0
             expected_count_not_following = 0

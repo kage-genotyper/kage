@@ -100,6 +100,7 @@ class GenotypeDebugger:
         logging.warning("")
         logging.warning("")
         logging.warning("")
+        assert self.predicted_genotypes.get(variant).genotype != "", self.predicted_genotypes.get(variant).vcf_line
         logging.warning("Predicted: %s. Correct is %s. Variant id: %d" % (self.predicted_genotypes.get(variant), self.truth_genotypes.get(variant), variant_id))
         logging.warning("Node counts on ref/alt %d/%d: %d/%d" % (
         reference_node, variant_node, self.node_counts.node_counts[reference_node],

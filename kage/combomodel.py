@@ -1,6 +1,8 @@
 import logging
 import time
+import gc
 from graph_kmer_index.shared_mem import run_numpy_based_function_in_parallel
+from .util import log_memory_usage_now
 
 import numpy as np
 from scipy.stats import nbinom, poisson, binom
@@ -24,8 +26,8 @@ class CountModel:
 class MultiplePoissonModel(CountModel):
     def __init__(self, base_lambda, repeat_dist, certain_counts):
         self._base_lambda = base_lambda
-        self._repeat_dist = repeat_dist
-        self._certain_counts = certain_counts[:, None]
+        self._repeat_dist = repeat_dist.astype(np.float32)
+        self._certain_counts = certain_counts[:, None].astype(np.uint16)
         self._n_variants = self._certain_counts.size
         self._max_duplicates = self._repeat_dist.shape[1]-1
 
@@ -116,10 +118,9 @@ class ComboModel(CountModel):
     @classmethod
     def from_counts(cls, base_lambda, p_sum, p_sq_sum, do_gamma_calc, certain_counts, allele_frequencies):
         models = []
-        model_indices = np.empty(certain_counts.size, dtype="int")
+        model_indices = np.empty(certain_counts.size, np.uint8)
         t = time.perf_counter()
         multi_poisson_mask = ~do_gamma_calc
-        logging.info("Time to get mask: %.4f" % (time.perf_counter()-t))
         t = time.perf_counter()
         models.append(
             MultiplePoissonModel.from_counts(base_lambda, certain_counts[multi_poisson_mask], allele_frequencies[multi_poisson_mask]))
@@ -144,14 +145,15 @@ class ComboModel(CountModel):
         return cls(models, model_indices)
 
     def logpmf(self, k, n_copies=1):
-        logpmf = np.zeros(k.size)
+        logpmf = np.zeros(k.size, dtype=np.float16)
         for i, model in enumerate(self._models):
             mask = (self._model_indexes == i)
             start_time = time.perf_counter()
-            logpmf[mask] = model.logpmf(k[mask], n_copies)
+            logpmf[mask] = model.logpmf(k[mask], n_copies).astype(np.float16)
             logging.info("Time spent on ComboModel.logpmf %s: %.4f" % (model.__class__, time.perf_counter()-start_time))
+            gc.collect()
 
-        return logpmf
+        return logpmf.astype(np.float16)
 
 
 class ComboModelParallel(CountModel):
