@@ -57,18 +57,18 @@ class MultiplePoissonModel(CountModel):
         assert k.shape == (self._n_variants, ), (k.shape, self._n_variants)
         t = time.perf_counter()
         rates = (self._certain_counts + n_copies + np.arange(self._max_duplicates+1)[None, :]+self.error_rate)*self._base_lambda
-        logging.info("Time getting rates: %.4f" % (time.perf_counter()-t))
+        logging.debug("Time getting rates: %.4f" % (time.perf_counter()-t))
         t = time.perf_counter()
         #log_probs = poisson.logpmf(k[:, None], rates)
         log_probs = parallel_poisson_logpmf(k[:, None], rates)
-        logging.info("Time poisson logpmf: %.4f" % (time.perf_counter()-t))
+        logging.debug("Time poisson logpmf: %.4f" % (time.perf_counter()-t))
         t = time.perf_counter()
         tot_probs = log_probs+self._repeat_dist
-        logging.info("Time tot probs: %.4f" % (time.perf_counter()-t))
+        logging.debug("Time tot probs: %.4f" % (time.perf_counter()-t))
         t = time.perf_counter()
         #result = logsumexp(tot_probs, axis=1)
         result = parallel_logsumexp(tot_probs)
-        logging.info("Time logsumexp: %.4f" % (time.perf_counter()-t))
+        logging.debug("Time logsumexp: %.4f" % (time.perf_counter()-t))
         return result
 
 
@@ -125,21 +125,21 @@ class ComboModel(CountModel):
         models.append(
             MultiplePoissonModel.from_counts(base_lambda, certain_counts[multi_poisson_mask], allele_frequencies[multi_poisson_mask]))
         model_indices[multi_poisson_mask] = 0
-        logging.info("Time spent on creating MultiplePoisson model: %.3f" % (time.perf_counter()-t))
+        logging.debug("Time spent on creating MultiplePoisson model: %.3f" % (time.perf_counter()-t))
         t = time.perf_counter()
 
         nb_mask = do_gamma_calc & (p_sum**2 <= (p_sum-p_sq_sum)*10)
         models.append(
             NegativeBinomialModel.from_counts(base_lambda, p_sum[nb_mask], p_sq_sum[nb_mask], certain_counts[nb_mask]))
         model_indices[nb_mask] = 1
-        logging.info("Time spent on creating negative binomial model: %.3f" % (time.perf_counter()-t))
+        logging.debug("Time spent on creating negative binomial model: %.3f" % (time.perf_counter()-t))
         t = time.perf_counter()
 
         poisson_mask = do_gamma_calc & (~nb_mask)
         models.append(
             PoissonModel.from_counts(base_lambda, certain_counts[poisson_mask], p_sum[poisson_mask]))
         model_indices[poisson_mask] = 2
-        logging.info("Time spent on creating Pisson model: %.3f" % (time.perf_counter()-t))
+        logging.debug("Time spent on creating Pisson model: %.3f" % (time.perf_counter()-t))
         t = time.perf_counter()
 
         return cls(models, model_indices)
@@ -150,7 +150,7 @@ class ComboModel(CountModel):
             mask = (self._model_indexes == i)
             start_time = time.perf_counter()
             logpmf[mask] = model.logpmf(k[mask], n_copies).astype(np.float16)
-            logging.info("Time spent on ComboModel.logpmf %s: %.4f" % (model.__class__, time.perf_counter()-start_time))
+            logging.debug("Time spent on ComboModel.logpmf %s: %.4f" % (model.__class__, time.perf_counter()-start_time))
             gc.collect()
 
         # adjust with prob of counts being wrong

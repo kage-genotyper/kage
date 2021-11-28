@@ -38,7 +38,7 @@ def make_helper_model_from_genotype_matrix_and_node_counts(genotype_matrix, node
     #genotype_matrix = convert_genotype_matrix(old_genotype_matrix)
     nodes_tuple = (variant_to_nodes.ref_nodes, variant_to_nodes.var_nodes)
     expected_ref, expected_alt = (node_counts.certain[nodes]+node_counts.frequencies[nodes] for nodes in nodes_tuple)
-    
+
     genotype_counts = np.array([np.sum(genotype_matrix==i, axis=-1) for i in range(3)]).T
     mean_genotype_counts = np.mean(genotype_counts, axis=0)
     mean_genotype_counts *= dummy_count/np.sum(mean_genotype_counts)
@@ -47,7 +47,7 @@ def make_helper_model_from_genotype_matrix_and_node_counts(genotype_matrix, node
 
     genotype_probs =  genotype_counts/genotype_counts.sum(axis=-1, keepdims=True)
     weights = get_prob_weights(expected_ref, expected_alt, genotype_probs)
-    
+
     score_func = get_weighted_calc_func(calc_likelihood, weights, 0.4)
     return make_helper_model_from_genotype_matrix(genotype_matrix, None, score_func=score_func, dummy_count=mean_genotype_counts, window_size=window_size)
 
@@ -86,7 +86,6 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
         helpers = most_similar_variant_lookup.lookup_array
     else:
         logging.info("Making raw from genotype matrix with window size %d" % window_size)
-        logging.info("Creating combined matrices")
         combined = create_combined_matrices(genotype_matrix, window_size)
         helpers = find_best_helper(combined, score_func, len(genotype_matrix), with_model=score_func!=calc_likelihood)
 
