@@ -21,7 +21,7 @@ def parallel_logsumexp(probs):
 
 
 class CountModel:
-    error_rate = 0.005
+    error_rate = 0.01
 
 class MultiplePoissonModel(CountModel):
     def __init__(self, base_lambda, repeat_dist, certain_counts):
@@ -152,6 +152,10 @@ class ComboModel(CountModel):
             logpmf[mask] = model.logpmf(k[mask], n_copies).astype(np.float16)
             logging.info("Time spent on ComboModel.logpmf %s: %.4f" % (model.__class__, time.perf_counter()-start_time))
             gc.collect()
+
+        # adjust with prob of counts being wrong
+        p_counts_are_wrong = 0
+        logpmf = np.logaddexp(np.log(p_counts_are_wrong) + np.log(1/3), np.log(1-p_counts_are_wrong) + logpmf)
 
         return logpmf.astype(np.float16)
 

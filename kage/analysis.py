@@ -43,7 +43,8 @@ class SimpleRecallPrecisionAnalyser:
 
 class GenotypeDebugger:
     def __init__(self, variant_nodes, k, variants, kmer_index, reverse_kmer_index, predicted_genotypes, truth_genotypes,
-                 truth_regions, node_counts, node_count_model, helper_variants, combination_matrix, probs, count_probs):
+                 truth_regions, node_counts, node_count_model, helper_variants, combination_matrix, probs, count_probs,
+                 pangenie):
         self.variant_nodes= variant_nodes
         self.node_count_model = node_count_model
         self.k = k
@@ -77,6 +78,7 @@ class GenotypeDebugger:
         self.combination_matrix = combination_matrix
         self.probs = probs
         self.count_probs = count_probs
+        self.pangenie = pangenie
 
     def print_report(self):
         for type in ["SNP", "DELETION", "INSERTION"]:
@@ -95,6 +97,15 @@ class GenotypeDebugger:
         reference_kmers = set(self.reverse_kmer_index.get_node_kmers(reference_node))
         variant_kmers = set(self.reverse_kmer_index.get_node_kmers(variant_node))
 
+        predicted_genotype = self.predicted_genotypes.get(variant).genotype
+
+        if predicted_genotype == "0|0" and not self.pangenie.has_variant(variant):
+            # ignore
+            return
+        elif predicted_genotype != "0|0" and self.pangenie.has_variant(variant) and self.pangenie.get(variant).genotype == predicted_genotype:
+            return
+
+
 
         logging.warning("")
         logging.warning("")
@@ -102,6 +113,10 @@ class GenotypeDebugger:
         logging.warning("")
         assert self.predicted_genotypes.get(variant).genotype != "", self.predicted_genotypes.get(variant).vcf_line
         logging.warning("Predicted: %s. Correct is %s. Variant id: %d" % (self.predicted_genotypes.get(variant), self.truth_genotypes.get(variant), variant_id))
+
+        if(self.pangenie.has_variant(variant)):
+            logging.info("PANGENIE: %s" % self.pangenie.get(variant))
+
         logging.warning("Node counts on ref/alt %d/%d: %d/%d" % (
         reference_node, variant_node, self.node_counts.node_counts[reference_node],
         self.node_counts.node_counts[variant_node]))
@@ -111,6 +126,7 @@ class GenotypeDebugger:
 
         logging.info("Model on ref node: %s" % self.node_count_model.describe_node(reference_node))
         logging.info("Model on alt node: %s" % self.node_count_model.describe_node(variant_node))
+
 
         most_similar = self.helper_variants[variant_id]
         most_similar_variant = self.predicted_genotypes[most_similar]

@@ -177,7 +177,7 @@ class NodeCountModelCreatorAdvanced:
 
         for node in (reference_node, variant_node):
             allele_frequencies_found = []
-            #allele_frequencies_found = [0.001]  # a dummy frequency  found
+            #allele_frequencies_found = [0.01]  # a dummy frequency  found
 
             expected_count_following = 0
             expected_count_not_following = 0

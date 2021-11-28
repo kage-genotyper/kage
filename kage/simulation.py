@@ -12,16 +12,21 @@ from obgraph.genotype_matrix import GenotypeMatrix
 
 
 def run_genotyper_on_simualated_data(genotyper, n_variants, n_individuals, average_coverage, coverage_std, duplication_rate):
-    simulator = GenotypingDataSimulator(n_variants, average_coverage, n_individuals, coverage_std, duplication_rate)
+    simulator = GenotypingDataSimulator(n_variants, n_individuals, average_coverage, coverage_std, duplication_rate)
     variants, node_counts, model, most_similar_variant_lookup, variant_to_nodes, helper_model, helper_model_combo_matrix = simulator.run()
     truth_variants = variants.copy()
 
     #g = genotyper(model, variants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup)
     g = genotyper(model, 0, len(variants)-1, variant_to_nodes, node_counts, None,
-                    most_similar_variant_lookup, avg_coverage=1,
+                    None, avg_coverage=1,
                     helper_model=helper_model, helper_model_combo=helper_model_combo_matrix
                     )
-    g.genotype_and_modify_variants(variants)
+    genotypes, probs, _ = g.genotype()
+    correct = np.array([t.get_numeric_genotype() for t in truth_variants])
+    print(np.where(correct != genotypes)[0])
+
+    for variant, genotype in zip(variants, genotypes):
+        variant.set_genotype(genotype, is_numeric=True)
 
     truth_variants.compute_similarity_to_other_variants(variants)
     accuracy = truth_variants.compute_similarity_to_other_variants(variants)
@@ -36,6 +41,7 @@ class GenotypingDataSimulator:
         self._n_variants = n_variants
         self._n_individuals = n_individuals
         self._average_coverage = average_coverage
+        logging.info("Average coverage: %d" % self._average_coverage)
         self._coverage_std = coverage_std
         self._duplication_rate = duplication_rate
 
@@ -51,27 +57,26 @@ class GenotypingDataSimulator:
         self.genotype_matrix = GenotypeMatrix(matrix)
 
     def _make_nonrandom_genotype_matrix(self, correlation_between_variants=0.9):
-        matrix = np.zeros((self._n_variants, self._n_individuals))
-        genotypes = [0, 1, 2]
+        matrix = np.zeros((self._n_individuals, self._n_variants)) + 1
+        genotypes = [1, 2, 3]
         for individual in range(self._n_individuals):
             # at first variant, give random genotype
             # at next variant, there is a certain prob that individual will have previous genotype % 3
             for variant in range(self._n_variants):
                 if variant == 0:
-                    genotype = np.random.randint(0, 3)
+                    genotype = np.random.randint(1, 4)
                 else:
                     if random.random() < correlation_between_variants:
-                        genotype = (matrix[variant-1, individual] % 3)
+                        genotype = (1 + (matrix[individual, variant-1] % 3))
                     else:
-                        genotype = np.random.randint(0, 3)
-                matrix[variant, individual] = genotype
+                        genotype = np.random.randint(1,4)
+                matrix[individual, variant] = genotype
 
         self.genotype_matrix = GenotypeMatrix(matrix)
 
     def run(self):
         #self._make_random_genotype_matrix()
         self._make_nonrandom_genotype_matrix()
-        print(self.genotype_matrix)
 
         self._reference_nodes = np.arange(1, self._n_variants+1)
         self._variant_nodes = np.arange(self._n_variants+1, self._n_variants*2+1)
@@ -82,9 +87,12 @@ class GenotypingDataSimulator:
                                                                     np.ones(self._n_variants))
         self._simulate_variants()
 
-        self.helper_variants, self.genotype_combo_matrix = make_helper_model_from_genotype_matrix_and_node_counts(
-            self.genotype_matrix, self._model, variant_to_nodes)
+        #self.helper_variants, self.genotype_combo_matrix = make_helper_model_from_genotype_matrix_and_node_counts(
+        #    self.genotype_matrix, self._model, variant_to_nodes)
+        self.helper_variants, self.genotype_combo_matrix = make_helper_model_from_genotype_matrix(
+            self.genotype_matrix.matrix.transpose(), None, dummy_count=1.0, window_size=20)
 
+        logging.info("N helpers. %d" % len(self.helper_variants))
 
         return self._variants, NodeCounts(self._node_counts), \
                self._model, most_simliar_variant_lookup, variant_to_nodes, \
@@ -103,12 +111,12 @@ class GenotypingDataSimulator:
             if variant == 0 or random.random() < consistency_rate:
                 individual = np.random.randint(0, self._n_individuals)
 
-            genotypes.append(genotype_matrix[variant, individual])
+            genotypes.append(genotype_matrix[individual, variant])
 
         return self._numeric_genotypes_to_literal(genotypes)
 
     def _numeric_genotypes_to_literal(self, genotypes):
-        map = {0: "0/0", 2: "1/1", 1: "0/1"}
+        map = {1: "0/0", 2: "1/1", 3: "0/1"}
         return [map[genotype] for genotype in genotypes]
 
     def _simulate_variants(self):
@@ -131,7 +139,6 @@ class GenotypingDataSimulator:
                     var_count += real_reads_on_haplotype
                 else:
                     ref_count += real_reads_on_haplotype
-
             self._node_counts[self._variant_nodes[i]] += var_count
             self._node_counts[self._reference_nodes[i]] += ref_count
 

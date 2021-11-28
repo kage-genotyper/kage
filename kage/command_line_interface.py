@@ -54,6 +54,7 @@ def analyse_variants(args):
     from .helper_index import CombinationMatrix
 
     whitelist = None
+    pangenie = VcfVariants.from_vcf(args.pangenie)
 
     logging.info("Reading variant nodes")
     variant_nodes = VariantToNodes.from_file(args.variant_nodes)
@@ -83,7 +84,7 @@ def analyse_variants(args):
 
     analyser = GenotypeDebugger(variant_nodes, args.kmer_size, all_variants, kmer_index, reverse_index, predicted_genotypes,
                                 true_genotypes, TruthRegions(args.truth_regions_file), NodeCounts.from_file(args.node_counts),
-                                model, helper_variants, combination_matrix, probs, count_probs)
+                                model, helper_variants, combination_matrix, probs, count_probs, pangenie)
     analyser.analyse_unique_kmers_on_variants()
 
 
@@ -288,6 +289,7 @@ def run_argument_parser(args):
     subparser.add_argument("-F", "--combination-matrix", required=True)
     subparser.add_argument("-p", "--probs", required=True)
     subparser.add_argument("-c", "--count_probs", required=True)
+    subparser.add_argument("-a", "--pangenie", required=False)
     subparser.set_defaults(func=analyse_variants)
 
 
@@ -555,7 +557,9 @@ def run_argument_parser(args):
         genotype_matrix = from_shared_memory(GenotypeMatrix, "genotype_matrix"+args.shared_memory_unique_id)
 
         # read genotype matrix etc from shared memory
-        submatrix = GenotypeMatrix(genotype_matrix.matrix[from_variant:to_variant,:])
+        #submatrix = GenotypeMatrix(genotype_matrix.matrix[from_variant:to_variant,:])
+        submatrix = GenotypeMatrix(genotype_matrix.matrix[from_variant:to_variant:,])
+        logging.info("Creating helper model for %d individuals and %d variants" % (submatrix.matrix.shape[1], submatrix.matrix.shape[0]))
         sub_variant_to_nodes = variant_to_nodes.slice(from_variant, to_variant)
         use_duplicate_counts = args.use_duplicate_counts
         if use_duplicate_counts:
