@@ -21,3 +21,5 @@ tests/__pycache__/
 *.so
 *.html
 *.shm
+build/
+kage.egg-info/
