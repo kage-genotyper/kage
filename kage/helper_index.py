@@ -52,15 +52,15 @@ def make_helper_model_from_genotype_matrix_and_node_counts(genotype_matrix, node
     return make_helper_model_from_genotype_matrix(genotype_matrix, None, score_func=score_func, dummy_count=mean_genotype_counts, window_size=window_size)
 
 
-def get_helper_posterior(genotype_combo_matrix, global_helper_weight=1):
-    helper_sum = np.mean(genotype_combo_matrix, axis=M, keepdims=True)
+def get_helper_posterior(genotype_combo_matrix, global_helper_weight=10):
+    helper_sum = np.sum(genotype_combo_matrix, axis=M, keepdims=True)
     assert helper_sum[0].shape==(3, 1)
     global_helper_prior = np.mean(helper_sum, axis=0, keepdims=True) + 0.1*np.array([182, 20, 13])[:, None]/215  # numbers based on real data
     #print("Global helper prior: \n%s" % global_helper_prior)
     #print("Helper sum: \n%s" % helper_sum)
     assert global_helper_prior.shape == (1, 3, 1)
-    #helper_posterior = global_helper_prior/global_helper_prior.sum()*global_helper_weight+helper_sum
-    helper_posterior = global_helper_prior   # global_helper_prior * global_helper_weight + helper_sum
+    helper_posterior = global_helper_prior/global_helper_prior.sum()*global_helper_weight+helper_sum
+    #helper_posterior = global_helper_prior   # global_helper_prior * global_helper_weight + helper_sum
     helper_posterior = helper_posterior/helper_posterior.sum(axis=H, keepdims=True)
     assert np.allclose(helper_posterior.sum(axis=H), 1), helper_posterior
     return helper_posterior
