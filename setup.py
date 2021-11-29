@@ -1,14 +1,9 @@
 from setuptools import setup, Extension
 
-
-
-with open("Readme.md", 'r') as f:
-    long_description = f.read()
-
-setup(name='kage',
-      version='0.0.1',
+setup(name='kage-genotyper',
+      version='0.0.3',
       description='KAGE',
-      long_description=long_description,
+      long_description_content_type="text/markdown",
       url='http://github.com/ivargr/kage',
       author='Ivar Grytten',
       author_email='',
@@ -16,8 +11,9 @@ setup(name='kage',
       packages=["kage"],
       zip_safe=False,
       install_requires=['numpy', 'tqdm', 'pyfaidx', 'pathos', 'cython', 'scipy',
-                        'obgraph @ git+https://git@github.com/ivargr/obgraph@master#egg=obgraph',
-                        'graph_kmer_index @ git+https://git@github.com/ivargr/graph_kmer_index@master#egg=graph_kmer_index'
+                        'obgraph',
+                        'graph_kmer_index',
+                        'kmer_mapper'
                         ],
       include_dirs=["."],
       classifiers=[
@@ -28,3 +24,9 @@ setup(name='kage',
       }
 
 )
+
+""""
+rm -rf dist
+python3 setup.py sdist
+twine upload --skip-existing dist/*
+"""
