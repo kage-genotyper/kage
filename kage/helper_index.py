@@ -52,10 +52,11 @@ def make_helper_model_from_genotype_matrix_and_node_counts(genotype_matrix, node
     return make_helper_model_from_genotype_matrix(genotype_matrix, None, score_func=score_func, dummy_count=mean_genotype_counts, window_size=window_size)
 
 
-def get_helper_posterior(genotype_combo_matrix, global_helper_weight=10):
-    helper_sum = np.sum(genotype_combo_matrix, axis=M, keepdims=True)
+def get_helper_posterior(genotype_combo_matrix, global_helper_weight=5):
+    logging.info("Dtype genotype combo matrix: %s" % genotype_combo_matrix.dtype)
+    helper_sum = np.sum(genotype_combo_matrix, axis=M, keepdims=True) + 1
     assert helper_sum[0].shape==(3, 1)
-    global_helper_prior = np.mean(helper_sum, axis=0, keepdims=True) + 0.1*np.array([182, 20, 13])[:, None]/215  # numbers based on real data
+    global_helper_prior = np.sum(helper_sum, axis=0, keepdims=True)  + 1 # + 0.1*np.array([182, 20, 13])[:, None]/215  # numbers based on real data
     #print("Global helper prior: \n%s" % global_helper_prior)
     #print("Helper sum: \n%s" % helper_sum)
     assert global_helper_prior.shape == (1, 3, 1)
@@ -65,13 +66,13 @@ def get_helper_posterior(genotype_combo_matrix, global_helper_weight=10):
     assert np.allclose(helper_posterior.sum(axis=H), 1), helper_posterior
     return helper_posterior
 
-def get_population_priors(genotype_combo_matrix, weight=18.75, weight_diagonal=0, weight_left_column=0, weight_global=1000):
+def get_population_priors(genotype_combo_matrix, weight=5, weight_diagonal=0, weight_left_column=0, weight_global=1):
     """n_variants x helper x main"""
     prior = np.eye(3) * weight_diagonal
     prior[:,0] = weight_left_column  # going to 0/0 is high
     prior += weight_global
     #print("Weights added to population priors: \n%s" % prior)
-    mean = np.mean(genotype_combo_matrix+prior, axis=0)
+    mean = np.sum(genotype_combo_matrix, axis=0) + prior
     #print("Population prior before weighted: \n%s" % mean)
     weighted = mean/mean.sum(axis=M, keepdims=True)*weight #helper_sum*weight
     #print("Population prior after weighted: \n%s" % weighted)
