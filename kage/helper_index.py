@@ -22,10 +22,24 @@ class CombinationMatrix:
 
 
 def calc_likelihood(count_matrix):
-    count_matrix = count_matrix+1
+    dummy_count = 1
+    count_matrix = count_matrix+dummy_count
     p = count_matrix/count_matrix.sum(axis=M, keepdims=True)
-    return np.sum(count_matrix*np.log(p), axis=(M, H))
-    
+
+    #boost_matrix = np.ones((3, 3))
+    #boost_matrix[1, 1] = 2
+    #boost_matrix[2, 2] = 2
+
+    #boost_matrix[:,1] = np.array([1, 3, 3])
+    #boost_matrix[1:3, 1:3] = np.ones((2, 2)) * 2
+    return np.log(count_matrix[:,0,0]) + np.log(count_matrix[:,1,1]) + np.log(count_matrix[:,2,2])
+    return np.sum(np.log(np.max(count_matrix, axis=2)+0.00001 - np.mean(count_matrix, axis=2)), axis=1)
+    #return np.sum(np.log(np.max(count_matrix, axis=2) - np.min(count_matrix, axis=2)), axis=1)
+    #return np.sum(np.log(np.max(count_matrix, axis=2)), axis=1)
+    #return np.sum(np.log(np.sum(count_matrix, axis=M)), axis=1)
+    return np.sum(boost_matrix*count_matrix*np.log(p), axis=(M, H))
+    #return np.sum(count_matrix*np.log(p), axis=(M, H))
+
 def calc_argmax(count_matrix):
     return np.sum(np.max(count_matrix, axis=M), axis=-1)/count_matrix.sum(axis=(M, H))
 
@@ -54,11 +68,11 @@ def make_helper_model_from_genotype_matrix_and_node_counts(genotype_matrix, node
 
 def get_helper_posterior(genotype_combo_matrix, global_helper_weight=5):
     logging.info("Dtype genotype combo matrix: %s" % genotype_combo_matrix.dtype)
-    helper_sum = np.sum(genotype_combo_matrix, axis=M, keepdims=True) + 1
+    helper_sum = np.sum(genotype_combo_matrix, axis=M, keepdims=True)
     assert helper_sum[0].shape==(3, 1)
-    global_helper_prior = np.sum(helper_sum, axis=0, keepdims=True)  + 1 # + 0.1*np.array([182, 20, 13])[:, None]/215  # numbers based on real data
-    #print("Global helper prior: \n%s" % global_helper_prior)
-    #print("Helper sum: \n%s" % helper_sum)
+    global_helper_prior = np.mean(helper_sum, axis=0, keepdims=True)  + 1/genotype_combo_matrix.shape[0] # + 0.1*np.array([182, 20, 13])[:, None]/215  # numbers based on real data
+    print("Global helper prior: \n%s" % global_helper_prior)
+    print("Helper sum: \n%s" % helper_sum)
     assert global_helper_prior.shape == (1, 3, 1)
     helper_posterior = global_helper_prior/global_helper_prior.sum()*global_helper_weight+helper_sum
     #helper_posterior = global_helper_prior   # global_helper_prior * global_helper_weight + helper_sum
@@ -71,11 +85,11 @@ def get_population_priors(genotype_combo_matrix, weight=5, weight_diagonal=0, we
     prior = np.eye(3) * weight_diagonal
     prior[:,0] = weight_left_column  # going to 0/0 is high
     prior += weight_global
-    #print("Weights added to population priors: \n%s" % prior)
+    print("Weights added to population priors: \n%s" % prior)
     mean = np.sum(genotype_combo_matrix, axis=0) + prior
-    #print("Population prior before weighted: \n%s" % mean)
+    print("Population prior before weighted: \n%s" % mean)
     weighted = mean/mean.sum(axis=M, keepdims=True)*weight #helper_sum*weight
-    #print("Population prior after weighted: \n%s" % weighted)
+    print("Population prior after weighted: \n%s" % weighted)
     return weighted
 
 def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant_lookup=False, dummy_count=1, score_func=calc_likelihood, window_size=1000):
@@ -97,14 +111,14 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
     #print("########")
     population_prior = get_population_priors(genotype_combo_matrix)
     helper_posterior  = get_helper_posterior(genotype_combo_matrix)
-    #print("Genotype combo matrix raw:")
+    print("Genotype combo matrix raw:")
     print(genotype_combo_matrix[0])
     #print("Population prior: \n%s" % population_prior)
-    #print("Helper posterior:\n%s", helper_posterior[0])
+    print("Helper posterior:\n%s", helper_posterior[0])
     population_posterior = genotype_combo_matrix + population_prior
     population_posterior = population_posterior/population_posterior.sum(axis=M, keepdims=True)*helper_posterior
-    #print("Genotype combo matrix posterior: ")
-    #print(population_posterior[0])
+    print("Genotype combo matrix posterior: ")
+    print(population_posterior[0])
 
     assert len(helpers) == genotype_matrix.shape[0]
 
