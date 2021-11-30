@@ -1,7 +1,7 @@
 from setuptools import setup, Extension
 
 setup(name='kage-genotyper',
-      version='0.0.3',
+      version='0.0.4',
       description='KAGE',
       long_description_content_type="text/markdown",
       url='http://github.com/ivargr/kage',
@@ -13,7 +13,8 @@ setup(name='kage-genotyper',
       install_requires=['numpy', 'tqdm', 'pyfaidx', 'pathos', 'cython', 'scipy',
                         'obgraph',
                         'graph_kmer_index',
-                        'kmer_mapper'
+                        'kmer_mapper',
+                        'graph_read_simulator'
                         ],
       include_dirs=["."],
       classifiers=[
@@ -29,4 +30,5 @@ setup(name='kage-genotyper',
 rm -rf dist
 python3 setup.py sdist
 twine upload --skip-existing dist/*
+
 """
