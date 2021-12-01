@@ -7,51 +7,11 @@ from collections import defaultdict
 import numpy as np
 from scipy.stats import poisson, binom
 from obgraph import VariantNotFoundException
-from .kmers import read_kmers
 from Bio.Seq import Seq
 from .node_counts import NodeCounts
 
 def parse_vcf_genotype(genotype):
     return genotype.replace("|", "/").replace("1/0", "1/0")
-
-
-class LocalGenotyper:
-    def __init__(self, reads, reverse_kmer_index, variants, variant_to_nodes, max_node_id, genotype_frequencies, node_count_array):
-        self.reads = reads
-        self.reverse_index = reverse_kmer_index
-        self._genotype_frequencies = genotype_frequencies
-        self._k = 31
-        self._power_array = np.power(4, np.arange(0, self._k))
-        self._variants = variants
-        self._variant_to_nodes = variant_to_nodes
-        self._max_node_id = max_node_id
-        self._node_counts = node_count_array
-
-    def genotype(self):
-        self._node_counts = np.zeros(self._max_node_id)
-        for read in self.reads:
-            assert read is not None
-            self._get_node_counts(read)
-
-        #logging.info("Sum of node counts: %d" % np.sum(self._node_counts))
-        genotyper = Genotyper(None, self._variants, self._variant_to_nodes, NodeCounts(self._node_counts), self._genotype_frequencies, None)
-        genotyper.genotype()
-
-    def _get_node_counts(self, read):
-        sequence, position = read
-
-        for variant in self._variants:
-            ref_node = self._variant_to_nodes.ref_nodes[variant.vcf_line_number]
-            var_node = self._variant_to_nodes.var_nodes[variant.vcf_line_number]
-
-            ref_node_kmers = self.reverse_index.get_node_kmers(ref_node)
-            var_node_kmers = self.reverse_index.get_node_kmers(var_node)
-
-            kmers = read_kmers(sequence, self._power_array)
-            if len([kmer for kmer in kmers if kmer in ref_node_kmers]) > 0:
-                self._node_counts[ref_node] += 1
-            elif len([kmer for kmer in kmers if kmer in var_node_kmers]) > 0:
-                self._node_counts[var_node] += 1
 
 
 
