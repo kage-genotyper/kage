@@ -23,7 +23,7 @@ The above will perform genotyping on some dummy data and should finish without a
 
 If you want to make your own indexes for your own reference genome and variants, you should use the kage Snakemake pipeline which can [be found here](https://github.com/ivargr/genotyping-benchmarking). Feel free to contact us if you want help making these indexes for your desired variants.
 
-Once you have an index of the variants you want to genotype, running kage is straight-forwards:
+Once you have an index of the variants you want to genotype, running kage is straight-forward:
 
 ### Step 1: Map fasta kmers to the pangenome index:
 ```python
