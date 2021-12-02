@@ -36,7 +36,7 @@ from .helper_index import make_helper_model_from_genotype_matrix, make_helper_mo
 from obgraph.genotype_matrix import GenotypeMatrix
 from obgraph.numpy_variants import NumpyVariants
 from .tricky_variants import TrickyVariants
-from .index_bundle import IndexBundle
+from graph_kmer_index.index_bundle import IndexBundle
 
 np.random.seed(1)
 np.seterr(all="ignore")
