@@ -4,7 +4,7 @@ KAGE is a tool for efficiently genotyping short SNPs and indels from short genom
 
 
 ## Installation
-Kage required Python 3, and can be installed using Pip: 
+KAGE required Python 3, and can be installed using Pip: 
 ```
 pip install kage-genotyper
 ```
@@ -19,11 +19,11 @@ The above will perform genotyping on some dummy data and should finish without a
 
 
 ## How to run
-**kage** is easy and fast to use once you have indexes built for the variants you want to genotype. However, building these indexes can take some time. Therefore, we have prebuilt indexes for 100 Genomes Projects variants, which can be [downloaded from here](..).
+**KAGE** is easy and fast to use once you have indexes built for the variants you want to genotype. However, building these indexes can take some time. Therefore, we have prebuilt indexes for 100 Genomes Projects variants, which can be [downloaded from here](..).
 
-If you want to make your own indexes for your own reference genome and variants, you should use the kage Snakemake pipeline which can [be found here](https://github.com/ivargr/genotyping-benchmarking). Feel free to contact us if you want help making these indexes for your desired variants.
+If you want to make your own indexes for your own reference genome and variants, you should use the KAGE Snakemake pipeline which can [be found here](https://github.com/ivargr/genotyping-benchmarking). Feel free to contact us if you want help making these indexes for your desired variants.
 
-Once you have an index of the variants you want to genotype, running kage is straight-forward:
+Once you have an index of the variants you want to genotype, running KAGE is straight-forward:
 
 ### Step 1: Map fasta kmers to the pangenome index:
 ```python
