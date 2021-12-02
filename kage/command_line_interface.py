@@ -32,7 +32,7 @@ from obgraph.haplotype_matrix import HaplotypeMatrix
 from obgraph.variant_to_nodes import NodeToVariants
 import random
 from obgraph.genotype_matrix import GenotypeMatrix
-from .helper_index import make_helper_model_from_genotype_matrix, make_helper_model_from_genotype_matrix_and_node_counts
+from .helper_index import make_helper_model_from_genotype_matrix, make_helper_model_from_genotype_matrix_and_node_counts, HelperVariants
 from obgraph.genotype_matrix import GenotypeMatrix
 from obgraph.numpy_variants import NumpyVariants
 
@@ -136,7 +136,7 @@ def genotype(args):
     helper_model = None
     helper_model_combo_matrix = None
     if args.helper_model is not None:
-        helper_model = np.load(args.helper_model)
+        helper_model = HelperVariants.from_file(args.helper_model).helper_variants
         helper_model_combo_matrix = np.load(args.helper_model_combo_matrix)
 
 

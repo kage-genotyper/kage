@@ -9,6 +9,15 @@ M = MAIN
 H = HELPER
 
 
+class HelperVariants:
+    def __init__(self, helper_variants):
+        self.helper_variants = helper_variants
+
+    @classmethod
+    def from_file(cls, file_name):
+        return cls(np.load(file_name))
+
+
 class CombinationMatrix:
     def __init__(self, matrix):
         self.matrix = matrix
