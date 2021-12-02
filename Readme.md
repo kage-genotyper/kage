@@ -6,7 +6,7 @@ KAGE is a tool for efficiently genotyping short SNPs and indels from short genom
 
 
 ## Installation
-KAGE required Python 3, and can be installed using Pip: 
+KAGE requires Python 3, and can be installed using Pip: 
 ```
 pip install kage-genotyper
 ```
