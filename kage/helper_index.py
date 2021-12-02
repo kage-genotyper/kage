@@ -10,6 +10,7 @@ H = HELPER
 
 
 class HelperVariants:
+    properties = {"helper_variants"}
     def __init__(self, helper_variants):
         self.helper_variants = helper_variants
 
@@ -19,6 +20,7 @@ class HelperVariants:
 
 
 class CombinationMatrix:
+    properties = {"matrix"}
     def __init__(self, matrix):
         self.matrix = matrix
 
@@ -134,11 +136,11 @@ def make_helper_model_from_genotype_matrix(genotype_matrix, most_similar_variant
     return helpers, population_posterior
 
 def find_best_helper(combined, score_func, N, with_model=False):
-    best_idx, best_score = np.empty(N, dtype="int"), -np.inf*np.ones(N)
+    best_idx, best_score = np.zeros(N, dtype="int"), -np.inf*np.ones(N)
     for j, counts in enumerate(combined, 1):
         if j < 4:
             continue
-        if j % 50 == 0:
+        if j % 1 == 0:
             logging.info("Window %d" % j)
         scores = score_func(counts, j) if with_model else score_func(counts)
         do_update = scores > best_score[j:]

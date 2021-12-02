@@ -32,9 +32,11 @@ from obgraph.haplotype_matrix import HaplotypeMatrix
 from obgraph.variant_to_nodes import NodeToVariants
 import random
 from obgraph.genotype_matrix import GenotypeMatrix
-from .helper_index import make_helper_model_from_genotype_matrix, make_helper_model_from_genotype_matrix_and_node_counts, HelperVariants
+from .helper_index import make_helper_model_from_genotype_matrix, make_helper_model_from_genotype_matrix_and_node_counts, HelperVariants, CombinationMatrix
 from obgraph.genotype_matrix import GenotypeMatrix
 from obgraph.numpy_variants import NumpyVariants
+from .tricky_variants import TrickyVariants
+from .index_bundle import IndexBundle
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -94,61 +96,62 @@ def genotype(args):
     logging.info("Using genotyper %s" % args.genotyper)
     args.shared_memory_unique_id = str(random.randint(0, 1e15))
     logging.info("Random id for shared memory: %s" % args.shared_memory_unique_id)
+    p = get_shared_pool(args.n_threads)  # Pool(16)
+    genotype_frequencies = None
 
-    if args.most_similar_variant_lookup is not None:
-        most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
-
-
-    t = time.perf_counter()
-    p = get_shared_pool(args.n_threads)   #Pool(16)
-    logging.info("Time spent making pool: %.4f" % (time.perf_counter()-t))
-
-    if args.model_advanced is not None:
-        model = NodeCountModelAdvanced.from_file(args.model_advanced)
+    if args.index_bundle is not None:
+        logging.info("Reading all indexes from an index bundle")
+        index = IndexBundle.from_file(args.index_bundle).indexes
+        model = index["NodeCountModelAdvanced"]
+        variant_to_nodes = index["VariantToNodes"]
+        variants = index["NumpyVariants"]
+        helper_model = index["HelperVariants"].helper_variants
+        helper_model_combo_matrix = index["CombinationMatrix"].matrix
+        tricky_variants = index["TrickyVariants"].tricky_variants
     else:
-        try:
-            model = GenotypeNodeCountModel.from_file(args.model) if args.model is not None else None
-        except KeyError:
+        logging.info("Not reading indexes from bundle, but from separate files")
+
+        if args.most_similar_variant_lookup is not None:
+            most_similar_variant_lookup = MostSimilarVariantLookup.from_file(args.most_similar_variant_lookup)
+
+        if args.model_advanced is not None:
+            model = NodeCountModelAdvanced.from_file(args.model_advanced)
+        else:
             try:
-                model = NodeCountModel.from_file(args.model)
+                model = GenotypeNodeCountModel.from_file(args.model) if args.model is not None else None
             except KeyError:
-                model = NodeCountModelAlleleFrequencies.from_file(args.model)
-                logging.info("Model is allele frequency model")
+                try:
+                    model = NodeCountModel.from_file(args.model)
+                except KeyError:
+                    model = NodeCountModelAlleleFrequencies.from_file(args.model)
+                    logging.info("Model is allele frequency model")
 
 
-    variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
+        variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
+        variants = NumpyVariants.from_file(args.vcf)
+        tricky_variants = None
+        if args.tricky_variants is not None:
+            logging.info("Using tricky variants")
+            tricky_variants = TrickyVariants.from_file(args.tricky_variants).tricky_variants
+
+        helper_model = None
+        helper_model_combo_matrix = None
+        if args.helper_model is not None:
+            helper_model = HelperVariants.from_file(args.helper_model).helper_variants
+            helper_model_combo_matrix = np.load(args.helper_model_combo_matrix)
+
+        if args.genotype_frequencies is not None:
+            genotype_frequencies = GenotypeFrequencies.from_file(args.genotype_frequencies)
+
     node_counts = NodeCounts.from_file(args.counts)
     max_variant_id = len(variant_to_nodes.ref_nodes)-1
-
-    variants = NumpyVariants.from_file(args.vcf)
     logging.info("Max variant id is assumed to be %d" % max_variant_id)
     #variant_chunks = list([int(i) for i in np.linspace(0, max_variant_id, args.n_threads + 1)])
     #variant_chunks = [(from_pos, to_pos) for from_pos, to_pos in zip(variant_chunks[0:-1], variant_chunks[1:])]
     variant_chunks = [(0, max_variant_id)]
     logging.info("Will genotype intervals %s" % variant_chunks)
 
-    tricky_variants = None
-    if args.tricky_variants is not None:
-        logging.info("Using tricky variants")
-        tricky_variants = np.load(args.tricky_variants)
-
-
-    helper_model = None
-    helper_model_combo_matrix = None
-    if args.helper_model is not None:
-        helper_model = HelperVariants.from_file(args.helper_model).helper_variants
-        helper_model_combo_matrix = np.load(args.helper_model_combo_matrix)
-
-
-    genotype_frequencies = None
-    if args.genotype_frequencies is not None:
-        genotype_frequencies = GenotypeFrequencies.from_file(args.genotype_frequencies)
-
-
-    #pool = Pool(args.n_threads)
     results = []
-
-
     genotyper_class = globals()[args.genotyper]
     genotyper = genotyper_class(model, 0, max_variant_id, variant_to_nodes, node_counts, genotype_frequencies,
                                 None, avg_coverage=args.average_coverage, genotype_transition_probs=None,
@@ -295,14 +298,15 @@ def run_argument_parser(args):
 
     subparser = subparsers.add_parser("genotype")
     subparser.add_argument("-c", "--counts", required=True)
-    subparser.add_argument("-g", "--variant-to-nodes", required=True)
-    subparser.add_argument("-v", "--vcf", required=True, help="Vcf to genotype")
+    subparser.add_argument("-i", "--index-bundle", required=False, help="If set, needs to be a bundle of all the indexes. If not set, other indexes needs to be specified.")
+    subparser.add_argument("-g", "--variant-to-nodes", required=False)
+    subparser.add_argument("-v", "--vcf", required=False, help="Vcf to genotype")
     subparser.add_argument("-m", "--model", required=False, help="Node count model")
     subparser.add_argument("-A", "--model_advanced", required=False, help="Node count model")
     subparser.add_argument("-G", "--genotype-frequencies", required=False, help="Genotype frequencies")
     subparser.add_argument("-M", "--most_similar_variant_lookup", required=False, help="Most similar variant lookup")
     subparser.add_argument("-o", "--out-file-name", required=True, help="Will write genotyped variants to this file")
-    subparser.add_argument("-C", "--genotyper", required=False, default="Genotyper", help="Genotyper to use")
+    subparser.add_argument("-C", "--genotyper", required=False, default="CombinationModelGenotyper", help="Genotyper to use")
     subparser.add_argument("-t", "--n-threads", type=int, required=False, default=8)
     subparser.add_argument("-a", "--average-coverage", type=float, default=15, help="Expected average read coverage")
     subparser.add_argument("-q", "--min-genotype-quality", type=float, default=0.95, help="Min prob of genotype being correct")
@@ -422,7 +426,9 @@ def run_argument_parser(args):
                     tricky_variants[variant_id] = 1
                     n_tricky_kmers += 1
 
-        np.save(args.out_file_name, tricky_variants)
+
+        TrickyVariants(tricky_variants).to_file(args.out_file_name)
+        #np.save(args.out_file_name, tricky_variants)
         logging.info("Wrote tricky variants to file %s" % args.out_file_name)
 
     subparser = subparsers.add_parser("find_tricky_variants")
@@ -437,7 +443,7 @@ def run_argument_parser(args):
     def remove_shared_memory_command_line(args):
         remove_all_shared_memory()
 
-    subparser = subparsers.add_parser("remove_shared_memory")
+    subparser = subparsers.add_parser("free_memory")
     subparser.set_defaults(func=remove_shared_memory_command_line)
 
     def filter_variants(args):
@@ -644,6 +650,33 @@ def run_argument_parser(args):
     subparser.add_argument("-w", "--window-size", required=False, default=50, type=int,
                            help="Number of variants before/after considered as potential helper variant")
     subparser.set_defaults(func=create_helper_model)
+
+
+    def make_index_bundle(args):
+        indexes = {
+            "VariantToNodes": VariantToNodes.from_file(args.variant_to_nodes),
+            "NumpyVariants": NumpyVariants.from_file(args.numpy_variants),
+            "NodeCountModelAdvanced": NodeCountModelAdvanced.from_file(args.model_advanced),
+            "TrickyVariants": TrickyVariants.from_file(args.tricky_variants),
+            "HelperVariants": HelperVariants.from_file(args.helper_model),
+            "CombinationMatrix": CombinationMatrix.from_file(args.helper_model_combo_matrix),
+            "KmerIndex": KmerIndex.from_file(args.kmer_index)
+        }
+        bundle = IndexBundle(indexes)
+        bundle.to_file(args.out_file_name)
+        logging.info("Wrote index bundle to file %s" % args.out_file_name)
+
+    subparser = subparsers.add_parser("make_index_bundle")
+    subparser.add_argument("-g", "--variant-to-nodes", required=True)
+    subparser.add_argument("-v", "--numpy-variants", required=True)
+    subparser.add_argument("-A", "--model_advanced", required=True, help="Node count model")
+    subparser.add_argument("-o", "--out-file-name", required=True, help="Will write genotyped variants to this file")
+    subparser.add_argument("-x", "--tricky-variants", required=True)
+    subparser.add_argument("-f", "--helper-model", required=True)
+    subparser.add_argument("-F", "--helper-model-combo-matrix", required=True)
+    subparser.add_argument("-i", "--kmer-index", required=True)
+    subparser.set_defaults(func=make_index_bundle)
+
 
 
     if len(args) == 0:
