@@ -389,18 +389,6 @@ def run_argument_parser(args):
             ref_node = variant_to_nodes.ref_nodes[variant_id]
             var_node = variant_to_nodes.var_nodes[variant_id]
 
-            """
-            model_counts_ref = sorted([
-                model.counts_homo_ref[ref_node],
-                model.counts_homo_alt[ref_node],
-                model.counts_hetero[ref_node]
-            ])
-            model_counts_var = sorted([
-                model.counts_homo_ref[var_node],
-                model.counts_homo_alt[var_node],
-                model.counts_hetero[var_node]
-            ])
-            """
             model_counts_ref = 1 + model.certain[ref_node] + model.frequencies[ref_node]
             model_counts_var = 1 + model.certain[var_node] + model.frequencies[var_node]
 
