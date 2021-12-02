@@ -1,3 +1,5 @@
+[![PyPI version](https://badge.fury.io/py/kage-genotyper.svg)](https://badge.fury.io/py/kage-genotyper)
+![example workflow](https://github.com/ivargr/kage/actions/workflows/install-and-test.yml/badge.svg)
 
 ## kage: *K*mer-based *A*lignment-free *G*raph G*e*notyper
 KAGE is a tool for efficiently genotyping short SNPs and indels from short genomic reads.
