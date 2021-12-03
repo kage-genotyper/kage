@@ -140,7 +140,7 @@ def find_best_helper(combined, score_func, N, with_model=False):
     for j, counts in enumerate(combined, 1):
         if j < 4:
             continue
-        if j % 1 == 0:
+        if j % 50 == 0:
             logging.info("Window %d" % j)
         scores = score_func(counts, j) if with_model else score_func(counts)
         do_update = scores > best_score[j:]

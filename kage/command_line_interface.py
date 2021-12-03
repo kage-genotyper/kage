@@ -26,7 +26,6 @@ from obgraph.variant_to_nodes import VariantToNodes
 from .genotyper import Genotyper
 from .numpy_genotyper import NumpyGenotyper
 from .combination_model_genotyper import CombinationModelGenotyper
-from .bayes_genotyper import NewBayesGenotyper
 import SharedArray as sa
 from obgraph.haplotype_matrix import HaplotypeMatrix
 from obgraph.variant_to_nodes import NodeToVariants
