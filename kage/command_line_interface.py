@@ -94,6 +94,8 @@ def analyse_variants(args):
 def genotype(args):
     start_time = time.perf_counter()
     logging.info("Using genotyper %s" % args.genotyper)
+    logging.info("Read coverage is set to %.3f" % args.average_coverage)
+
     args.shared_memory_unique_id = str(random.randint(0, 1e15))
     logging.info("Random id for shared memory: %s" % args.shared_memory_unique_id)
     p = get_shared_pool(args.n_threads)  # Pool(16)
