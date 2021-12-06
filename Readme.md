@@ -21,7 +21,7 @@ The above will perform genotyping on some dummy data and should finish without a
 
 
 ## How to run
-**KAGE** is easy and fast to use once you have indexes built for the variants you want to genotype. However, building these indexes can take some time. Therefore, we have prebuilt indexes for 100 Genomes Projects variants, which can be [downloaded from here](https://zenodo.org/record/5751777/files/index_2548individuals.npz?download=1).
+**KAGE** is easy and fast to use once you have indexes built for the variants you want to genotype. However, building these indexes can take some time. Therefore, we have prebuilt indexes for 1000 Genomes Projects variants (allele frequency > 0.1%), which can be [downloaded from here](https://zenodo.org/record/5751777/files/index_2548individuals.npz?download=1).
 
 If you want to make your own indexes for your own reference genome and variants, you should use the KAGE Snakemake pipeline which can [be found here](https://github.com/ivargr/genotyping-benchmarking). Feel free to contact us if you want help making these indexes for your desired variants.
 
