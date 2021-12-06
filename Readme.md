@@ -42,3 +42,7 @@ kage genotype -i index -c kmer_counts --average-coverage 15 -o genotypes.vcf
 ```
 
 Make sure to set `--average-coverage` to the expected average coverage of your input reads. The resulting predicted genotypes will be written to the file specified by `-o`.
+
+
+Note:
+KAGE puts data and arrays in shared memory to speed up computation. It automatically frees this memory when finished, but KAGE gets accidentally killed or stops before finishing, you might end up with allocated memory not being freed. You can free this memory by calling `kage free_memory`.

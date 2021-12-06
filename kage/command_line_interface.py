@@ -6,7 +6,7 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(asctime)s %
 import itertools
 from itertools import repeat
 import sys, argparse, time
-from graph_kmer_index.shared_mem import from_shared_memory, to_shared_memory, remove_shared_memory, \
+from shared_memory_wrapper.shared_memory import from_shared_memory, to_shared_memory, remove_shared_memory, \
     SingleSharedArray, remove_all_shared_memory, remove_shared_memory_in_session, get_shared_pool, close_shared_pool
 from obgraph import Graph as ObGraph
 from graph_kmer_index import KmerIndex, ReverseKmerIndex
