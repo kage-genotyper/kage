@@ -1,5 +1,5 @@
 import logging
-from graph_kmer_index.shared_mem import SingleSharedArray, to_shared_memory, from_shared_memory
+from shared_memory_wrapper import SingleSharedArray, to_shared_memory, from_shared_memory
 import random
 import numpy as np
 import gzip

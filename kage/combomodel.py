@@ -1,7 +1,7 @@
 import logging
 import time
 import gc
-from graph_kmer_index.shared_mem import run_numpy_based_function_in_parallel
+from shared_memory_wrapper.shared_memory import run_numpy_based_function_in_parallel
 from .util import log_memory_usage_now
 
 import numpy as np
