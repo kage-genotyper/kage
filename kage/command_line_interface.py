@@ -102,7 +102,7 @@ def genotype(args):
 
     if args.index_bundle is not None:
         logging.info("Reading all indexes from an index bundle")
-        index = IndexBundle.from_file(args.index_bundle).indexes
+        index = IndexBundle.from_file(args.index_bundle, skip=["KmerIndex"]).indexes
         model = index["NodeCountModelAdvanced"]
         variant_to_nodes = index["VariantToNodes"]
         variants = index["NumpyVariants"]
