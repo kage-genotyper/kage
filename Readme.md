@@ -32,6 +32,8 @@ Once you have an index of the variants you want to genotype, running KAGE is str
 kmer_mapper -b index -f reads.fa -o kmer_counts -l 150
 ```
 
+The Kmer Mapper requires for now a two-line fasta file. If you have a fastq file, you should convert that to fasta before mapping (e.g. by using [Seqtk](https://github.com/lh3/seqtk)).
+
 Note: Make sure l is the max read length of your input reads, and not any lower than that. The index specified by `-b` is an index bundle (see explanation above).
 
 
