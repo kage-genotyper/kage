@@ -8,7 +8,7 @@ from .node_count_model import GenotypeNodeCountModel, NodeCountModelAlleleFreque
 
 class NumpyGenotyper(Genotyper):
     def __init__(self, node_count_model, min_variant_id, max_variant_id, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup, variant_window_size=500,
-                 avg_coverage=15, genotype_transition_probs=None, tricky_variants=None, use_naive_priors=False, helper_model=None, helper_model_combo=None):
+                 avg_coverage=15, genotype_transition_probs=None, tricky_variants=None, use_naive_priors=False, helper_model=None, helper_model_combo=None, n_threads=1):
         self._min_variant_id = min_variant_id
         self._max_variant_id = max_variant_id
         self._node_count_model = node_count_model

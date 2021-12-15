@@ -50,25 +50,26 @@ class MultiplePoissonModel(CountModel):
 
     @classmethod
     def from_counts(cls, base_lambda, certain_counts, allele_frequencies):
-        repeat_dist = cls.calc_repeat_log_dist_fast_parallel(allele_frequencies)
+        #repeat_dist = cls.calc_repeat_log_dist_fast_parallel(allele_frequencies)
+        repeat_dist = MultiplePoissonModel.calc_repeat_log_dist_fast(allele_frequencies)
         return cls(base_lambda, repeat_dist, 2*certain_counts)
 
     def logpmf(self, k, n_copies=1):
         assert k.shape == (self._n_variants, ), (k.shape, self._n_variants)
         t = time.perf_counter()
         rates = (self._certain_counts + n_copies + np.arange(self._max_duplicates+1)[None, :]+self.error_rate)*self._base_lambda
-        logging.debug("Time getting rates: %.4f" % (time.perf_counter()-t))
+        #logging.debug("Time getting rates: %.4f" % (time.perf_counter()-t))
         t = time.perf_counter()
-        #log_probs = poisson.logpmf(k[:, None], rates)
-        log_probs = parallel_poisson_logpmf(k[:, None], rates)
-        logging.debug("Time poisson logpmf: %.4f" % (time.perf_counter()-t))
+        log_probs = poisson.logpmf(k[:, None], rates)
+        #log_probs = parallel_poisson_logpmf(k[:, None], rates)
+        #logging.debug("Time poisson logpmf: %.4f" % (time.perf_counter()-t))
         t = time.perf_counter()
         tot_probs = log_probs+self._repeat_dist
-        logging.debug("Time tot probs: %.4f" % (time.perf_counter()-t))
+        #logging.debug("Time tot probs: %.4f" % (time.perf_counter()-t))
         t = time.perf_counter()
-        #result = logsumexp(tot_probs, axis=1)
-        result = parallel_logsumexp(tot_probs)
-        logging.debug("Time logsumexp: %.4f" % (time.perf_counter()-t))
+        result = logsumexp(tot_probs, axis=1)
+        #result = parallel_logsumexp(tot_probs)
+        #logging.debug("Time logsumexp: %.4f" % (time.perf_counter()-t))
         return result
 
 
@@ -114,6 +115,7 @@ class ComboModel(CountModel):
         self._models = models
         self._model_indexes = model_indexes
         self._tricky_variants = tricky_variants
+        self._logpmf_cache = {}
 
     @classmethod
     def from_counts(cls, base_lambda, p_sum, p_sq_sum, do_gamma_calc, certain_counts, allele_frequencies):
@@ -144,13 +146,16 @@ class ComboModel(CountModel):
 
         return cls(models, model_indices)
 
+    def precompute_logpmfs(self):
+        self._logpmf_cache = logpmf()
+
     def logpmf(self, k, n_copies=1):
         logpmf = np.zeros(k.size, dtype=np.float16)
         for i, model in enumerate(self._models):
             mask = (self._model_indexes == i)
             start_time = time.perf_counter()
             logpmf[mask] = model.logpmf(k[mask], n_copies).astype(np.float16)
-            logging.debug("Time spent on ComboModel.logpmf %s: %.4f" % (model.__class__, time.perf_counter()-start_time))
+            logging.debug("Time spent on ComboModel.logpmf %s: %.3f" % (model.__class__, time.perf_counter()-start_time))
             gc.collect()
 
         # adjust with prob of counts being wrong

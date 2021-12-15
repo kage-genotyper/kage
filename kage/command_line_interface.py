@@ -2,7 +2,7 @@ import logging
 import sys
 from .util import log_memory_usage_now
 #logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
-logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format='%(asctime)s %(levelname)s: %(message)s')
 import itertools
 from itertools import repeat
 import sys, argparse, time
@@ -94,6 +94,7 @@ def genotype(args):
     start_time = time.perf_counter()
     logging.info("Using genotyper %s" % args.genotyper)
     logging.info("Read coverage is set to %.3f" % args.average_coverage)
+    get_shared_pool(args.n_threads)
 
     args.shared_memory_unique_id = str(random.randint(0, 1e15))
     logging.info("Random id for shared memory: %s" % args.shared_memory_unique_id)
@@ -157,7 +158,8 @@ def genotype(args):
     genotyper = genotyper_class(model, 0, max_variant_id, variant_to_nodes, node_counts, genotype_frequencies,
                                 None, avg_coverage=args.average_coverage, genotype_transition_probs=None,
                                 tricky_variants=tricky_variants, use_naive_priors=args.use_naive_priors,
-                                helper_model=helper_model, helper_model_combo=helper_model_combo_matrix
+                                helper_model=helper_model, helper_model_combo=helper_model_combo_matrix,
+                                n_threads=args.n_threads
                                 )
     genotypes, probs, count_probs = genotyper.genotype()
 

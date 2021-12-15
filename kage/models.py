@@ -28,11 +28,43 @@ class ComboModelBothAlleles(Model):
     def __init__(self, model_ref, model_alt):
         self._model_ref = model_ref
         self._model_alt = model_alt
+        self._logpmf_cache = {}
+
+    def compute_logpmfs(self, k1, k2):
+        for genotype in [0, 1, 2]:
+            self.logpmf(k1, k2, genotype)
+
+    def clear(self):
+        self._model_ref = None
+        self._model_alt = None
 
     def logpmf(self, k1, k2, genotype):
+        if genotype in self._logpmf_cache:
+            logging.info("Returning cached logpmf")
+            return self._logpmf_cache[genotype]
+
         ref_probs = self._model_ref.logpmf(k1, 2-genotype)
         alt_probs = self._model_alt.logpmf(k2, genotype)
-        return ref_probs+alt_probs
+        prob = ref_probs + alt_probs
+
+        self._logpmf_cache[genotype] = prob
+        return prob
+
+
+class ChunkedComboModelBothAlleles(Model):
+    """Similar as ComboModelBothAlleles, but consists of
+    multiple ComboModelBothAlleles (for chunks of variants).
+    Assumes logpmf is cached for all the models (logpmfs already computed)
+    """
+    def __init__(self, models):
+        # create a logpmf array with the logpmfs from each model
+        self._logpmf = {
+            genotype: np.concatenate([model.logpmf(None, None, genotype) for model in models])
+            for genotype in [0, 1, 2]
+        }
+
+    def logpmf(self, k1, k2, genotype):
+        return self._logpmf[genotype]
 
 
 class HelperModel(Model):
