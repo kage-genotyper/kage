@@ -155,7 +155,7 @@ class ComboModel(CountModel):
             mask = (self._model_indexes == i)
             start_time = time.perf_counter()
             logpmf[mask] = model.logpmf(k[mask], n_copies).astype(np.float16)
-            logging.debug("Time spent on ComboModel.logpmf %s: %.3f" % (model.__class__, time.perf_counter()-start_time))
+            #logging.debug("Time spent on ComboModel.logpmf %s: %.3f" % (model.__class__, time.perf_counter()-start_time))
             gc.collect()
 
         # adjust with prob of counts being wrong

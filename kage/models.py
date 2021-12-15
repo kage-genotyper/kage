@@ -40,7 +40,6 @@ class ComboModelBothAlleles(Model):
 
     def logpmf(self, k1, k2, genotype):
         if genotype in self._logpmf_cache:
-            logging.info("Returning cached logpmf")
             return self._logpmf_cache[genotype]
 
         ref_probs = self._model_ref.logpmf(k1, 2-genotype)
@@ -71,7 +70,9 @@ class HelperModel(Model):
     def __init__(self, model, helper_variants, genotype_combo_matrix, tricky_variants=None):
         self._model = model
         self._helper_variants = helper_variants
+        t = time.perf_counter()
         self._genotype_probs = np.log(genotype_combo_matrix/genotype_combo_matrix.sum(axis=(-1, -2), keepdims=True))
+        logging.info("Computing genotype probs in HelperModel init took %.4f sec" % (time.perf_counter()-t))
         self._tricky_variants = tricky_variants
         self.count_probs = None
 

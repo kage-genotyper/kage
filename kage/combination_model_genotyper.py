@@ -66,7 +66,7 @@ class CombinationModelGenotyper(Genotyper):
     @staticmethod
     def make_combomodel_from_shared_memory_data(data):
         logging.info("Starting creating combomodel in sepearte thread")
-        t = time.perf_counter()
+        t_start = time.perf_counter()
         (from_variant, to_variant), data = data
         node_count_model_name, ref_nodes_name, alt_nodes_name, node_counts_name, avg_coverage = data
 
@@ -78,6 +78,7 @@ class CombinationModelGenotyper(Genotyper):
         observed_ref_nodes = node_counts.get_node_count_array()[ref_nodes]
         observed_alt_nodes = node_counts.get_node_count_array()[alt_nodes]
 
+        t = time.perf_counter()
         models = [ComboModel.from_counts(avg_coverage,
                                          node_count_model.frequencies[nodes],
                                          node_count_model.frequencies_squared[nodes],
@@ -86,8 +87,11 @@ class CombinationModelGenotyper(Genotyper):
                                          node_count_model.frequency_matrix[nodes])
                   for nodes in (ref_nodes[from_variant:to_variant], alt_nodes[from_variant:to_variant])]
         model_both_alleles = ComboModelBothAlleles(*models)
+        logging.info("Time spent on thread making models: %.3f" % (time.perf_counter()-t))
+        t = time.perf_counter()
         model_both_alleles.compute_logpmfs(observed_ref_nodes[from_variant:to_variant],
                                            observed_alt_nodes[from_variant:to_variant])
+        logging.info("Time spent on thread computing logpmfs: %.3f" % (time.perf_counter()-t))
 
         model_both_alleles.clear()  # remove data we don't need to make pickling faster
         logging.info("Time spent making combomodel one thread: %.4f" % (time.perf_counter()-t))
@@ -133,6 +137,7 @@ class CombinationModelGenotyper(Genotyper):
         t = time.perf_counter()
         combination_model_both = ChunkedComboModelBothAlleles(models_both_alleles)
         logging.info("Time concatenating into chunked combo model: %.4f" % (time.perf_counter()-t))
+
 
         helper_model = HelperModel(combination_model_both, self._helper_model, self._helper_model_combo_matrix, self._tricky_variants)
         genotypes, probabilities = helper_model.predict(observed_ref_nodes, observed_alt_nodes, return_probs=True)

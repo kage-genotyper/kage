@@ -167,7 +167,7 @@ def genotype(args):
     numeric_genotypes = ["0/0", "0/0", "1/1", "0/1"]
     numpy_genotypes = np.array([numeric_genotypes[g] for g in genotypes], dtype="|S3")
     variants.to_vcf_with_genotypes(args.out_file_name, args.sample_name_output, numpy_genotypes, add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">'],
-                                       ignore_homo_ref=False)
+                                       ignore_homo_ref=True)
 
     close_shared_pool()
     logging.info("Genotyping took %d sec" % (time.perf_counter()-start_time))
