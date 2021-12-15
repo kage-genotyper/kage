@@ -23,3 +23,5 @@ tests/__pycache__/
 *.shm
 build/
 kage.egg-info/
+dist/
+*.egg-info
