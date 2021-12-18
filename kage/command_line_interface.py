@@ -1,7 +1,6 @@
 import logging
 import sys
 from .util import log_memory_usage_now
-#logging.basicConfig(level=logging.INFO, format='%(module)s %(asctime)s %(levelname)s: %(message)s')
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format='%(asctime)s %(levelname)s: %(message)s')
 import itertools
 from itertools import repeat
@@ -40,12 +39,9 @@ from graph_kmer_index.index_bundle import IndexBundle
 np.random.seed(1)
 np.seterr(all="ignore")
 
-logging.info("Using Python version " + platform.python_version())
-
 
 def main():
     run_argument_parser(sys.argv[1:])
-
 
 
 def analyse_variants(args):
@@ -474,12 +470,9 @@ def run_argument_parser(args):
         reverse_kmers = ReverseKmerIndex.from_file(args.reverse_kmer_index)
         index = KmerIndex.from_file(args.kmer_index)
         variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
-
         from .variant_kmer_analyser import VariantKmerAnalyser
         analyser = VariantKmerAnalyser(reverse_kmers, index, variant_to_nodes, args.write_good_variants_to_file)
         analyser.analyse()
-
-
         logging.info("Done")
 
     # Analyse variant kmers
@@ -608,8 +601,6 @@ def run_argument_parser(args):
             to_shared_memory(variant_to_nodes, "variant_to_nodes"+args.shared_memory_unique_id)
             to_shared_memory(model, "model"+args.shared_memory_unique_id)
             logging.info("Put data in shared memory")
-
-            # genotyped_variants = VcfVariants(header_lines=variants.get_header())
 
             for from_variant, to_variant, subhelpers, subcombo in pool.imap(create_helper_model_single_thread,
                                                                               zip(variant_intervals, repeat(args))):
