@@ -188,7 +188,11 @@ class NodeCountModelCreatorAdvanced:
                 kmer = int(kmer)
                 nodes, ref_offsets, frequencies, allele_frequencies = self.kmer_index.get(kmer, max_hits=1000000)
                 if nodes is None:
+                    logging.error("!!!!!!!!!!!")
+                    logging.error("Kmer %d was not found in whole genome kmers" % kmer)
+                    logging.error("Ref pos for kmer is %d. Variant/refnode: %d/%d" % (ref_pos, variant_node, reference_node))
                     continue
+
 
                 unique_ref_offsets, unique_indexes = np.unique(ref_offsets, return_index=True)
 
