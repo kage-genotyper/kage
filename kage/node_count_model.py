@@ -99,11 +99,11 @@ class NodeCountModelAdvanced:
 
     @classmethod
     def create_empty(cls, max_node_id):
-        frequencies = np.zeros(max_node_id + 1, dtype=np.float)
-        frequencies_squared = np.zeros(max_node_id + 1, dtype=np.float)
-        certain = np.zeros(max_node_id + 1, dtype=np.float)
-        frequency_matrix = np.zeros((max_node_id + 1, 5), dtype=np.float)
-        has_too_many = np.zeros(max_node_id + 1, dtype=np.bool)
+        frequencies = np.zeros(max_node_id + 1, dtype=float)
+        frequencies_squared = np.zeros(max_node_id + 1, dtype=float)
+        certain = np.zeros(max_node_id + 1, dtype=float)
+        frequency_matrix = np.zeros((max_node_id + 1, 5), dtype=float)
+        has_too_many = np.zeros(max_node_id + 1, dtype=bool)
         return cls(frequencies, frequencies_squared, certain, frequency_matrix, has_too_many)
 
     def __add__(self, other):
@@ -159,11 +159,11 @@ class NodeCountModelCreatorAdvanced:
         self.variant_start_id = variant_start_id
         self.variant_end_id = variant_end_id
 
-        self._frequencies = np.zeros(max_node_id + 1, dtype=np.float)
-        self._frequencies_squared = np.zeros(max_node_id + 1, dtype=np.float)
-        self._certain = np.zeros(max_node_id + 1, dtype=np.float)
-        self._frequency_matrix = np.zeros((max_node_id + 1, 5), dtype=np.float)
-        self._has_too_many = np.zeros(max_node_id + 1, dtype=np.bool)
+        self._frequencies = np.zeros(max_node_id + 1, dtype=float)
+        self._frequencies_squared = np.zeros(max_node_id + 1, dtype=float)
+        self._certain = np.zeros(max_node_id + 1, dtype=float)
+        self._frequency_matrix = np.zeros((max_node_id + 1, 5), dtype=float)
+        self._has_too_many = np.zeros(max_node_id + 1, dtype=bool)
 
         self._allele_frequency_index = allele_frequency_index
         if self._allele_frequency_index is not None:

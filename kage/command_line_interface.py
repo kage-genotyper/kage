@@ -231,13 +231,13 @@ def model_using_kmer_index_multiprocess(args):
     data_to_process = zip(variant_intervals, repeat(args))
 
     if args.version == "":
-        expected_node_counts_not_following_node = np.zeros(max_node_id + 1, dtype=np.float)
-        expected_node_counts_following_node = np.zeros(max_node_id + 1, dtype=np.float)
+        expected_node_counts_not_following_node = np.zeros(max_node_id + 1, dtype=float)
+        expected_node_counts_following_node = np.zeros(max_node_id + 1, dtype=float)
     elif args.version == "v3":
         resulting_model = NodeCountModelAdvanced.create_empty(max_node_id)
     elif args.version == "v2":
-        allele_frequencies = np.zeros(max_node_id + 1, dtype=np.float)
-        allele_frequencies_squared = np.zeros(max_node_id + 1, dtype=np.float)
+        allele_frequencies = np.zeros(max_node_id + 1, dtype=float)
+        allele_frequencies_squared = np.zeros(max_node_id + 1, dtype=float)
 
     pool = Pool(args.n_threads)
 
@@ -594,7 +594,7 @@ def run_argument_parser(args):
             logging.info("Will process variant intervals: %s" % variant_intervals)
 
             helpers = np.zeros(n_variants, dtype=np.uint32)
-            genotype_matrix_combo = np.zeros((n_variants, 3, 3), dtype=np.float)
+            genotype_matrix_combo = np.zeros((n_variants, 3, 3), dtype=float)
 
             logging.info("Putting data in shared memory")
             # put data in shared memory
