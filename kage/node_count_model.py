@@ -191,6 +191,7 @@ class NodeCountModelCreatorAdvanced:
                     logging.error("!!!!!!!!!!!")
                     logging.error("Kmer %d was not found in whole genome kmers" % kmer)
                     logging.error("Ref pos for kmer is %d. Variant/refnode: %d/%d" % (ref_pos, variant_node, reference_node))
+                    #raise Exception("Failed. All k mers should exiset in whole genome index")
                     continue
 
 

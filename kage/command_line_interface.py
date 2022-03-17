@@ -35,6 +35,7 @@ from obgraph.genotype_matrix import GenotypeMatrix
 from obgraph.numpy_variants import NumpyVariants
 from .tricky_variants import TrickyVariants
 from graph_kmer_index.index_bundle import IndexBundle
+from shared_memory_wrapper import from_file, to_file
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -51,7 +52,7 @@ def analyse_variants(args):
     from .helper_index import CombinationMatrix
 
     whitelist = None
-    pangenie = VcfVariants.from_vcf(args.pangenie)
+    #pangenie = VcfVariants.from_vcf(args.pangenie)
 
     logging.info("Reading variant nodes")
     variant_nodes = VariantToNodes.from_file(args.variant_nodes)
@@ -81,7 +82,7 @@ def analyse_variants(args):
 
     analyser = GenotypeDebugger(variant_nodes, args.kmer_size, all_variants, kmer_index, reverse_index, predicted_genotypes,
                                 true_genotypes, TruthRegions(args.truth_regions_file), NodeCounts.from_file(args.node_counts),
-                                model, helper_variants, combination_matrix, probs, count_probs, pangenie)
+                                model, helper_variants, combination_matrix, probs, count_probs, None)
     analyser.analyse_unique_kmers_on_variants()
 
 
@@ -163,7 +164,7 @@ def genotype(args):
     numeric_genotypes = ["0/0", "0/0", "1/1", "0/1"]
     numpy_genotypes = np.array([numeric_genotypes[g] for g in genotypes], dtype="|S3")
     variants.to_vcf_with_genotypes(args.out_file_name, args.sample_name_output, numpy_genotypes, add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">'],
-                                       ignore_homo_ref=True)
+                                       ignore_homo_ref=False)
 
     close_shared_pool()
     logging.info("Genotyping took %d sec" % (time.perf_counter()-start_time))
@@ -291,7 +292,7 @@ def run_argument_parser(args):
     subparser.add_argument("-F", "--combination-matrix", required=True)
     subparser.add_argument("-p", "--probs", required=True)
     subparser.add_argument("-c", "--count_probs", required=True)
-    subparser.add_argument("-a", "--pangenie", required=False)
+    #subparser.add_argument("-a", "--pangenie", required=False)
     subparser.set_defaults(func=analyse_variants)
 
 
@@ -659,6 +660,17 @@ def run_argument_parser(args):
     subparser.add_argument("-i", "--kmer-index", required=True)
     subparser.set_defaults(func=make_index_bundle)
 
+    def sample_node_counts_from_population(args):
+        from .mapping_model import get_node_counts_from_haplotypes
+        results = get_node_counts_from_haplotypes(args.haplotype_to_nodes, args.kmer_index, args.graph)
+        to_file(results, args.out_file_name)
+
+    subparser = subparsers.add_parser("sample_node_counts_from_population")
+    subparser.add_argument("-g", "--graph", required=True, type=ObGraph.from_file)
+    subparser.add_argument("-i", "--kmer-index", required=True, type=from_file)
+    subparser.add_argument("-H", "--haplotype-to-nodes", required=True, type=HaplotypeToNodes.from_file)
+    subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.set_defaults(func=sample_node_counts_from_population)
 
 
     if len(args) == 0:

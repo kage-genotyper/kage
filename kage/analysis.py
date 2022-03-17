@@ -81,7 +81,7 @@ class GenotypeDebugger:
         self.pangenie = pangenie
 
     def print_report(self):
-        for type in ["SNP", "DELETION", "INSERTION"]:
+        for type in ["SNP", "DELETION", "INSERTION", "SUBSTITUTION"]:
             logging.info("Type: %s" % type)
             logging.info("N truth variants: %d" % self.n_truth_variants[type])
             logging.info("N predicted variants: %d" % self.n_predicted_variants[type])
@@ -91,7 +91,8 @@ class GenotypeDebugger:
             logging.info("N false negatives with zero counts: %d" % self.false_negatives_with_zero_counts[type])
             logging.info("N false negatives with zero counts and truth variant close: %d (only one side: %d)" % (self.false_negatives_with_zero_counts_and_other_truth_variant_close[type], self.false_negatives_with_zero_counts_and_other_truth_variant_close_only_one_side[type]))
             #logging.info("Recall: %.4f" % (self.n_correct_genotypes[type] / self.n_truth_variants[type]))
-            logging.info("Precision (all genotype types): %.4f" % (self.n_correct_genotypes[type] / self.n_predicted_variants[type]))
+            if self.n_predicted_variants[type] > 0:
+                logging.info("Precision (all genotype types): %.4f" % (self.n_correct_genotypes[type] / self.n_predicted_variants[type]))
 
     def print_info_about_variant(self, reference_node, variant_node, variant, variant_id):
         reference_kmers = set(self.reverse_kmer_index.get_node_kmers(reference_node))
@@ -99,11 +100,13 @@ class GenotypeDebugger:
 
         predicted_genotype = self.predicted_genotypes.get(variant).genotype
 
+        """
         if predicted_genotype == "0|0" and not self.pangenie.has_variant(variant):
             # ignore
             return
         elif predicted_genotype != "0|0" and self.pangenie.has_variant(variant) and self.pangenie.get(variant).genotype == predicted_genotype:
             return
+        """
 
 
 
@@ -114,8 +117,10 @@ class GenotypeDebugger:
         assert self.predicted_genotypes.get(variant).genotype != "", self.predicted_genotypes.get(variant).vcf_line
         logging.warning("Predicted: %s. Correct is %s. Variant id: %d" % (self.predicted_genotypes.get(variant), self.truth_genotypes.get(variant), variant_id))
 
+        """
         if(self.pangenie.has_variant(variant)):
             logging.info("PANGENIE: %s" % self.pangenie.get(variant))
+        """
 
         logging.warning("Node counts on ref/alt %d/%d: %d/%d" % (
         reference_node, variant_node, self.node_counts.node_counts[reference_node],
@@ -173,6 +178,7 @@ class GenotypeDebugger:
         #    return
 
         if not self.truth_regions.is_inside_regions(variant.position):
+            logging.info("SKIPPED")
             return
 
         reference_kmers = set(self.reverse_kmer_index.get_node_kmers(reference_node))
