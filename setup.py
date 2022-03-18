@@ -1,7 +1,7 @@
 from setuptools import setup, Extension
 
 setup(name='kage-genotyper',
-      version='0.0.19',
+      version='0.0.20',
       description='KAGE',
       long_description_content_type="text/markdown",
       url='http://github.com/ivargr/kage',
@@ -11,7 +11,7 @@ setup(name='kage-genotyper',
       packages=["kage"],
       zip_safe=False,
       install_requires=['numpy', 'tqdm', 'pyfaidx', 'pathos', 'cython', 'scipy',
-                        'obgraph>=0.0.11',
+                        'obgraph>=0.0.12',
                         'graph_kmer_index>=0.0.16',
                         'kmer_mapper>=0.0.17',
                         'graph_read_simulator',
