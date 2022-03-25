@@ -171,6 +171,20 @@ def genotype(args):
     np.save(args.out_file_name + ".probs", probs)
     np.save(args.out_file_name + ".count_probs", count_probs)
 
+    # Make arrays with haplotypes
+    haplotype_array1 = np.zeros(len(numpy_genotypes), dtype=np.uint8)
+    haplotype_array1[np.where((genotypes==2) | (genotypes==3))[0]] = 1
+    haplotype_array2 = np.zeros(len(numpy_genotypes), dtype=np.uint8)
+    haplotype_array2[np.where(genotypes==2)[0]] = 1
+    np.save(args.out_file_name + ".haplotype1", haplotype_array1)
+    np.save(args.out_file_name + ".haplotype2", haplotype_array2)
+
+    # also store variant nodes from the two haplotypes
+    variant_nodes_haplotype1 = variant_to_nodes.var_nodes[np.nonzero(haplotype_array1)]
+    variant_nodes_haplotype2 = variant_to_nodes.var_nodes[np.nonzero(haplotype_array2)]
+    np.save(args.out_file_name + ".haplotype1_nodes", variant_nodes_haplotype1)
+    np.save(args.out_file_name + ".haplotype2_nodes", variant_nodes_haplotype2)
+
 
 def model_using_kmer_index(variant_id_interval, args):
     variant_start_id, variant_end_id = variant_id_interval
