@@ -36,6 +36,7 @@ from obgraph.numpy_variants import NumpyVariants
 from .tricky_variants import TrickyVariants
 from graph_kmer_index.index_bundle import IndexBundle
 from shared_memory_wrapper import from_file, to_file
+import math
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -160,6 +161,14 @@ def genotype(args):
                                 )
     genotypes, probs, count_probs = genotyper.genotype()
 
+
+    if args.min_genotype_quality > 0.0:
+        set_to_homo_ref = np.where(math.e**np.max(probs, axis=1) < args.min_genotype_quality)[0]
+        logging.warning("%d genotypes have lower prob than %.4f. Setting these to homo ref." % (len(set_to_homo_ref), args.min_genotype_quality))
+        logging.warning("N non homo ref genotypes before: %d" % len(np.where(genotypes > 0)[0]))
+        genotypes[set_to_homo_ref] = 0
+        logging.warning("N non homo ref genotypes after: %d" % len(np.where(genotypes > 0)[0]))
+
     #numpy_genotypes = np.empty(max_variant_id+1, dtype="|S3")
     numeric_genotypes = ["0/0", "0/0", "1/1", "0/1"]
     numpy_genotypes = np.array([numeric_genotypes[g] for g in genotypes], dtype="|S3")
@@ -283,6 +292,24 @@ def model_using_kmer_index_multiprocess(args):
     logging.info("Wrote model to %s" % args.out_file_name)
 
 
+def model_for_read_mapping(args):
+    variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
+    ref_nodes = variant_to_nodes.ref_nodes
+    var_nodes = variant_to_nodes.var_nodes
+    max_node_id = max([np.max(ref_nodes), np.max(var_nodes)])
+
+    frequencies = np.zeros(max_node_id + 1, dtype=float)
+    frequencies_squared = np.zeros(max_node_id + 1, dtype=float)
+    certain = np.zeros(max_node_id + 1, dtype=float)
+    frequency_matrix = np.zeros((max_node_id + 1, 5), dtype=float)
+    has_too_many = np.zeros(max_node_id + 1, dtype=bool)
+
+    # simple naive model: No duplicate counts, all nodes have only 1 certain
+    model = NodeCountModelAdvanced(frequencies, frequencies_squared, certain, frequency_matrix, has_too_many)
+    model.to_file(args.out_file_name)
+    logging.info("Wrote model to %s" % args.out_file_name)
+
+
 def run_argument_parser(args):
     parser = argparse.ArgumentParser(
         description='Alignment free graph genotyper',
@@ -323,7 +350,7 @@ def run_argument_parser(args):
     subparser.add_argument("-C", "--genotyper", required=False, default="CombinationModelGenotyper", help="Genotyper to use")
     subparser.add_argument("-t", "--n-threads", type=int, required=False, default=8)
     subparser.add_argument("-a", "--average-coverage", type=float, default=15, help="Expected average read coverage")
-    subparser.add_argument("-q", "--min-genotype-quality", type=float, default=0.95, help="Min prob of genotype being correct")
+    subparser.add_argument("-q", "--min-genotype-quality", type=float, default=0.0, help="Min prob of genotype being correct. Genotypes with prob less than this are set to homo ref.")
     subparser.add_argument("-p", "--genotype-transition-probs", required=False)
     subparser.add_argument("-x", "--tricky-variants", required=False)
     subparser.add_argument("-s", "--sample-name-output", required=False, default="DONOR", help="Sample name that will be used in the output vcf")
@@ -515,6 +542,11 @@ def run_argument_parser(args):
     subparser.add_argument("-a", "--allele-frequency-index", required=False)
     subparser.add_argument("-V", "--version", required=False, default="v3")
     subparser.set_defaults(func=model_using_kmer_index_multiprocess)
+
+    subparser = subparsers.add_parser("model_for_read_mapping")
+    subparser.add_argument("-g", "--variant-to-nodes", required=True)
+    subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.set_defaults(func=model_for_read_mapping)
 
     def model_using_transition_probs(args):
         from .node_count_model import GenotypeModelCreatorFromTransitionProbabilities
