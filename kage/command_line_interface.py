@@ -39,6 +39,10 @@ from shared_memory_wrapper import from_file, to_file
 import math
 from .gaf_parsing import node_counts_from_gaf, parse_gaf
 import pickle
+from .node_count_model import NodeCountModel
+from obgraph.genotype_matrix import MostSimilarVariantLookup
+from obgraph.variant_to_nodes import VariantToNodes
+from .helper_index import CombinationMatrix
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -49,10 +53,7 @@ def main():
 
 
 def analyse_variants(args):
-    from .node_count_model import NodeCountModel
-    from obgraph.genotype_matrix import MostSimilarVariantLookup
-    from obgraph.variant_to_nodes import VariantToNodes
-    from .helper_index import CombinationMatrix
+
 
     whitelist = None
     #pangenie = VcfVariants.from_vcf(args.pangenie)
@@ -776,6 +777,7 @@ def run_argument_parser(args):
 
 
     def node_counts_from_gaf_cmd(args):
+        max_node_id = args.graph.max_node_id
         edge_mapping = pickle.load(open(args.edge_mapping, "rb"))
         node_counts = node_counts_from_gaf(args.gaf, edge_mapping, args.min_mapq, args.min_score, args.max_node_id)
         np.save(args.out_file_name, node_counts)
@@ -788,7 +790,7 @@ def run_argument_parser(args):
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.add_argument("-q", "--min-mapq", required=False, type=int, default=0)
     subparser.add_argument("-s", "--min-score", required=False, type=int, default=120)
-    subparser.add_argument("-n", "--max_node_id", required=True, type=int)
+    subparser.add_argument("-G", "--graph", required=True, type=ObGraph.from_file)
     subparser.set_defaults(func=node_counts_from_gaf_cmd)
 
     if len(args) == 0:
