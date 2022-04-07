@@ -37,6 +37,8 @@ from .tricky_variants import TrickyVariants
 from graph_kmer_index.index_bundle import IndexBundle
 from shared_memory_wrapper import from_file, to_file
 import math
+from .gaf_parsing import node_counts_from_gaf, parse_gaf
+import pickle
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -548,6 +550,60 @@ def run_argument_parser(args):
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.set_defaults(func=model_for_read_mapping)
 
+    def model_for_read_mapping_using_sampled_reads(args):
+        from numpy_alignments import NumpyAlignments
+        graph = args.graph
+        edge_mapping = pickle.load(open(args.edge_mapping, "rb"))
+        mappings = parse_gaf(args.gaf, edge_mapping)
+        true_read_positions = NumpyAlignments.from_file(args.true_read_positions)
+
+        n_skipped_low_score = 0
+        n_mapped_back_to_origin = 0
+        node_counts = np.zeros(len(graph.nodes)+1, dtype=int)
+
+        for i, mapping in enumerate(parse_gaf(args.gaf)):
+            if i % 1000 == 0:
+                logging.info("%d mappings processed" % i)
+
+            if mapping.score < args.min_score:
+                n_skipped_low_score += 1
+                continue
+
+            read_id = int(mapping.read_id)
+
+            # check if mapping is at ca same location as sampled read
+            sampled_read_chr = true_read_positions.chromosomes[read_id]
+            sampled_read_start = true_read_positions.positions[read_id]
+            sampled_read_end = sampled_read_start + mapping.read_length
+            nodes_from_sampled_area = graph.get_linear_ref_nodes_between_offsets(sampled_read_chr, sampled_read_start, sampled_read_end)
+
+            #print("Mapping nodes: %s, nodes from area: %s" % (mapping.nodes, nodes_from_sampled_area))
+
+            if len(set(nodes_from_sampled_area).intersection(mapping.nodes)) > 0:
+                # is from same area
+                n_mapped_back_to_origin += 1
+                continue
+
+            node_counts[mapping.nodes] += 1
+
+        model = NodeCountModelAdvanced.create_empty(graph.max_node_id())
+        model.certain = np.round(node_counts / args.coverage)
+        model.to_file(args.out_file_name)
+        logging.info("N reads skipped because low score: %d ( < %d)" % (n_skipped_low_score, args.min_score))
+        logging.info("N reads that mapped back to origin (should be approx. equal to n reads mapped): %d" % n_mapped_back_to_origin)
+        logging.info("Saved model to %s" % args.out_file_name)
+
+
+    subparser = subparsers.add_parser("model_for_read_mapping_using_sampled_reads")
+    subparser.add_argument("-g", "--graph", required=True, type=ObGraph.from_file)
+    subparser.add_argument("-r", "--gaf", required=True)
+    subparser.add_argument("-p", "--true-read-positions", required=True)
+    subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.add_argument("-e", "--edge-mapping", required=True)
+    subparser.add_argument("-m", "--min-score", required=True, type=int)
+    subparser.add_argument("-c", "--coverage", required=True, type=int, help="Average coverage of sampled reads")
+    subparser.set_defaults(func=model_for_read_mapping_using_sampled_reads)
+
     def model_using_transition_probs(args):
         from .node_count_model import GenotypeModelCreatorFromTransitionProbabilities
         from obgraph.variant_to_nodes import NodeToVariants
@@ -718,6 +774,22 @@ def run_argument_parser(args):
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.set_defaults(func=sample_node_counts_from_population)
 
+
+    def node_counts_from_gaf_cmd(args):
+        edge_mapping = pickle.load(open(args.edge_mapping, "rb"))
+        node_counts = node_counts_from_gaf(args.gaf, edge_mapping, args.min_mapq, args.min_score, args.max_node_id)
+        np.save(args.out_file_name, node_counts)
+        logging.info("Node counts saved to %s" % args.out_file_name)
+
+
+    subparser = subparsers.add_parser("node_counts_from_gaf")
+    subparser.add_argument("-g", "--gaf", required=True, help="Mapped reads in gaf format")
+    subparser.add_argument("-m", "--edge-mapping", required=True, help="Mapping from vg graph edges to dummy nodes. Created when adding dummy nodes with obgraph add_indel_nodes")
+    subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.add_argument("-q", "--min-mapq", required=False, type=int, default=0)
+    subparser.add_argument("-s", "--min-score", required=False, type=int, default=120)
+    subparser.add_argument("-n", "--max_node_id", required=True, type=int)
+    subparser.set_defaults(func=node_counts_from_gaf_cmd)
 
     if len(args) == 0:
         parser.print_help()
