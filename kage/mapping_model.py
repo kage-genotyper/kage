@@ -8,7 +8,9 @@ from graph_kmer_index.read_kmers import ReadKmers
 from obgraph.cython_traversing import traverse_graph_by_following_nodes
 
 
-def get_node_counts_from_haplotypes(haplotype_to_nodes, kmer_index, graph, n_haplotypes=None, k=31):
+def get_node_counts_from_haplotypes(
+    haplotype_to_nodes, kmer_index, graph, n_haplotypes=None, k=31
+):
     """
     returns four lists
     node ids for nodes followed by haplotypes
@@ -40,27 +42,29 @@ def get_node_counts_from_haplotypes(haplotype_to_nodes, kmer_index, graph, n_hap
         logging.info("N nodes for haplotype: %d" % len(nodes))
         t = time.perf_counter()
         sequence = graph.get_numeric_node_sequences(nodes).astype(np.uint64)
-        logging.info("Time to get haplotype sequence: %.3f" % (time.perf_counter()-t))
+        logging.info("Time to get haplotype sequence: %.3f" % (time.perf_counter() - t))
         assert sequence.dtype == np.uint64
         power_vector = np.power(4, np.arange(0, k)).astype(np.uint64)
         logging.info("Getting kmers")
         t = time.perf_counter()
-        kmers = np.convolve(sequence, power_vector, mode='valid')
-        logging.info("Time to get kmers: %.3f" % (time.perf_counter()-t))
+        kmers = np.convolve(sequence, power_vector, mode="valid")
+        logging.info("Time to get kmers: %.3f" % (time.perf_counter() - t))
 
         logging.info("N kmers for haplotype: %d" % len(kmers))
-        #complement_sequence = (sequence+2) % 4
-        #reverse_kmers = np.consolve(complement_sequence, np.arange(0, k).astype(np.uint64)[::-1])
-        #all_kmers = np.concatenate([kmers, reverse_kmers])
+        # complement_sequence = (sequence+2) % 4
+        # reverse_kmers = np.consolve(complement_sequence, np.arange(0, k).astype(np.uint64)[::-1])
+        # all_kmers = np.concatenate([kmers, reverse_kmers])
         all_kmers = kmers
         max_node_id = graph.max_node_id()
-        #node_counts = map_kmers_to_graph_index(kmer_index, max_node_id, all_kmers)
+        # node_counts = map_kmers_to_graph_index(kmer_index, max_node_id, all_kmers)
         t = time.perf_counter()
         kmer_index.count_kmers(all_kmers)
-        logging.info("Time to count kmers: %.3f" % (time.perf_counter()-t))
+        logging.info("Time to count kmers: %.3f" % (time.perf_counter() - t))
         t = time.perf_counter()
         node_counts = kmer_index.get_node_counts()
-        logging.info("Time to get node counts from kmer counts: %.3f" % (time.perf_counter()-t))
+        logging.info(
+            "Time to get node counts from kmer counts: %.3f" % (time.perf_counter() - t)
+        )
         logging.info("Length of node counts: %d" % len(node_counts))
 
         # split into nodes that the haplotype has and nodes not
@@ -76,7 +80,6 @@ def get_node_counts_from_haplotypes(haplotype_to_nodes, kmer_index, graph, n_hap
         # reset to not keep counts for next haplotype
         kmer_index.counter.fill(0)
 
-
     logging.info("Making hashtable")
     keys = nodes_having_nodes.get_nparray()
     values = counts_having_nodes.get_nparray()
@@ -86,5 +89,15 @@ def get_node_counts_from_haplotypes(haplotype_to_nodes, kmer_index, graph, n_hap
     print(values)
     print(values.dtype)
 
-    return [HashTable(nodes_having_nodes.get_nparray(), counts_having_nodes.get_nparray(), mod=kmer_index.counter._mod), \
-        HashTable(nodes_not_having_nodes.get_nparray(), counts_not_having_nodes.get_nparray(), mod=kmer_index.counter._mod)]
+    return [
+        HashTable(
+            nodes_having_nodes.get_nparray(),
+            counts_having_nodes.get_nparray(),
+            mod=kmer_index.counter._mod,
+        ),
+        HashTable(
+            nodes_not_having_nodes.get_nparray(),
+            counts_not_having_nodes.get_nparray(),
+            mod=kmer_index.counter._mod,
+        ),
+    ]

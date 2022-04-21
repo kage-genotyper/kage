@@ -25,3 +25,6 @@ build/
 kage.egg-info/
 dist/
 *.egg-info
+
+*#*
+*~*

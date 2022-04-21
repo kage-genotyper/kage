@@ -41,7 +41,6 @@ class GafEntry:
                         nodes.append(dummy_node)
                         n_dummy_nodes += 1
 
-
         return cls(l[0], nodes, mapq, score, read_length)
 
 
@@ -50,7 +49,9 @@ def parse_gaf(gaf_file_name, edge_mapping=None):
     return (GafEntry.from_gaf_line(line, edge_mapping) for line in f)
 
 
-def node_counts_from_gaf(gaf_file_name, edge_mapping, min_mapq=30, min_score=0, max_node_id=None):
+def node_counts_from_gaf(
+    gaf_file_name, edge_mapping, min_mapq=30, min_score=0, max_node_id=None
+):
     n_skipped_low_mapq = 0
     n_skipped_low_score = 0
     n_dummy_nodes = 0
@@ -69,9 +70,15 @@ def node_counts_from_gaf(gaf_file_name, edge_mapping, min_mapq=30, min_score=0, 
 
         all_nodes.extend(mapping.nodes)
 
-    logging.info("N reads skipped because too low mapq: %d (< %d)" % (n_skipped_low_mapq, min_mapq))
-    logging.info("N reads skipped because too low score: %d (< %d)" % (n_skipped_low_score, min_score))
+    logging.info(
+        "N reads skipped because too low mapq: %d (< %d)"
+        % (n_skipped_low_mapq, min_mapq)
+    )
+    logging.info(
+        "N reads skipped because too low score: %d (< %d)"
+        % (n_skipped_low_score, min_score)
+    )
     logging.info("%d dummy nodes were found" % n_dummy_nodes)
 
-    node_counts = np.bincount(all_nodes, minlength=max_node_id+1)
+    node_counts = np.bincount(all_nodes, minlength=max_node_id + 1)
     return node_counts

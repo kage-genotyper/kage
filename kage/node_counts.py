@@ -1,7 +1,9 @@
 import numpy as np
 
+
 class NodeCounts:
     properties = {"node_counts"}
+
     def __init__(self, node_counts=None):
         self.node_counts = node_counts
 

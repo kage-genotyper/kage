@@ -1,21 +1,32 @@
 import logging
 import numpy as np
 
+
 class VariantKmerAnalyser:
-    def __init__(self, reverse_kmer_index, kmer_index, variant_to_nodes, write_good_variants_to_file):
+    def __init__(
+        self,
+        reverse_kmer_index,
+        kmer_index,
+        variant_to_nodes,
+        write_good_variants_to_file,
+    ):
         self.reverse_kmer_index = reverse_kmer_index
         self.kmer_index = kmer_index
         self.variant_to_nodes = variant_to_nodes
         self._n_good_variants = 0
         self._write_good_variants_to_file = write_good_variants_to_file
-        self._good_variant_ids = np.zeros(len(self.variant_to_nodes.var_nodes+1), dtype=np.uint8)
+        self._good_variant_ids = np.zeros(
+            len(self.variant_to_nodes.var_nodes + 1), dtype=np.uint8
+        )
         self._n_supergood_variants = 0
 
     def _analyse_variant(self, variant_id):
         ref_node = self.variant_to_nodes.ref_nodes[variant_id]
         var_node = self.variant_to_nodes.var_nodes[variant_id]
 
-        kmers = list(self.reverse_kmer_index.get_node_kmers(ref_node)) + list(self.reverse_kmer_index.get_node_kmers(var_node))
+        kmers = list(self.reverse_kmer_index.get_node_kmers(ref_node)) + list(
+            self.reverse_kmer_index.get_node_kmers(var_node)
+        )
         kmers = [int(kmer) for kmer in kmers]
 
         frequencies = [self.kmer_index.get_frequency(kmer) for kmer in kmers] + [0]
@@ -43,4 +54,6 @@ class VariantKmerAnalyser:
 
         if self._write_good_variants_to_file is not None:
             np.save(self._write_good_variants_to_file, self._good_variant_ids)
-            logging.info("Wrote good variants to file %s" % self._write_good_variants_to_file)
+            logging.info(
+                "Wrote good variants to file %s" % self._write_good_variants_to_file
+            )
