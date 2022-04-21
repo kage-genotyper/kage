@@ -43,6 +43,7 @@ from .node_count_model import NodeCountModel
 from obgraph.genotype_matrix import MostSimilarVariantLookup
 from obgraph.variant_to_nodes import VariantToNodes
 from .helper_index import CombinationMatrix
+from .analysis import analyse_variants
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -50,45 +51,6 @@ np.seterr(all="ignore")
 
 def main():
     run_argument_parser(sys.argv[1:])
-
-
-def analyse_variants(args):
-
-
-    whitelist = None
-    #pangenie = VcfVariants.from_vcf(args.pangenie)
-
-    logging.info("Reading variant nodes")
-    variant_nodes = VariantToNodes.from_file(args.variant_nodes)
-    logging.info("Reading kmer index")
-    kmer_index = KmerIndex.from_file(args.kmer_index)
-    logging.info("Reading reverse index")
-    reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
-    logging.info("Reading model")
-    model = NodeCountModelAdvanced.from_file(args.model)
-    logging.info("REading helper variants")
-    helper_variants = np.load(args.helper_variants)
-    logging.info("Reading combination matrix")
-    combination_matrix = CombinationMatrix.from_file(args.combination_matrix)
-    logging.info("Reading probs")
-    probs = np.load(args.probs)
-    logging.info("Reading count probs")
-    count_probs = np.load(args.count_probs)
-
-    logging.info("REading predicted genotyppes")
-    predicted_genotypes = VcfVariants.from_vcf(args.predicted_vcf)
-
-    logging.info("Reading true genotypes")
-    true_genotypes = VcfVariants.from_vcf(args.truth_vcf)
-
-    logging.info("Reading all genotypes")
-    all_variants = VcfVariants.from_vcf(args.vcf)
-
-    analyser = GenotypeDebugger(variant_nodes, args.kmer_size, all_variants, kmer_index, reverse_index, predicted_genotypes,
-                                true_genotypes, TruthRegions(args.truth_regions_file), NodeCounts.from_file(args.node_counts),
-                                model, helper_variants, combination_matrix, probs, count_probs, None)
-    analyser.analyse_unique_kmers_on_variants()
-
 
 
 def genotype(args):
@@ -777,9 +739,9 @@ def run_argument_parser(args):
 
 
     def node_counts_from_gaf_cmd(args):
-        max_node_id = args.graph.max_node_id
+        max_node_id = args.graph.max_node_id()
         edge_mapping = pickle.load(open(args.edge_mapping, "rb"))
-        node_counts = node_counts_from_gaf(args.gaf, edge_mapping, args.min_mapq, args.min_score, args.max_node_id)
+        node_counts = node_counts_from_gaf(args.gaf, edge_mapping, args.min_mapq, args.min_score, max_node_id)
         np.save(args.out_file_name, node_counts)
         logging.info("Node counts saved to %s" % args.out_file_name)
 
