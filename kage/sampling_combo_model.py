@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.stats import poisson
+from scipy.special import logsumexp
 from npstructures import RaggedArray
 from dataclasses import dataclass
 
@@ -43,7 +44,21 @@ class RaggedFrequencySamplingComboModel:
 
     @classmethod
     def from_counts(cls, base_lambda, diplotype_counts):
+
         return cls([cls._get_kmer_diplo_tuple(counts, base_lambda) for counts in diplotype_counts])
+
+    def logpmf(self, observed_counts, d):
+        kmer_counts, diplo_counts = self.diplotype_counts[d]
+        diplo_counts = diplo_counts.astype(float)
+        kmer_counts = kmer_counts.astype(float)
+        s = diplo_counts.sum(axis=-1)
+        p_diplo_count = np.log(diplo_counts/s[:, None])
+        broadcasted_counts = kmer_counts.shape.broadcast_values(observed_counts[:, None])
+        p_kmer_counts = RaggedArray(poisson.logpmf(broadcasted_counts, kmer_counts.ravel()), kmer_counts.shape)
+        ps = p_kmer_counts+p_diplo_count
+        return np.array([logsumexp(row) for row in ps])
+        # sum(diplo_counts[node]/n_diplotypes_for_having[diplotype, node]*np.exp(poisson.logpmf(observed_counts[node], kmer_counts[node]))))
+
 
     def __eq__(self, other):
         return all(np.all(s[0]==o[0]) and np.all(s[1] == o[1]) for s, o in zip(self.diplotype_counts, other.diplotype_counts))
