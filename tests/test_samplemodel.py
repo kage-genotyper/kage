@@ -29,7 +29,7 @@ def simple_sampling_combo_model():
                   [2/3, 1/3+3, 3*2]]))
 
 
-
+@pytest.mark.skip("unimplenented")
 def test_simple_from_counts(counts_having_nodes, counts_not_having_nodes, 
                             simple_sampling_combo_model):
     assert SimpleSamplingComboModel.from_counts(

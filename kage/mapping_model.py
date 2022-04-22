@@ -4,7 +4,6 @@ import time
 import numpy as np
 from npstructures.numpylist import NumpyList
 from npstructures.hashtable import HashTable
-from graph_kmer_index.read_kmers import ReadKmers
 from obgraph.cython_traversing import traverse_graph_by_following_nodes
 
 
@@ -55,7 +54,6 @@ def get_node_counts_from_haplotypes(
         # reverse_kmers = np.consolve(complement_sequence, np.arange(0, k).astype(np.uint64)[::-1])
         # all_kmers = np.concatenate([kmers, reverse_kmers])
         all_kmers = kmers
-        max_node_id = graph.max_node_id()
         # node_counts = map_kmers_to_graph_index(kmer_index, max_node_id, all_kmers)
         t = time.perf_counter()
         kmer_index.count_kmers(all_kmers)

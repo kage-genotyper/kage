@@ -3,7 +3,6 @@ from shared_memory_wrapper.shared_memory import run_numpy_based_function_in_para
 import numpy as np
 from scipy.special import logsumexp
 import logging
-from .util import log_memory_usage_now
 
 MAIN = -1
 HELPER = -2
@@ -23,7 +22,7 @@ class Model:
         return np.array([self.logpmf(k1, k2, g) for g in [0, 1, 2]]).T
 
     def logpmf(self, k1, k2, genotype):
-        raise NotImplemented
+        return NotImplemented
 
 
 class ComboModelBothAlleles(Model):

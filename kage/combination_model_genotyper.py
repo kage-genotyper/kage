@@ -2,15 +2,11 @@ import logging
 import time
 from itertools import repeat
 import numpy as np
-from scipy.stats import binom
-from .util import log_memory_usage_now
 from .genotyper import Genotyper
 from .node_count_model import (
-    GenotypeNodeCountModel,
-    NodeCountModelAlleleFrequencies,
     NodeCountModelAdvanced,
 )
-from .combomodel import ComboModel, ComboModelWithIncreasedZeroProb
+from .combomodel import ComboModel
 from .models import HelperModel, ComboModelBothAlleles, ChunkedComboModelBothAlleles
 from shared_memory_wrapper import (
     to_shared_memory,
@@ -18,7 +14,6 @@ from shared_memory_wrapper import (
     SingleSharedArray,
 )
 from shared_memory_wrapper.shared_memory import get_shared_pool
-from pathos.multiprocessing import Pool
 from .node_counts import NodeCounts
 
 

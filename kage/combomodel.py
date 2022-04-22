@@ -2,21 +2,14 @@ import logging
 import time
 import gc
 from shared_memory_wrapper.shared_memory import run_numpy_based_function_in_parallel
-from .util import log_memory_usage_now
 
 import numpy as np
-from scipy.stats import nbinom, poisson, binom
+from scipy.stats import poisson
 from scipy.special import (
-    gamma,
-    factorial,
     gammaln,
     logsumexp,
-    hyp2f1,
-    hyp1f1,
     hyperu,
-    factorial,
 )
-from itertools import combinations
 
 
 def parallel_poisson_logpmf(k, rates):
