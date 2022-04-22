@@ -17,4 +17,4 @@ class SimpleSamplingComboModel:
         return cls(np.array([expected_0, expected_1, expected_2]).T*base_lambda)
 
     def __eq__(self, other):
-        return np.all(self.expected, other.expected)
+        return np.all(self.expected == other.expected)
