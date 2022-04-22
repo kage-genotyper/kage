@@ -23,14 +23,14 @@ class SimpleSamplingComboModel:
     def __eq__(self, other):
         return np.all(self.expected == other.expected)
 
-
 @dataclass
 class RaggedFrequencySamplingComboModel:
-    having_nodes_kmer_haplo_tuple: (RaggedArray, RaggedArray)
-    not_having_nodes_kmer_haplo_tuple: (RaggedArray, RaggedArray)
+    diplotype_counts: list((RaggedArray, RaggedArray))
+    # having_nodes_kmer_haplo_tuple: (RaggedArray, RaggedArray)
+    # not_having_nodes_kmer_haplo_tuple: (RaggedArray, RaggedArray)
 
     @classmethod
-    def _get_kmer_haplo_tuple(cls, counts_ragged_array, base_lambda):
+    def _get_kmer_diplo_tuple(cls, counts_ragged_array, base_lambda):
         kmer_counts = []
         haplo_counts = []
         # kmer_counts, haplo_counts = zip(*(np.unique(row, return_counts=True) for row in counts_ragged_array))
@@ -42,13 +42,8 @@ class RaggedFrequencySamplingComboModel:
         return (RaggedArray(kmer_counts)*base_lambda, RaggedArray(haplo_counts))
 
     @classmethod
-    def from_counts(cls, base_lambda, counts_having_nodes, counts_not_having_nodes):
-        return cls(cls._get_kmer_haplo_tuple(counts_having_nodes, base_lambda),
-                   cls._get_kmer_haplo_tuple(counts_not_having_nodes, base_lambda))
+    def from_counts(cls, base_lambda, diplotype_counts):
+        return cls([cls._get_kmer_diplo_tuple(counts, base_lambda) for counts in diplotype_counts])
 
     def __eq__(self, other):
-        t = True
-        for i in range(2):
-            t &= np.all(self.having_nodes_kmer_haplo_tuple[i]==other.having_nodes_kmer_haplo_tuple[i])
-            t &= np.all(self.not_having_nodes_kmer_haplo_tuple[i]==other.not_having_nodes_kmer_haplo_tuple[i])
-        return t
+        return all(np.all(s[0]==o[0]) and np.all(s[1] == o[1]) for s, o in zip(self.diplotype_counts, other.diplotype_counts))
