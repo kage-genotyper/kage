@@ -3,6 +3,7 @@ import numpy as np
 from npstructures import RaggedArray
 
 from kage.sampling_combo_model import SimpleSamplingComboModel
+from scipy.stats import poisson
 
 n_haplotypes = 4
 
@@ -35,7 +36,11 @@ def test_simple_from_counts(counts_having_nodes, counts_not_having_nodes,
         1, counts_having_nodes, counts_not_having_nodes) == simple_sampling_combo_model
 
 
-@pytest.mark.skip("unimplenented")
-def test_combomodel(sampling_combo_model, observed_counts):
-    score = sampling_combo_model.logpmf(observed_counts)
-    assert np.all(score == None)
+# @pytest.mark.skip("unimplenented")
+def test_combomodel_logpmf(simple_sampling_combo_model, observed_counts):
+    score = simple_sampling_combo_model.logpmf(observed_counts)
+    truth = [[poisson.logpmf(oc, e) for e in expected]
+             for oc, expected in
+             zip(observed_counts, simple_sampling_combo_model.expected)]
+
+    assert np.all(score == truth)
