@@ -1078,9 +1078,13 @@ def run_argument_parser(args):
     subparser.set_defaults(func=make_index_bundle)
 
     def sample_node_counts_from_population(args):
-        from .mapping_model import get_node_counts_from_haplotypes
+        from .mapping_model import get_node_counts_from_haplotypes, get_node_counts_from_genotypes
 
-        results = get_node_counts_from_haplotypes(
+        #results = get_node_counts_from_haplotypes(
+        #    args.haplotype_to_nodes, args.kmer_index, args.graph
+        #)
+
+        results = get_node_counts_from_genotypes(
             args.haplotype_to_nodes, args.kmer_index, args.graph
         )
         to_file(results, args.out_file_name)
