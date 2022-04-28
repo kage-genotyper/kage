@@ -75,8 +75,6 @@ class CombinationModelGenotyper(Genotyper):
             max_variant_id - min_variant_id + 1, dtype=np.uint8
         )
         self._prob_correct = np.zeros(max_variant_id - min_variant_id + 1, dtype=float)
-        self._dummy_count_having_variant = 0.1 * avg_coverage / 15
-        self._dummy_counts_not_having_variant = 0.1 * avg_coverage / 15
         self._genotype_transition_probs = genotype_transition_probs
         self._tricky_variants = tricky_variants
         self._use_naive_priors = use_naive_priors
