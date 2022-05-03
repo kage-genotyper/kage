@@ -1,4 +1,6 @@
 import logging
+
+from .combomodel import ComboModel
 from .node_counts import NodeCounts
 import random
 from obgraph.variant_to_nodes import VariantToNodes
@@ -28,7 +30,7 @@ def run_genotyper_on_simualated_data(
     (
         variants,
         node_counts,
-        model,
+        node_count_model,
         most_similar_variant_lookup,
         variant_to_nodes,
         helper_model,
@@ -37,8 +39,20 @@ def run_genotyper_on_simualated_data(
     truth_variants = variants.copy()
 
     # g = genotyper(model, variants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup)
+    count_models = [
+        ComboModel.from_counts(
+            average_coverage,
+            node_count_model.frequencies[nodes],
+            node_count_model.frequencies_squared[nodes],
+            node_count_model.has_too_many[nodes],
+            node_count_model.certain[nodes],
+            node_count_model.frequency_matrix[nodes],
+        )
+        for nodes in (variant_to_nodes.ref_nodes, variant_to_nodes.var_nodes)
+    ]
+
     g = genotyper(
-        model,
+        count_models,
         0,
         len(variants) - 1,
         variant_to_nodes,

@@ -1,6 +1,8 @@
 import logging
 import sys
 from .util import log_memory_usage_now
+from .sampling_combo_model import RaggedFrequencySamplingComboModel
+from .models import ComboModelBothAlleles
 
 logging.basicConfig(
     stream=sys.stdout,
@@ -160,8 +162,17 @@ def genotype(args):
                 args.most_similar_variant_lookup
             )
 
+        variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
+
         if args.model_advanced is not None:
-            model = NodeCountModelAdvanced.from_file(args.model_advanced)
+            model = from_file(args.model_advanced)
+            #model = NodeCountModelAdvanced.from_file(args.model_advanced)
+            models = [
+                model.subset_on_nodes(variant_to_nodes.ref_nodes),
+                model.subset_on_nodes(variant_to_nodes.var_nodes)
+            ]
+            models = [m.fill_empty_data() for m in models]  # fill missing data in model
+
         else:
             try:
                 model = (
@@ -176,7 +187,6 @@ def genotype(args):
                     model = NodeCountModelAlleleFrequencies.from_file(args.model)
                     logging.info("Model is allele frequency model")
 
-        variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
         variants = NumpyVariants.from_file(args.vcf)
         tricky_variants = None
         if args.tricky_variants is not None:
@@ -207,7 +217,7 @@ def genotype(args):
     results = []
     genotyper_class = globals()[args.genotyper]
     genotyper = genotyper_class(
-        model,
+        models,  # should be one model for ref node and one for var node in a list
         0,
         max_variant_id,
         variant_to_nodes,
@@ -1080,23 +1090,23 @@ def run_argument_parser(args):
     def sample_node_counts_from_population(args):
         from .mapping_model import get_node_counts_from_haplotypes, get_node_counts_from_genotypes
 
-        #results = get_node_counts_from_haplotypes(
-        #    args.haplotype_to_nodes, args.kmer_index, args.graph
-        #)
-
-        results = get_node_counts_from_genotypes(
+        counts = get_node_counts_from_genotypes(
             args.haplotype_to_nodes, args.kmer_index, args.graph
         )
-        to_file(results, args.out_file_name)
+        to_file(counts, args.out_file_name + ".tmp")
+        count_model = RaggedFrequencySamplingComboModel.from_counts(args.average_coverage, counts)
+        to_file(count_model, args.out_file_name)
 
     subparser = subparsers.add_parser("sample_node_counts_from_population")
     subparser.add_argument("-g", "--graph", required=True, type=ObGraph.from_file)
     subparser.add_argument("-i", "--kmer-index", required=True, type=from_file)
+    subparser.add_argument("-c", "--average-coverage", required=True, type=int)
     subparser.add_argument(
         "-H", "--haplotype-to-nodes", required=True, type=HaplotypeToNodes.from_file
     )
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.set_defaults(func=sample_node_counts_from_population)
+
 
     def node_counts_from_gaf_cmd(args):
         edge_mapping = pickle.load(open(args.edge_mapping, "rb"))

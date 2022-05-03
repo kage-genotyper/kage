@@ -36,6 +36,11 @@ class MultiplePoissonModel(CountModel):
         self._n_variants = self._certain_counts.size
         self._max_duplicates = self._repeat_dist.shape[1] - 1
 
+    def slice(self, from_variant, to_variant):
+        return MultiplePoissonModel(self._base_lambda,
+                                    self._repeat_dist[from_variant:to_variant],
+                                    self._certain_counts[:,0][from_variant:to_variant])
+
     @staticmethod
     def calc_repeat_log_dist_fast(allele_frequencies):
         allele_frequencies = np.tile(allele_frequencies, 2)
@@ -119,6 +124,12 @@ class NegativeBinomialModel(CountModel):
         )
         return result.flatten()
 
+    def slice(self, from_variant, to_variant):
+        return NegativeBinomialModel(self._base_lambda,
+                                     self._r[:,0][from_variant:to_variant],
+                                     self._p[:,0][from_variant:to_variant],
+                                     self._certain_counts[:,0][from_variant:to_variant])
+
 
 class PoissonModel(CountModel):
     def __init__(self, base_lambda, expected_count):
@@ -134,13 +145,22 @@ class PoissonModel(CountModel):
             k, (self._expected_count + n_copies + self.error_rate) * self._base_lambda
         )
 
+    def slice(self, from_variant, to_variant):
+        return PoissonModel(self._base_lambda, self._expected_count[from_variant:to_variant])
+
 
 class ComboModel(CountModel):
-    def __init__(self, models, model_indexes, tricky_variants=None):
+    def __init__(self, models, model_indexes):
         self._models = models
         self._model_indexes = model_indexes
-        self._tricky_variants = tricky_variants
+        logging.info("Model indexes shape: %s" % (self._model_indexes.shape))
         self._logpmf_cache = {}
+
+    def slice(self, from_variant, to_variant):
+        return ComboModel(
+            [m.slice(from_variant, to_variant) for m in self._models],
+            self._model_indexes[from_variant:to_variant]
+        )
 
     @classmethod
     def from_counts(
@@ -198,17 +218,14 @@ class ComboModel(CountModel):
 
         return cls(models, model_indices)
 
-    def precompute_logpmfs(self):
-        self._logpmf_cache = logpmf()
-
     def logpmf(self, k, n_copies=1):
         logpmf = np.zeros(k.size, dtype=np.float16)
         for i, model in enumerate(self._models):
             mask = self._model_indexes == i
+            assert len(mask.shape) == 1, mask.shape
             start_time = time.perf_counter()
             logpmf[mask] = model.logpmf(k[mask], n_copies).astype(np.float16)
             # logging.debug("Time spent on ComboModel.logpmf %s: %.3f" % (model.__class__, time.perf_counter()-start_time))
-            gc.collect()
 
         # adjust with prob of counts being wrong
         p_counts_are_wrong = 0

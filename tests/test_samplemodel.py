@@ -78,6 +78,24 @@ def test_frequency_from_counts(counts_having_0, counts_having_1, counts_having_2
         1, [counts_having_0, counts_having_1, counts_having_2]) == ragged_frequency_sampling_combo_model
 
 
+@pytest.fixture
+def ragged_frequency_sampling_model_with_missing_data():
+    return RaggedFrequencySamplingComboModel(
+        [
+            (RaggedArray([[0], [0, 1]]), RaggedArray([[5], [2, 1]])),
+            (RaggedArray([[1], [1, 2]]), RaggedArray([[5], [2, 3]])),
+            (RaggedArray([[], [1, 2]]), RaggedArray([[], [2, 3]]))
+        ]
+    )
+
+
+def test_fill_missing_data(ragged_frequency_sampling_model_with_missing_data):
+    m = ragged_frequency_sampling_model_with_missing_data
+    new = m.fill_empty_data()
+    assert np.all(new.diplotype_counts[2][0][0] == [2])
+    assert np.all(new.diplotype_counts[2][1][0] == [1])
+
+
 # @pytest.mark.skip("waiting")
 @pytest.mark.parametrize("diplotype", [0])#, 1, 2])
 def test_combomodel_logpmf(ragged_frequency_sampling_combo_model, observed_counts, diplotype):
@@ -105,3 +123,4 @@ def test_combomodel_logpmf(ragged_frequency_sampling_combo_model, observed_count
     #          zip(observed_counts, simple_sampling_combo_model.expected)]
     # 
     # assert np.all(score == truth)
+

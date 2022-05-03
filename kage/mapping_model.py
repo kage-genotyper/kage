@@ -2,6 +2,7 @@ import logging
 import time
 import numpy as np
 from graph_kmer_index.nplist import NpList
+from npstructures import RaggedArray
 from npstructures.hashtable import HashTable
 from obgraph.cython_traversing import traverse_graph_by_following_nodes
 
@@ -55,6 +56,7 @@ def get_node_counts_from_genotypes(
         mask[haplotype_nodes[0]] += 1
         mask[haplotype_nodes[1]] += 1
         for genotype in [0, 1, 2]:
+            logging.info("MASK: %s" % mask)
             nodes_with_genotype = np.where(mask==genotype)[0]
             logging.info("N nodes with genotype %d: %d" % (genotype, len(nodes_with_genotype)))
             counts_on_nodes = node_counts[nodes_with_genotype]
@@ -63,7 +65,24 @@ def get_node_counts_from_genotypes(
 
     # sampled_nodes and sampled_counts represent for each possible genotype count (0, 1, 2)
     # nodes and counts. Counts are num
-    return [HashTable(nodes.get_nparray(), counts.get_nparray()) for nodes, counts in zip(sampled_nodes, sampled_counts)]
+
+    # put nodes and counts into a ragged array
+    output = []
+    for nodes, counts in zip(sampled_nodes, sampled_counts):
+        logging.info("")
+        logging.info(nodes)
+        logging.info(counts)
+        nodes = nodes.get_nparray()
+        counts = counts.get_nparray()
+
+        data = counts[np.argsort(nodes)]
+        lengths = np.bincount(nodes, minlength=n_nodes)
+        logging.info(data)
+        logging.info(lengths)
+        output.append(RaggedArray(data, lengths))
+
+    return output
+    #return [HashTable(nodes.get_nparray(), counts.get_nparray()) for nodes, counts in zip(sampled_nodes, sampled_counts)]
 
 
 def get_node_counts_from_haplotypes(

@@ -13,7 +13,7 @@ from shared_memory_wrapper import (
     from_shared_memory,
     SingleSharedArray,
 )
-from shared_memory_wrapper.shared_memory import get_shared_pool
+from shared_memory_wrapper.shared_memory import get_shared_pool, object_to_shared_memory, object_from_shared_memory
 from .node_counts import NodeCounts
 
 
@@ -35,7 +35,7 @@ def translate_to_numeric(internal_genotypes, out=None):
 class CombinationModelGenotyper(Genotyper):
     def __init__(
         self,
-        node_count_model,
+        count_models,
         min_variant_id,
         max_variant_id,
         variant_to_nodes,
@@ -54,7 +54,7 @@ class CombinationModelGenotyper(Genotyper):
 
         self._min_variant_id = min_variant_id
         self._max_variant_id = max_variant_id
-        self._node_count_model = node_count_model
+        self._count_models = count_models
         self._genotype_frequencies = genotype_frequencies
         self._variant_to_nodes = variant_to_nodes
         self._node_counts = node_counts
@@ -93,7 +93,7 @@ class CombinationModelGenotyper(Genotyper):
         t_start = time.perf_counter()
         (from_variant, to_variant), data = data
         (
-            node_count_model_name,
+            count_model_name,
             ref_nodes_name,
             alt_nodes_name,
             node_counts_name,
@@ -103,28 +103,13 @@ class CombinationModelGenotyper(Genotyper):
         node_counts = from_shared_memory(NodeCounts, node_counts_name)
         ref_nodes = from_shared_memory(SingleSharedArray, ref_nodes_name).array
         alt_nodes = from_shared_memory(SingleSharedArray, alt_nodes_name).array
-        node_count_model = from_shared_memory(
-            NodeCountModelAdvanced, node_count_model_name
-        )
+        count_models = object_from_shared_memory(count_model_name)
 
         observed_ref_nodes = node_counts.get_node_count_array()[ref_nodes]
         observed_alt_nodes = node_counts.get_node_count_array()[alt_nodes]
 
         t = time.perf_counter()
-        models = [
-            ComboModel.from_counts(
-                avg_coverage,
-                node_count_model.frequencies[nodes],
-                node_count_model.frequencies_squared[nodes],
-                node_count_model.has_too_many[nodes],
-                node_count_model.certain[nodes],
-                node_count_model.frequency_matrix[nodes],
-            )
-            for nodes in (
-                ref_nodes[from_variant:to_variant],
-                alt_nodes[from_variant:to_variant],
-            )
-        ]
+        models = [c.slice(from_variant, to_variant) for c in count_models]
         model_both_alleles = ComboModelBothAlleles(*models)
         logging.info(
             "Time spent on thread making models: %.3f" % (time.perf_counter() - t)
@@ -157,53 +142,10 @@ class CombinationModelGenotyper(Genotyper):
         observed_ref_nodes = self._node_counts.get_node_count_array()[ref_nodes]
         observed_alt_nodes = self._node_counts.get_node_count_array()[alt_nodes]
 
-        node_count_model = self._node_count_model
         # One model for ref nodes and one for alt nodes
-        start_time = time.perf_counter()
         logging.info("Creating combomodels")
 
-        n_threads = 4
-        max_variant_id = len(ref_nodes)
-        variant_chunks = list(
-            [int(i) for i in np.linspace(0, max_variant_id, self._n_threads + 1)]
-        )
-        variant_chunks = [
-            (from_pos, to_pos)
-            for from_pos, to_pos in zip(variant_chunks[0:-1], variant_chunks[1:])
-        ]
-        logging.info("Variant chunks: %s" % variant_chunks)
-
-        node_count_model_name = to_shared_memory(node_count_model)
-        ref_nodes_name = to_shared_memory(SingleSharedArray(ref_nodes))
-        alt_nodes_name = to_shared_memory(SingleSharedArray(alt_nodes))
-        node_counts_name = to_shared_memory(self._node_counts)
-        logging.info("Done writing to shared memory")
-
-        models_both_alleles = []
-        logging.info("Making pool")
-        pool = get_shared_pool(n_threads)
-        logging.info("Done making pool")
-        data = (
-            node_count_model_name,
-            ref_nodes_name,
-            alt_nodes_name,
-            node_counts_name,
-            self._estimated_mapped_haplotype_coverage,
-        )
-        for model_both_alleles in pool.imap(
-            CombinationModelGenotyper.make_combomodel_from_shared_memory_data,
-            zip(variant_chunks, repeat(data)),
-        ):
-            models_both_alleles.append(model_both_alleles)
-
-        logging.info("Done creating combomodels")
-
-        t = time.perf_counter()
-        combination_model_both = ChunkedComboModelBothAlleles(models_both_alleles)
-        logging.info(
-            "Time concatenating into chunked combo model: %.4f"
-            % (time.perf_counter() - t)
-        )
+        combination_model_both = ComboModelBothAlleles(*self._count_models)
 
         helper_model = HelperModel(
             combination_model_both,
