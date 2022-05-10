@@ -44,7 +44,7 @@ def test_get_node_counts_from_geontypes():
     assert counts[2][3] == [4]
     assert len(counts[2][2]) == 0
 
-    frequency_model = RaggedFrequencySamplingComboModel.from_counts(1, counts)
+    frequency_model = RaggedFrequencySamplingComboModel.from_counts(counts)
 
     assert frequency_model.diplotype_counts[2][0][3] == [4]
     assert frequency_model.diplotype_counts[2][1][3] == [1]

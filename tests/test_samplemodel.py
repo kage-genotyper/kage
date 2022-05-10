@@ -57,7 +57,7 @@ def ragged_frequency_sampling_combo_model():
 def test_simple_from_counts(counts_having_nodes, counts_not_having_nodes, 
                             simple_sampling_combo_model):
     assert SimpleSamplingComboModel.from_counts(
-        1, counts_having_nodes, counts_not_having_nodes) == simple_sampling_combo_model
+        counts_having_nodes, counts_not_having_nodes) == simple_sampling_combo_model
 
 
 # @pytest.mark.skip("unimplenented")
@@ -75,7 +75,7 @@ def test_frequency_from_counts(counts_having_0, counts_having_1, counts_having_2
                                ragged_frequency_sampling_combo_model):
 
     assert RaggedFrequencySamplingComboModel.from_counts(
-        1, [counts_having_0, counts_having_1, counts_having_2]) == ragged_frequency_sampling_combo_model
+        [counts_having_0, counts_having_1, counts_having_2]) == ragged_frequency_sampling_combo_model
 
 
 @pytest.fixture
@@ -88,12 +88,44 @@ def ragged_frequency_sampling_model_with_missing_data():
         ]
     )
 
+@pytest.fixture
+def ragged_frequency_sampling_model_with_all_missing_data():
+    return RaggedFrequencySamplingComboModel(
+        [
+            (RaggedArray([[], [0, 1]]), RaggedArray([[], [2, 1]])),
+            (RaggedArray([[], [1, 2]]), RaggedArray([[], [2, 3]])),
+            (RaggedArray([[], [1, 2]]), RaggedArray([[], [2, 3]]))
+        ]
+    )
+
+@pytest.fixture
+def ragged_frequency_sampling_model_with_only_0_having_data():
+    return RaggedFrequencySamplingComboModel(
+        [
+            (RaggedArray([[0], [0, 1]]), RaggedArray([[2], [2, 1]])),
+            (RaggedArray([[], [4, 2]]), RaggedArray([[], [2, 2]])),
+            (RaggedArray([[], [1, 2]]), RaggedArray([[], [2, 3]]))
+        ]
+    )
+
 
 def test_fill_missing_data(ragged_frequency_sampling_model_with_missing_data):
     m = ragged_frequency_sampling_model_with_missing_data
     new = m.fill_empty_data()
     assert np.all(new.diplotype_counts[2][0][0] == [2])
     assert np.all(new.diplotype_counts[2][1][0] == [1])
+
+
+def test_fill_missing_data_should_crash(ragged_frequency_sampling_model_with_all_missing_data):
+    m = ragged_frequency_sampling_model_with_all_missing_data
+    with pytest.raises(AssertionError):
+        new = m.fill_empty_data()
+
+def test_fill_missing_data_only_0_having_data(ragged_frequency_sampling_model_with_only_0_having_data):
+    m = ragged_frequency_sampling_model_with_only_0_having_data
+    new = m.fill_empty_data()
+    assert np.all(new.diplotype_counts[1][0][0] == [3])  # 3 is average of other data for 1
+    assert np.all(new.diplotype_counts[1][1][0] == [1])  # frequency is 1 for missing data
 
 
 # @pytest.mark.skip("waiting")

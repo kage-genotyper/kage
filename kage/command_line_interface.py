@@ -95,7 +95,8 @@ def analyse_variants(args):
     logging.info("Reading reverse index")
     reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
     logging.info("Reading model")
-    model = NodeCountModelAdvanced.from_file(args.model)
+    #model = NodeCountModelAdvanced.from_file(args.model)
+    model = from_file(args.model)
     logging.info("REading helper variants")
     helper_variants = np.load(args.helper_variants)
     logging.info("Reading combination matrix")
@@ -166,6 +167,12 @@ def genotype(args):
 
         if args.model_advanced is not None:
             model = from_file(args.model_advanced)
+            model.scale(args.average_coverage//2)
+            #todo next: add error rate based on coverage (e.g. 0.01 * coverage
+            # model count should be float from before, fix that
+            model.astype(float)
+            model.add_error_rate(0.01 * args.average_coverage)
+
             #model = NodeCountModelAdvanced.from_file(args.model_advanced)
             models = [
                 model.subset_on_nodes(variant_to_nodes.ref_nodes),
@@ -1094,13 +1101,12 @@ def run_argument_parser(args):
             args.haplotype_to_nodes, args.kmer_index, args.graph
         )
         to_file(counts, args.out_file_name + ".tmp")
-        count_model = RaggedFrequencySamplingComboModel.from_counts(args.average_coverage, counts)
+        count_model = RaggedFrequencySamplingComboModel.from_counts(counts)
         to_file(count_model, args.out_file_name)
 
     subparser = subparsers.add_parser("sample_node_counts_from_population")
     subparser.add_argument("-g", "--graph", required=True, type=ObGraph.from_file)
     subparser.add_argument("-i", "--kmer-index", required=True, type=from_file)
-    subparser.add_argument("-c", "--average-coverage", required=True, type=int)
     subparser.add_argument(
         "-H", "--haplotype-to-nodes", required=True, type=HaplotypeToNodes.from_file
     )

@@ -6,6 +6,7 @@ from obgraph.variant_to_nodes import VariantToNodes
 from kage.node_counts import  NodeCounts
 from kage.node_count_model import NodeCountModelAdvanced
 from obgraph.variants import VcfVariants
+from kage.sampling_combo_model import RaggedFrequencySamplingComboModel
 
 def test():
     variant_to_nodes = VariantToNodes(np.array([0, 2]), np.array([1, 3]))
@@ -29,10 +30,12 @@ def test():
 
 
     helpers = np.array([1, 0])
-    node_count_model = NodeCountModelAdvanced.from_dict_of_frequencies({}, 4)
+    #node_count_model = NodeCountModelAdvanced.from_dict_of_frequencies({}, 4)
+    model_ref = RaggedFrequencySamplingComboModel.create_naive(2)
+    model_var = RaggedFrequencySamplingComboModel.create_naive(2)
 
     genotyper = CombinationModelGenotyper(
-        node_count_model, 0, 3, variant_to_nodes, node_counts, helper_model=helpers, helper_model_combo=combo_matrix
+        [model_ref, model_var], 0, 3, variant_to_nodes, node_counts, helper_model=helpers, helper_model_combo=combo_matrix
     )
 
     genotypes, probs, count_probs = genotyper.genotype()
