@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 from npstructures import RaggedArray
 
-from kage.sampling_combo_model import SimpleSamplingComboModel, RaggedFrequencySamplingComboModel
+from kage.sampling_combo_model import SimpleSamplingComboModel, RaggedFrequencySamplingComboModel, LimitedFrequencySamplingComboModel
 from scipy.stats import poisson
 
 n_haplotypes = 4
@@ -155,4 +155,25 @@ def test_combomodel_logpmf(ragged_frequency_sampling_combo_model, observed_count
     #          zip(observed_counts, simple_sampling_combo_model.expected)]
     # 
     # assert np.all(score == truth)
+
+
+@pytest.fixture
+def matrix_combomodel():
+    return LimitedFrequencySamplingComboModel.create_naive(n_variants=2, max_count=4)
+
+
+def test_matrix_combomodel_logpmf(matrix_combomodel, observed_counts, diplotype=2):
+    scores = matrix_combomodel.logpmf(observed_counts, diplotype)
+    scores = np.exp(scores)
+
+    truth = []
+    for node in range(len(observed_counts)):
+        prob = 0
+        for possible_count, n_individuals in enumerate(matrix_combomodel.diplotype_counts[diplotype][node]):
+            ratio = n_individuals / np.sum(matrix_combomodel.diplotype_counts[diplotype][node])
+            prob += ratio * poisson.pmf(observed_counts[node], possible_count)
+            #print("Possible count: %d, n_individuals: %.2f, ratio: %.2f" % (possible_count, n_individuals, ratio))
+        truth.append(prob)
+
+    assert np.all(truth == scores)
 

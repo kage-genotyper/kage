@@ -13,6 +13,8 @@ def _map_haplotype_sequence(sequence, kmer_index, k):
     kmer_index.count_kmers(kmers)
 
 
+
+
 def get_node_counts_from_genotypes(
     haplotype_to_nodes, kmer_index, graph, n_haplotypes=None, k=31
 ):
@@ -21,20 +23,48 @@ def get_node_counts_from_genotypes(
     Each HashTable has kmer counts for all possible individuals with that genotype
     position/index in that HashTable is node id
     """
+    n_nodes = len(graph.nodes)
 
+    sampled_counts, sampled_nodes = _get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index,
+                                                                           n_haplotypes)
+    # sampled_nodes and sampled_counts represent for each possible genotype count (0, 1, 2)
+    # nodes and counts. Counts are num
+
+    # put nodes and counts into a ragged array
+    output = []
+    for nodes, counts in zip(sampled_nodes, sampled_counts):
+        logging.info("")
+        logging.info(nodes)
+        logging.info(counts)
+        nodes = nodes.get_nparray()
+        counts = counts.get_nparray()
+
+        data = counts[np.argsort(nodes)]
+        lengths = np.bincount(nodes, minlength=n_nodes)
+        logging.info(data)
+        logging.info(lengths)
+        output.append(RaggedArray(data, lengths))
+
+    return output
+    #return [HashTable(nodes.get_nparray(), counts.get_nparray()) for nodes, counts in zip(sampled_nodes, sampled_counts)]
+
+
+def _get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, n_haplotypes=None,
+                                  return_matrix_of_counts=False):
     sampled_nodes = [NpList(dtype=np.int) for _ in range(3)]
     sampled_counts = [NpList(dtype=np.int) for _ in range(3)]
 
+
     n_nodes = len(graph.nodes)
+    count_matrices = [np.zeros((n_nodes, 20)) for _ in range(3)]
 
     if n_haplotypes is None:
         n_haplotypes = haplotype_to_nodes.n_haplotypes()
         logging.info("Will process %d haplotypes" % n_haplotypes)
-
-    for individual_id in range(0, n_haplotypes//2):
+    for individual_id in range(0, n_haplotypes // 2):
         logging.info("Individual %d" % individual_id)
         haplotype_nodes = []
-        for haplotype_id in [individual_id*2, individual_id*2+1]:
+        for haplotype_id in [individual_id * 2, individual_id * 2 + 1]:
             nodes = haplotype_to_nodes.get_nodes(haplotype_id)
             nodes_index = np.zeros(n_nodes, dtype=np.uint8)
             nodes_index[nodes] = 1
@@ -57,32 +87,20 @@ def get_node_counts_from_genotypes(
         mask[haplotype_nodes[1]] += 1
         for genotype in [0, 1, 2]:
             logging.info("MASK: %s" % mask)
-            nodes_with_genotype = np.where(mask==genotype)[0]
+            nodes_with_genotype = np.where(mask == genotype)[0]
             logging.info("N nodes with genotype %d: %d" % (genotype, len(nodes_with_genotype)))
-            counts_on_nodes = node_counts[nodes_with_genotype]
+            counts_on_nodes = node_counts[nodes_with_genotype].astype(int)
             sampled_nodes[genotype].extend(nodes_with_genotype)
             sampled_counts[genotype].extend(counts_on_nodes)
 
-    # sampled_nodes and sampled_counts represent for each possible genotype count (0, 1, 2)
-    # nodes and counts. Counts are num
+            # todo: what to do with counts larger than supported by matrix
+            count_matrices[genotype][nodes_with_genotype,
+                                     counts_on_nodes[np.where(counts_on_nodes < 20)[0]]] += 1
 
-    # put nodes and counts into a ragged array
-    output = []
-    for nodes, counts in zip(sampled_nodes, sampled_counts):
-        logging.info("")
-        logging.info(nodes)
-        logging.info(counts)
-        nodes = nodes.get_nparray()
-        counts = counts.get_nparray()
+    if return_matrix_of_counts:
+        return count_matrices
 
-        data = counts[np.argsort(nodes)]
-        lengths = np.bincount(nodes, minlength=n_nodes)
-        logging.info(data)
-        logging.info(lengths)
-        output.append(RaggedArray(data, lengths))
-
-    return output
-    #return [HashTable(nodes.get_nparray(), counts.get_nparray()) for nodes, counts in zip(sampled_nodes, sampled_counts)]
+    return sampled_counts, sampled_nodes
 
 
 def get_node_counts_from_haplotypes(

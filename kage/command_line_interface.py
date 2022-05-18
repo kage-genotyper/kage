@@ -167,10 +167,8 @@ def genotype(args):
 
         if args.model_advanced is not None:
             model = from_file(args.model_advanced)
-            model.scale(args.average_coverage//2)
-            #todo next: add error rate based on coverage (e.g. 0.01 * coverage
-            # model count should be float from before, fix that
             model.astype(float)
+            model.scale(args.average_coverage/2)
             model.add_error_rate(0.01 * args.average_coverage)
 
             #model = NodeCountModelAdvanced.from_file(args.model_advanced)

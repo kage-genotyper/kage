@@ -26,6 +26,47 @@ class SimpleSamplingComboModel:
     def __eq__(self, other):
         return np.all(self.expected == other.expected)
 
+
+@dataclass
+class LimitedFrequencySamplingComboModel:
+    # stores only number of individuals having counts up to a given limit
+    diplotype_counts: List[np.ndarray]  # list of matrices, each matrix is n_variants x max count supported
+
+    def add_error_rate(self, error_rate=0.1):
+        pass
+
+    @classmethod
+    def create_naive(cls, n_variants, max_count=3, prior=0):
+        empty = np.zeros((n_variants, max_count))
+        counts0 = empty.copy()
+        counts0[:,0] = 1
+        counts0[:,0] += prior
+        counts1 = empty.copy()
+        counts1[:,1] = 1
+        counts1[:,1] += prior
+        counts2 = empty.copy()
+        counts2[:,2] = 1
+        counts1[:,2] += prior
+        return cls([counts0, counts1, counts2])
+
+    def subset_on_nodes(self, nodes):
+        return self.__class__([matrix[nodes,:] for matrix in self.diplotype_counts])
+
+    def __eq__(self, other):
+        return all(np.all(m1 == m2) for m1, m2 in zip(self.diplotype_counts, other.diplotype_counts))
+
+    def logpmf(self, observed_counts, d, error_rate=0):
+        counts = self.diplotype_counts[d]
+        counts = counts.astype(float)
+        frequencies = np.log(counts / np.sum(counts, axis=-1)[:,None])
+        print("Frequencies: %s" % frequencies)
+        poisson_lambda = np.arange(counts.shape[1])[None,:]
+        prob = poisson.logpmf(observed_counts[:,None], poisson_lambda)
+        print(prob)
+        prob = logsumexp(frequencies + prob, axis=-1)
+        return prob
+        # sum(diplo_counts[node]/n_diplotypes_for_having[diplotype, node]*np.exp(poisson.logpmf(observed_counts[node], kmer_counts[node]))))
+
 @dataclass
 class RaggedFrequencySamplingComboModel:
     # the first RaggedArrray in the tuple represents counts,
@@ -54,20 +95,7 @@ class RaggedFrequencySamplingComboModel:
 
     @classmethod
     def _get_kmer_diplo_tuple(cls, counts_ragged_array):
-        kmer_counts = []
-        haplo_counts = []
-        # kmer_counts, haplo_counts = zip(*(np.unique(row, return_counts=True) for row in counts_ragged_array))
         kmer_counts, haplo_counts = np.unique(counts_ragged_array, axis=-1, return_counts=True)
-
-        """
-        for i, row in enumerate(counts_ragged_array):
-            if i % 1000 == 0:
-                logging.info("Making diplo counts for variant %d/%d" % (i, len(counts_ragged_array)))
-            unique, counts = np.unique(row, return_counts=True)
-            kmer_counts.append(unique)
-            haplo_counts.append(counts)
-        """
-
         return [RaggedArray(kmer_counts), RaggedArray(haplo_counts)]
 
     def describe_node(self, node):
@@ -97,12 +125,7 @@ class RaggedFrequencySamplingComboModel:
         #sums = [np.array([np.sum(row) if len(row) > 0 else 1 for row in frequencies])
         #        for _, frequencies in self.diplotype_counts]
         sums = [np.sum(frequencies, axis=-1) for _, frequencies in self.diplotype_counts]
-        print()
-        print("SUMS: %s" % sums)
-        logging.info("N sums: %d" % len(sums[0]))
-
         total_counts = [(counts * frequencies) for counts, frequencies in self.diplotype_counts]
-        logging.info("N total counts: %d" % len(total_counts[0]))
         #expected = [np.array([np.sum(row) if len(row) > 0 else -1 for row in rows]) for rows in total_counts]
         expected = [np.sum(s, axis=-1) for s in total_counts]  # alternative
         expected = [e/s for e, s in zip(expected, sums)]
@@ -130,11 +153,6 @@ class RaggedFrequencySamplingComboModel:
         c1[missing1] = (c2[missing1] + c0[missing1]) / 2
         c2[missing2] = c1[missing2] + c1[missing2] - c0[missing2]
 
-        w = np.where(np.isnan(c0[missing0]))
-        print(w)
-        print(c1[w])
-        print(c2[w])
-
         assert np.sum(np.isnan(c0[missing0])) == 0
         assert np.sum(np.isnan(c1[missing1])) == 0
         assert np.sum(np.isnan(c2[missing2])) == 0
@@ -159,6 +177,16 @@ class RaggedFrequencySamplingComboModel:
     @classmethod
     def from_counts(cls, diplotype_counts):
         return cls([cls._get_kmer_diplo_tuple(counts) for counts in diplotype_counts])
+
+    @classmethod
+    def from_multiple(cls, models):
+        # merges multiple models into a single
+        new = []
+        for count in range(3):
+            new_counts = []
+            new_frequencies = []
+
+
 
     def logpmf(self, observed_counts, d, error_rate=0.0):
         kmer_counts, diplo_counts = self.diplotype_counts[d]
