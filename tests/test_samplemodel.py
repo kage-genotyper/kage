@@ -177,3 +177,16 @@ def test_matrix_combomodel_logpmf(matrix_combomodel, observed_counts, diplotype=
 
     assert np.all(truth == scores)
 
+
+def test_fill_matrix_empty_data():
+    model = LimitedFrequencySamplingComboModel([
+        np.array([[3, 0, 0, 0],
+                 [2, 0, 0, 10]]),
+        np.array([[0, 4, 0, 0],
+                 [0, 0, 5, 0]]),
+        np.array([[0, 0, 10, 0],
+                  [0, 0, 20, 0]])
+    ])
+
+    model.fill_empty_data(prior=0.1)
+    print(model.diplotype_counts[0])

@@ -50,13 +50,13 @@ def get_node_counts_from_genotypes(
 
 
 def _get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, n_haplotypes=None,
-                                  return_matrix_of_counts=False):
+                                  return_matrix_of_counts=False, max_count=30):
     sampled_nodes = [NpList(dtype=np.int) for _ in range(3)]
     sampled_counts = [NpList(dtype=np.int) for _ in range(3)]
 
 
     n_nodes = len(graph.nodes)
-    count_matrices = [np.zeros((n_nodes, 20)) for _ in range(3)]
+    count_matrices = [np.zeros((n_nodes, max_count)) for _ in range(3)]
 
     if n_haplotypes is None:
         n_haplotypes = haplotype_to_nodes.n_haplotypes()
@@ -94,8 +94,9 @@ def _get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, n_ha
             sampled_counts[genotype].extend(counts_on_nodes)
 
             # todo: what to do with counts larger than supported by matrix
-            count_matrices[genotype][nodes_with_genotype,
-                                     counts_on_nodes[np.where(counts_on_nodes < 20)[0]]] += 1
+            below_max_count = np.where(counts_on_nodes < max_count)[0]
+            count_matrices[genotype][nodes_with_genotype[below_max_count],
+                                     counts_on_nodes[below_max_count]] += 1
 
     if return_matrix_of_counts:
         return count_matrices

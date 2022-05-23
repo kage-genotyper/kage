@@ -32,6 +32,9 @@ class LimitedFrequencySamplingComboModel:
     # stores only number of individuals having counts up to a given limit
     diplotype_counts: List[np.ndarray]  # list of matrices, each matrix is n_variants x max count supported
 
+    def __post_init__(self):
+        self.diplotype_counts = [c.astype(float) for c in self.diplotype_counts]
+
     def add_error_rate(self, error_rate=0.1):
         pass
 
@@ -55,17 +58,73 @@ class LimitedFrequencySamplingComboModel:
     def __eq__(self, other):
         return all(np.all(m1 == m2) for m1, m2 in zip(self.diplotype_counts, other.diplotype_counts))
 
-    def logpmf(self, observed_counts, d, error_rate=0):
+    def logpmf(self, observed_counts, d, base_lambda=1.0, error_rate=0.01):
+        logging.info("base lambda in LimitedFreq model is %.3f" % base_lambda)
+        logging.info("Error rate is %.3f" % error_rate)
         counts = self.diplotype_counts[d]
         counts = counts.astype(float)
         frequencies = np.log(counts / np.sum(counts, axis=-1)[:,None])
-        print("Frequencies: %s" % frequencies)
-        poisson_lambda = np.arange(counts.shape[1])[None,:]
+        poisson_lambda = (np.arange(counts.shape[1])[None,:] + error_rate) * base_lambda
         prob = poisson.logpmf(observed_counts[:,None], poisson_lambda)
-        print(prob)
         prob = logsumexp(frequencies + prob, axis=-1)
         return prob
         # sum(diplo_counts[node]/n_diplotypes_for_having[diplotype, node]*np.exp(poisson.logpmf(observed_counts[node], kmer_counts[node]))))
+
+    def describe_node(self, node):
+        description = "\n"
+        for count in range(3):
+            description += "Having %d copies: " % count
+            description += ', '.join("%d: %.3f" % (i, self.diplotype_counts[count][node][i]) for i in np.nonzero(self.diplotype_counts[count][node])[0])
+            #description += ', '.join("%d: %d" % (c, f) for c, f in np.unique(self.diplotype_counts[count][node], return_counts=True))
+            description += "\n"
+
+        return description
+
+    def fill_empty_data(self, prior=0.01):
+        expected_counts = []
+        for diplotype in [0, 1, 2]:
+            logging.info("Computing expected counts for genotype %d" % diplotype)
+            m = self.diplotype_counts[diplotype]
+            not_missing = np.where(np.sum(m, axis=-1) > 0)[0]
+            expected = np.zeros(m.shape[0], dtype=float)
+            expected[not_missing] = np.sum(np.arange(m.shape[1]) * m[not_missing], axis=-1) / np.sum(m[not_missing], axis=-1)
+            expected_counts.append(expected)
+
+        # add priors
+        # assume naively counts for 1 is 1 more than expected as 0. Counts at 2 is 2 more than expected at 1
+        e0, e1, e2 = expected_counts
+        m0, m1, m2 = self.diplotype_counts
+        max_count = m0.shape[1]-1
+        logging.info("Adding priors")
+        logging.info("Size of e: %s" % (e1.shape))
+        positions = np.round(e1).astype(int) - 1
+        logging.info("Found positions")
+        positions = np.maximum(0, positions)
+        logging.info("Found max")
+        rows = np.arange(0, m0.shape[0])
+        m0[rows, positions] += prior
+        logging.info("done 0")
+        m1[rows,np.minimum(max_count, np.round(e0).astype(int) + 1)] += prior
+        logging.info("done 1")
+        m2[rows,np.minimum(max_count, np.round(e0).astype(int) + 2)] += prior
+        logging.info("done 2")
+
+        logging.info("Asserting")
+        assert all([np.all(np.sum(c, axis=-1) > 0) for c in self.diplotype_counts])
+
+    def has_no_data(self, idx):
+        missing = [np.sum(c[idx]) == 0 for c in self.diplotype_counts]
+        # if 2 out of 3 is missing data, return True
+        return sum(missing) >= 2
+
+    def has_duplicates(self, idx):
+        counts = [c[idx] for c in self.diplotype_counts]
+        for i in range(3):
+            # if there are counts outside position i, there are duplicates
+            if np.sum(counts[i]) - counts[i][i] > 0:
+                return True
+        return False
+
 
 @dataclass
 class RaggedFrequencySamplingComboModel:

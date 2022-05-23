@@ -152,6 +152,7 @@ class CombinationModelGenotyper(Genotyper):
             self._helper_model,
             self._helper_model_combo_matrix,
             self._tricky_variants,
+            self._estimated_mapped_haplotype_coverage,
         )
         genotypes, probabilities = helper_model.predict(
             observed_ref_nodes, observed_alt_nodes, return_probs=True

@@ -39,12 +39,14 @@ class ComboModelBothAlleles(Model):
         self._model_ref = None
         self._model_alt = None
 
-    def logpmf(self, k1, k2, genotype):
+    def logpmf(self, k1, k2, genotype, base_lambda=1.0):
         if genotype in self._logpmf_cache:
             return self._logpmf_cache[genotype]
 
-        ref_probs = self._model_ref.logpmf(k1, 2 - genotype)
-        alt_probs = self._model_alt.logpmf(k2, genotype)
+        logging.info("Using base lambda %.3f in combo model both alleles" % base_lambda)
+        logging.info("Model is %s" % type(self._model_ref))
+        ref_probs = self._model_ref.logpmf(k1, 2 - genotype, base_lambda=base_lambda)
+        alt_probs = self._model_alt.logpmf(k2, genotype, base_lambda=base_lambda)
         prob = ref_probs + alt_probs
 
         self._logpmf_cache[genotype] = prob
@@ -72,7 +74,7 @@ class ChunkedComboModelBothAlleles(Model):
 
 class HelperModel(Model):
     def __init__(
-        self, model, helper_variants, genotype_combo_matrix, tricky_variants=None
+        self, model, helper_variants, genotype_combo_matrix, tricky_variants=None, base_lambda=1.0
     ):
         self._model = model
         self._helper_variants = helper_variants
@@ -87,9 +89,10 @@ class HelperModel(Model):
         )
         self._tricky_variants = tricky_variants
         self.count_probs = None
+        self._base_lambda = base_lambda
 
     def score(self, k1, k2):
-        count_probs = np.array([self._model.logpmf(k1, k2, g) for g in [0, 1, 2]]).T
+        count_probs = np.array([self._model.logpmf(k1, k2, g, self._base_lambda) for g in [0, 1, 2]]).T
         self.count_probs = count_probs
 
         if self._tricky_variants is not None:

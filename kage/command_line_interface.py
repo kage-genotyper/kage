@@ -97,6 +97,8 @@ def analyse_variants(args):
     logging.info("Reading model")
     #model = NodeCountModelAdvanced.from_file(args.model)
     model = from_file(args.model)
+    model.fill_empty_data()
+
     logging.info("REading helper variants")
     helper_variants = np.load(args.helper_variants)
     logging.info("Reading combination matrix")
@@ -167,16 +169,19 @@ def genotype(args):
 
         if args.model_advanced is not None:
             model = from_file(args.model_advanced)
-            model.astype(float)
-            model.scale(args.average_coverage/2)
-            model.add_error_rate(0.01 * args.average_coverage)
+            #model.astype(float)
+            #model.scale(args.average_coverage/2)
+            #model.add_error_rate(0.01 * args.average_coverage)
 
             #model = NodeCountModelAdvanced.from_file(args.model_advanced)
             models = [
                 model.subset_on_nodes(variant_to_nodes.ref_nodes),
                 model.subset_on_nodes(variant_to_nodes.var_nodes)
             ]
-            models = [m.fill_empty_data() for m in models]  # fill missing data in model
+            logging.info("Filling missing data")
+            for m in models:
+                m.fill_empty_data()
+
 
         else:
             try:
@@ -637,7 +642,8 @@ def run_argument_parser(args):
     def find_tricky_variants(args):
         variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
         # model = GenotypeNodeCountModel.from_file(args.node_count_model)
-        model = NodeCountModelAdvanced.from_file(args.node_count_model)
+        #model = NodeCountModelAdvanced.from_file(args.node_count_model)
+        model = from_file(args.node_count_model)
         reverse_index = ReverseKmerIndex.from_file(args.reverse_kmer_index)
 
         tricky_variants = np.zeros(len(variant_to_nodes.ref_nodes + 1), dtype=np.uint32)
@@ -649,7 +655,7 @@ def run_argument_parser(args):
         max_counts_model = args.max_counts_model
 
         for variant_id in range(0, len(variant_to_nodes.ref_nodes)):
-            if variant_id % 100000 == 0:
+            if variant_id % 1000 == 0:
                 logging.info(
                     "%d variants processed, %d tricky due to model, %d tricky due to kmers. N non-unique filtered: %d"
                     % (variant_id, n_tricky_model, n_tricky_kmers, n_nonunique)
@@ -658,23 +664,20 @@ def run_argument_parser(args):
             ref_node = variant_to_nodes.ref_nodes[variant_id]
             var_node = variant_to_nodes.var_nodes[variant_id]
 
-            model_counts_ref = 1 + model.certain[ref_node] + model.frequencies[ref_node]
-            model_counts_var = 1 + model.certain[var_node] + model.frequencies[var_node]
+            #model_counts_ref = 1 + model.certain[ref_node] + model.frequencies[ref_node]
+            #model_counts_var = 1 + model.certain[var_node] + model.frequencies[var_node]
 
             if args.only_allow_unique:
                 # if model.counts_homo_ref[var_node] > 0 or model.counts_homo_alt[ref_node] > 0:
-                if model_counts_ref > 1 or model_counts_var > 1:
+                if model.has_duplicates(ref_node) or model.has_duplicates(var_node):
+                #if model_counts_ref > 1 or model_counts_var > 1:
                     n_nonunique += 1
                     tricky_variants[variant_id] = 1
 
             # if model_counts_ref[2] > max_counts_model and model_counts_var[2] > max_counts_model:
             # if model_counts_ref[2] < model_counts_ref[1] * 1.1 or model_counts_var[2] < model_counts_var[1] * 1.1:
             m = args.max_counts_model
-            if False and (
-                model_counts_ref > model_counts_var * m
-                or model_counts_var > model_counts_ref * m
-                or model_counts_var + model_counts_ref > m * 3
-            ):
+            if model.has_no_data(ref_node) or model.has_no_data(var_node):
                 # logging.warning(model_counts_ref)
                 # logging.warning(model_counts_ref)
                 tricky_variants[variant_id] = 1
@@ -1095,16 +1098,32 @@ def run_argument_parser(args):
     def sample_node_counts_from_population(args):
         from .mapping_model import get_node_counts_from_haplotypes, get_node_counts_from_genotypes
 
-        counts = get_node_counts_from_genotypes(
-            args.haplotype_to_nodes, args.kmer_index, args.graph
-        )
-        to_file(counts, args.out_file_name + ".tmp")
-        count_model = RaggedFrequencySamplingComboModel.from_counts(counts)
-        to_file(count_model, args.out_file_name)
+        if args.store_as_matrix:
+            logging.info("Will store model as as dense matrix")
+            from .mapping_model import _get_sampled_nodes_and_counts
+            from .sampling_combo_model import LimitedFrequencySamplingComboModel
+            counts = _get_sampled_nodes_and_counts(args.graph,
+                                                   args.haplotype_to_nodes,
+                                                   args.kmer_size,
+                                                   args.kmer_index,
+                                                   return_matrix_of_counts=True)
+
+            model = LimitedFrequencySamplingComboModel(counts)
+            to_file(model, args.out_file_name)
+
+        else:
+            counts = get_node_counts_from_genotypes(
+                args.haplotype_to_nodes, args.kmer_index, args.graph
+            )
+            to_file(counts, args.out_file_name + ".tmp")
+            count_model = RaggedFrequencySamplingComboModel.from_counts(counts)
+            to_file(count_model, args.out_file_name)
 
     subparser = subparsers.add_parser("sample_node_counts_from_population")
     subparser.add_argument("-g", "--graph", required=True, type=ObGraph.from_file)
     subparser.add_argument("-i", "--kmer-index", required=True, type=from_file)
+    subparser.add_argument("-k", "--kmer-size", required=False, type=int, default=31)
+    subparser.add_argument("-m", "--store-as-matrix", required=False, type=bool)
     subparser.add_argument(
         "-H", "--haplotype-to-nodes", required=True, type=HaplotypeToNodes.from_file
     )

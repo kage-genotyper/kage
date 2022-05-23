@@ -271,7 +271,6 @@ class GenotypeDebugger:
         #    return
 
         if not self.truth_regions.is_inside_regions(variant.position):
-            logging.info("SKIPPED")
             return
 
         reference_kmers = set(self.reverse_kmer_index.get_node_kmers(reference_node))
@@ -302,12 +301,11 @@ class GenotypeDebugger:
                 ):
                     self.n_correct_genotypes[variant.type] += 1
                 else:
-                    if variant.type != "SNP":
-                        # logging.warning("Wrong genotype: %s / %s" % (
-                        #    self.truth_genotypes.get(variant), self.predicted_genotypes.get(variant)))
-                        self.print_info_about_variant(
-                            reference_node, variant_node, variant, variant_id
-                        )
+                    # logging.warning("Wrong genotype: %s / %s" % (
+                    #    self.truth_genotypes.get(variant), self.predicted_genotypes.get(variant)))
+                    self.print_info_about_variant(
+                        reference_node, variant_node, variant, variant_id
+                    )
 
             elif self.predicted_genotypes.get(variant).genotype == "0|0":
                 self.n_correct_genotypes[variant.type] += 1
@@ -316,8 +314,7 @@ class GenotypeDebugger:
         #    self.n_ref_nodes_zero_in_model += 1
 
         if (
-            variant.type != "SNP"
-            and self.predicted_genotypes.has_variant(variant)
+            self.predicted_genotypes.has_variant(variant)
             and self.truth_genotypes.has_variant(variant)
         ):
             if (
@@ -355,8 +352,7 @@ class GenotypeDebugger:
                             # self.print_info_about_variant(reference_node, variant_node, variant, variant_id)
 
         if (
-            variant.type != "SNP"
-            and self.predicted_genotypes.has_variant(variant)
+            self.predicted_genotypes.has_variant(variant)
             and (
                 not self.truth_genotypes.has_variant(variant)
                 or (
