@@ -5,6 +5,7 @@ from scipy.special import logsumexp
 from npstructures import RaggedArray
 from dataclasses import dataclass
 from typing import List
+from .util import log_memory_usage_now
 
 
 @dataclass
@@ -37,6 +38,22 @@ class LimitedFrequencySamplingComboModel:
 
     def add_error_rate(self, error_rate=0.1):
         pass
+
+    @classmethod
+    def create_empty(cls, n_variants, max_count):
+        logging.info("Creating empty limited freq model with dimensions %d x %d "% (n_variants, max_count))
+        log_memory_usage_now("Before creating empty")
+        ret = cls([np.zeros((n_variants, max_count), dtype=np.uint16) for i in range(3)])
+        log_memory_usage_now("After creating empty")
+        return ret
+
+    def __add__(self, other):
+        for i in range(3):
+            self.diplotype_counts[i] += other.diplotype_counts[i]
+        return self
+
+    def __getitem__(self, item):
+        return self.diplotype_counts[item]
 
     @classmethod
     def create_naive(cls, n_variants, max_count=3, prior=0):
@@ -109,7 +126,6 @@ class LimitedFrequencySamplingComboModel:
         m2[rows,np.minimum(max_count, np.round(e0).astype(int) + 2)] += prior
         logging.info("done 2")
 
-        logging.info("Asserting")
         assert all([np.all(np.sum(c, axis=-1) > 0) for c in self.diplotype_counts])
 
     def has_no_data(self, idx):

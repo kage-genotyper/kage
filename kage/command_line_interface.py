@@ -3,6 +3,9 @@ import sys
 from .util import log_memory_usage_now
 from .sampling_combo_model import RaggedFrequencySamplingComboModel
 from .models import ComboModelBothAlleles
+from .mapping_model import get_node_counts_from_haplotypes, get_node_counts_from_genotypes
+from .mapping_model import get_sampled_nodes_and_counts
+from .sampling_combo_model import LimitedFrequencySamplingComboModel
 
 logging.basicConfig(
     stream=sys.stdout,
@@ -1096,38 +1099,32 @@ def run_argument_parser(args):
     subparser.set_defaults(func=make_index_bundle)
 
     def sample_node_counts_from_population(args):
-        from .mapping_model import get_node_counts_from_haplotypes, get_node_counts_from_genotypes
+        if args.n_threads > 0:
+            logging.info("Creating pool to run in parallel")
+            get_shared_pool(args.n_threads)
 
-        if args.store_as_matrix:
-            logging.info("Will store model as as dense matrix")
-            from .mapping_model import _get_sampled_nodes_and_counts
-            from .sampling_combo_model import LimitedFrequencySamplingComboModel
-            counts = _get_sampled_nodes_and_counts(args.graph,
-                                                   args.haplotype_to_nodes,
-                                                   args.kmer_size,
-                                                   args.kmer_index,
-                                                   return_matrix_of_counts=True)
+        counts = get_sampled_nodes_and_counts(args.graph,
+                                              args.haplotype_to_nodes,
+                                              args.kmer_size,
+                                              args.kmer_index,
+                                              max_count=args.max_count,
+                                              n_threads=args.n_threads)
 
-            model = LimitedFrequencySamplingComboModel(counts)
-            to_file(model, args.out_file_name)
+        model = LimitedFrequencySamplingComboModel(counts)
+        to_file(model, args.out_file_name)
 
-        else:
-            counts = get_node_counts_from_genotypes(
-                args.haplotype_to_nodes, args.kmer_index, args.graph
-            )
-            to_file(counts, args.out_file_name + ".tmp")
-            count_model = RaggedFrequencySamplingComboModel.from_counts(counts)
-            to_file(count_model, args.out_file_name)
+
 
     subparser = subparsers.add_parser("sample_node_counts_from_population")
     subparser.add_argument("-g", "--graph", required=True, type=ObGraph.from_file)
     subparser.add_argument("-i", "--kmer-index", required=True, type=from_file)
     subparser.add_argument("-k", "--kmer-size", required=False, type=int, default=31)
-    subparser.add_argument("-m", "--store-as-matrix", required=False, type=bool)
     subparser.add_argument(
         "-H", "--haplotype-to-nodes", required=True, type=HaplotypeToNodes.from_file
     )
     subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.add_argument("-t", "--n-threads", required=False, type=int, default=1)
+    subparser.add_argument("-M", "--max-count", required=False, type=int, default=30)
     subparser.set_defaults(func=sample_node_counts_from_population)
 
 

@@ -5,12 +5,15 @@ from graph_kmer_index.nplist import NpList
 from npstructures import RaggedArray
 from npstructures.hashtable import HashTable
 from obgraph.cython_traversing import traverse_graph_by_following_nodes
+from shared_memory_wrapper.util import interval_chunks
+from shared_memory_wrapper.util import parallel_map_reduce, parallel_map_reduce_with_adding
+from .sampling_combo_model import LimitedFrequencySamplingComboModel
 
 
-def _map_haplotype_sequence(sequence, kmer_index, k):
+def _map_haplotype_sequence(sequence, kmer_index, k, update_counter=True):
     power_vector = np.power(4, np.arange(0, k)).astype(np.uint64)
     kmers = np.convolve(sequence, power_vector, mode="valid")
-    kmer_index.count_kmers(kmers)
+    kmer_index.count_kmers(kmers, update_counter=update_counter)
 
 
 
@@ -25,44 +28,67 @@ def get_node_counts_from_genotypes(
     """
     n_nodes = len(graph.nodes)
 
-    sampled_counts, sampled_nodes = _get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index,
-                                                                           n_haplotypes)
+    sampled_counts, sampled_nodes = get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index,
+                                                                 n_haplotypes)
     # sampled_nodes and sampled_counts represent for each possible genotype count (0, 1, 2)
     # nodes and counts. Counts are num
 
     # put nodes and counts into a ragged array
     output = []
     for nodes, counts in zip(sampled_nodes, sampled_counts):
-        logging.info("")
-        logging.info(nodes)
-        logging.info(counts)
         nodes = nodes.get_nparray()
         counts = counts.get_nparray()
 
         data = counts[np.argsort(nodes)]
         lengths = np.bincount(nodes, minlength=n_nodes)
-        logging.info(data)
-        logging.info(lengths)
         output.append(RaggedArray(data, lengths))
 
     return output
     #return [HashTable(nodes.get_nparray(), counts.get_nparray()) for nodes, counts in zip(sampled_nodes, sampled_counts)]
 
 
-def _get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, n_haplotypes=None,
-                                  return_matrix_of_counts=False, max_count=30):
-    sampled_nodes = [NpList(dtype=np.int) for _ in range(3)]
-    sampled_counts = [NpList(dtype=np.int) for _ in range(3)]
 
+def get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_count=30, n_threads=1):
 
     n_nodes = len(graph.nodes)
-    count_matrices = [np.zeros((n_nodes, max_count)) for _ in range(3)]
 
-    if n_haplotypes is None:
-        n_haplotypes = haplotype_to_nodes.n_haplotypes()
-        logging.info("Will process %d haplotypes" % n_haplotypes)
-    for individual_id in range(0, n_haplotypes // 2):
-        logging.info("Individual %d" % individual_id)
+    n_haplotypes = haplotype_to_nodes.n_haplotypes()
+    count_matrices = LimitedFrequencySamplingComboModel.create_empty(n_nodes, max_count)
+    logging.info("Will process %d haplotypes" % n_haplotypes)
+
+    start_individual = 0
+    end_individual = n_haplotypes // 2
+    logging.info("%d individuals" % end_individual)
+
+    if n_threads == 1:
+        count_matrices = _get_sampled_nodes_and_counts_for_range(graph, haplotype_to_nodes, k, kmer_index,
+                                            max_count, n_nodes, [start_individual, end_individual])
+    else:
+        chunks = interval_chunks(0, end_individual, end_individual//n_threads+1)
+        logging.info("Chunks: %s" % chunks)
+        count_matrices = parallel_map_reduce_with_adding(_get_sampled_nodes_and_counts_for_range,
+                            (graph, haplotype_to_nodes, k, kmer_index, max_count, n_nodes),
+                            initial_data=count_matrices,
+                            mapper=chunks,
+                            n_threads=n_threads
+                            )
+
+    return count_matrices
+
+
+def _get_sampled_nodes_and_counts_for_range(graph, haplotype_to_nodes, k, kmer_index,
+                                            max_count, n_nodes, individual_range):
+    
+    count_matrices = LimitedFrequencySamplingComboModel.create_empty(n_nodes, max_count)
+
+    logging.info(str(count_matrices))
+    
+    start, end = individual_range
+    assert end > start
+    logging.info("Processing interval %d:%d" % (start, end))
+
+    for individual_id in range(*individual_range):
+        logging.info("\n\nIndividual %d" % individual_id)
         haplotype_nodes = []
         for haplotype_id in [individual_id * 2, individual_id * 2 + 1]:
             nodes = haplotype_to_nodes.get_nodes(haplotype_id)
@@ -72,8 +98,20 @@ def _get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, n_ha
             haplotype_nodes.append(nodes)
 
             sequence = graph.get_numeric_node_sequences(nodes).astype(np.uint64)
+            if len(sequence) == 0:
+                logging.info("chromosome start node: %s" % graph.chromosome_start_nodes)
+                logging.info("Nodes index: %s" % nodes_index)
+                logging.error("Haplotype %d, nodes: %s" % (haplotype_id, nodes))
+                logging.error("Haplotype: %d" % haplotype_id)
+                raise Exception("Error")
+
             assert sequence.dtype == np.uint64
-            _map_haplotype_sequence(sequence, kmer_index, k)
+            # first time: Create a new counter when counting, next time update that counter
+            # reason: don't use same counter as other threads and increase counts for both haplotypes
+            update_counter = False
+            if haplotype_id == individual_id * 2 + 1:
+                update_counter = True
+            _map_haplotype_sequence(sequence, kmer_index, k, update_counter=update_counter)
 
         node_counts = kmer_index.get_node_counts(min_nodes=n_nodes)
         kmer_index.counter.fill(0)  # reset to not keep counts for next mapping
@@ -86,22 +124,16 @@ def _get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, n_ha
         mask[haplotype_nodes[0]] += 1
         mask[haplotype_nodes[1]] += 1
         for genotype in [0, 1, 2]:
-            logging.info("MASK: %s" % mask)
             nodes_with_genotype = np.where(mask == genotype)[0]
-            logging.info("N nodes with genotype %d: %d" % (genotype, len(nodes_with_genotype)))
+            #logging.info("N nodes with genotype %d: %d" % (genotype, len(nodes_with_genotype)))
             counts_on_nodes = node_counts[nodes_with_genotype].astype(int)
-            sampled_nodes[genotype].extend(nodes_with_genotype)
-            sampled_counts[genotype].extend(counts_on_nodes)
 
-            # todo: what to do with counts larger than supported by matrix
+            # ignoring counts larger than supported by matrix
             below_max_count = np.where(counts_on_nodes < max_count)[0]
-            count_matrices[genotype][nodes_with_genotype[below_max_count],
+            count_matrices.diplotype_counts[genotype][nodes_with_genotype[below_max_count],
                                      counts_on_nodes[below_max_count]] += 1
-
-    if return_matrix_of_counts:
-        return count_matrices
-
-    return sampled_counts, sampled_nodes
+            
+    return count_matrices
 
 
 def get_node_counts_from_haplotypes(
@@ -130,12 +162,8 @@ def get_node_counts_from_haplotypes(
     for haplotype_id in range(n_haplotypes):
         logging.info("Processing haplotype id %d" % haplotype_id)
         nodes = haplotype_to_nodes.get_nodes(haplotype_id)
-        logging.info("Nodes before traversing graph: %d" % len(nodes))
         nodes_index[nodes] = 1
         nodes = traverse_graph_by_following_nodes(graph, nodes_index)
-        logging.info("Nodes after traversing graph: %d" % len(nodes))
-
-        logging.info("N nodes for haplotype: %d" % len(nodes))
         t = time.perf_counter()
         sequence = graph.get_numeric_node_sequences(nodes).astype(np.uint64)
         logging.info("Time to get haplotype sequence: %.3f" % (time.perf_counter() - t))
