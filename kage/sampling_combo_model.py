@@ -34,7 +34,12 @@ class LimitedFrequencySamplingComboModel:
     diplotype_counts: List[np.ndarray]  # list of matrices, each matrix is n_variants x max count supported
 
     def __post_init__(self):
-        self.diplotype_counts = [c.astype(float) for c in self.diplotype_counts]
+        #self.diplotype_counts = [c.astype(float) for c in self.diplotype_counts]
+        return
+
+    def astype(self, dtype):
+        for i in range(3):
+            self.diplotype_counts[i] = self[i].astype(dtype)
 
     def add_error_rate(self, error_rate=0.1):
         pass

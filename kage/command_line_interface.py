@@ -183,6 +183,7 @@ def genotype(args):
             ]
             logging.info("Filling missing data")
             for m in models:
+                m.astype(float)
                 m.fill_empty_data()
 
 
@@ -1103,6 +1104,10 @@ def run_argument_parser(args):
             logging.info("Creating pool to run in parallel")
             get_shared_pool(args.n_threads)
 
+        args.graph = from_file(args.graph)
+        args.kmer_index = from_file(args.kmer_index)
+        args.haplotype_to_nodes = HaplotypeToNodes.from_file(args.haplotype_to_nodes)
+
         counts = get_sampled_nodes_and_counts(args.graph,
                                               args.haplotype_to_nodes,
                                               args.kmer_size,
@@ -1116,11 +1121,11 @@ def run_argument_parser(args):
 
 
     subparser = subparsers.add_parser("sample_node_counts_from_population")
-    subparser.add_argument("-g", "--graph", required=True, type=ObGraph.from_file)
-    subparser.add_argument("-i", "--kmer-index", required=True, type=from_file)
+    subparser.add_argument("-g", "--graph", required=True)
+    subparser.add_argument("-i", "--kmer-index", required=True)
     subparser.add_argument("-k", "--kmer-size", required=False, type=int, default=31)
     subparser.add_argument(
-        "-H", "--haplotype-to-nodes", required=True, type=HaplotypeToNodes.from_file
+        "-H", "--haplotype-to-nodes", required=True
     )
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.add_argument("-t", "--n-threads", required=False, type=int, default=1)

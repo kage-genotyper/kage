@@ -8,13 +8,17 @@ from obgraph.cython_traversing import traverse_graph_by_following_nodes
 from shared_memory_wrapper.util import interval_chunks
 from shared_memory_wrapper.util import parallel_map_reduce, parallel_map_reduce_with_adding
 from .sampling_combo_model import LimitedFrequencySamplingComboModel
+from .util import log_memory_usage_now
 
 
-def _map_haplotype_sequence(sequence, kmer_index, k, update_counter=True):
-    power_vector = np.power(4, np.arange(0, k)).astype(np.uint64)
-    kmers = np.convolve(sequence, power_vector, mode="valid")
-    kmer_index.count_kmers(kmers, update_counter=update_counter)
+def _map_haplotype_sequences(sequences, kmer_index, k, n_nodes):
+    kmer_index.reset()
+    for i, sequence in enumerate(sequences):
+        power_vector = np.power(4, np.arange(0, k)).astype(np.uint64)
+        kmers = np.convolve(sequence, power_vector, mode="valid")
+        kmer_index.count_kmers(kmers)
 
+    return kmer_index.get_node_counts(n_nodes)
 
 
 
@@ -50,6 +54,7 @@ def get_node_counts_from_genotypes(
 
 def get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_count=30, n_threads=1):
 
+
     n_nodes = len(graph.nodes)
 
     n_haplotypes = haplotype_to_nodes.n_haplotypes()
@@ -78,8 +83,10 @@ def get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_c
 
 def _get_sampled_nodes_and_counts_for_range(graph, haplotype_to_nodes, k, kmer_index,
                                             max_count, n_nodes, individual_range):
-    
+
+    log_memory_usage_now("Starting")
     count_matrices = LimitedFrequencySamplingComboModel.create_empty(n_nodes, max_count)
+    log_memory_usage_now("Made count matrices")
 
     logging.info(str(count_matrices))
     
@@ -88,8 +95,10 @@ def _get_sampled_nodes_and_counts_for_range(graph, haplotype_to_nodes, k, kmer_i
     logging.info("Processing interval %d:%d" % (start, end))
 
     for individual_id in range(*individual_range):
+        log_memory_usage_now("Individual %d" % individual_id)
         logging.info("\n\nIndividual %d" % individual_id)
         haplotype_nodes = []
+        sequences = []
         for haplotype_id in [individual_id * 2, individual_id * 2 + 1]:
             nodes = haplotype_to_nodes.get_nodes(haplotype_id)
             nodes_index = np.zeros(n_nodes, dtype=np.uint8)
@@ -98,6 +107,10 @@ def _get_sampled_nodes_and_counts_for_range(graph, haplotype_to_nodes, k, kmer_i
             haplotype_nodes.append(nodes)
 
             sequence = graph.get_numeric_node_sequences(nodes).astype(np.uint64)
+            assert sequence.dtype == np.uint64
+            sequences.append(sequence)
+
+            log_memory_usage_now("Got sequence")
             if len(sequence) == 0:
                 logging.info("chromosome start node: %s" % graph.chromosome_start_nodes)
                 logging.info("Nodes index: %s" % nodes_index)
@@ -105,18 +118,9 @@ def _get_sampled_nodes_and_counts_for_range(graph, haplotype_to_nodes, k, kmer_i
                 logging.error("Haplotype: %d" % haplotype_id)
                 raise Exception("Error")
 
-            assert sequence.dtype == np.uint64
-            # first time: Create a new counter when counting, next time update that counter
-            # reason: don't use same counter as other threads and increase counts for both haplotypes
-            update_counter = False
-            if haplotype_id == individual_id * 2 + 1:
-                update_counter = True
-            _map_haplotype_sequence(sequence, kmer_index, k, update_counter=update_counter)
 
-        node_counts = kmer_index.get_node_counts(min_nodes=n_nodes)
-        kmer_index.counter.fill(0)  # reset to not keep counts for next mapping
-
-        logging.debug(haplotype_nodes)
+        node_counts = _map_haplotype_sequences(sequences, kmer_index, k, n_nodes)
+        log_memory_usage_now("After mapping")
 
         # split into nodes that the haplotype has and nodes not
         # mask represents the number of haplotypes this individual has per node (0, 1 or 2 for diploid individuals)
