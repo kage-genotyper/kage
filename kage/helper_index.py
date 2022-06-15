@@ -212,7 +212,7 @@ def find_best_helper(combined, score_func, N, with_model=False):
             if with_model
             else score_func(counts.swapaxes(-2, -1))
         )
-        do_update = rev_scores > best_score[:-j]
+        do_update = rev_scores >= best_score[:-j]
         best_score[:-j][do_update] = rev_scores[do_update]
         best_idx[:-j][do_update] = np.flatnonzero(do_update) + j
     return best_idx

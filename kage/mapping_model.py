@@ -9,16 +9,48 @@ from shared_memory_wrapper.util import interval_chunks
 from shared_memory_wrapper.util import parallel_map_reduce, parallel_map_reduce_with_adding
 from .sampling_combo_model import LimitedFrequencySamplingComboModel
 from .util import log_memory_usage_now
+from itertools import chain
+from bionumpy.kmers import fast_hash
+from graph_kmer_index import KmerIndex
 
 
 def _map_haplotype_sequences(sequences, kmer_index, k, n_nodes):
-    kmer_index.reset()
-    for i, sequence in enumerate(sequences):
-        power_vector = np.power(4, np.arange(0, k)).astype(np.uint64)
-        kmers = np.convolve(sequence, power_vector, mode="valid")
-        kmer_index.count_kmers(kmers)
+    t = time.perf_counter()
+    convolve_time = 0
 
-    return kmer_index.get_node_counts(n_nodes)
+    if isinstance(kmer_index, KmerIndex):
+        logging.info("USING CYTHON TO MAP!")
+        counts = np.zeros(n_nodes, dtype=np.uint32)
+        from kmer_mapper.mapper import map_kmers_to_graph_index
+        for sequence in sequences:
+            t2 = time.perf_counter()
+            kmers = fast_hash(sequence.astype(np.uint8)[::-1], k, do_encoding=False)
+            convolve_time += time.perf_counter()-t2
+            counts += map_kmers_to_graph_index(kmer_index, n_nodes-1, kmers)
+    else:
+        kmer_index.reset()
+        for i, sequence in enumerate(sequences):
+            #power_vector = np.power(4, np.arange(0, k)).astype(np.uint64)
+            log_memory_usage_now("Before hashing")
+            t2 = time.perf_counter()
+            #kmers = np.convolve(sequence, power_vector, mode="valid")
+            kmers = fast_hash(sequence.astype(np.uint8)[::-1], k, do_encoding=False)
+            convolve_time += time.perf_counter()-t2
+            log_memory_usage_now("After hashing")
+
+            # split and count to use less memory (Counter.count is very memory-demanding)
+            for kmer_chunk in np.array_split(kmers, 8):
+                if len(kmer_chunk) == 0:
+                    break
+                kmer_index.count_kmers(kmer_chunk)
+
+            log_memory_usage_now("After count")
+
+        counts = kmer_index.get_node_counts(n_nodes)
+
+    logging.info("Took %.3f sec to map haplotype sequences for individual" % (time.perf_counter()-t))
+    logging.info("Convolve time was %.3f" % convolve_time)
+    return counts
 
 
 
@@ -88,8 +120,6 @@ def _get_sampled_nodes_and_counts_for_range(graph, haplotype_to_nodes, k, kmer_i
     count_matrices = LimitedFrequencySamplingComboModel.create_empty(n_nodes, max_count)
     log_memory_usage_now("Made count matrices")
 
-    logging.info(str(count_matrices))
-    
     start, end = individual_range
     assert end > start
     logging.info("Processing interval %d:%d" % (start, end))
@@ -98,7 +128,7 @@ def _get_sampled_nodes_and_counts_for_range(graph, haplotype_to_nodes, k, kmer_i
         log_memory_usage_now("Individual %d" % individual_id)
         logging.info("\n\nIndividual %d" % individual_id)
         haplotype_nodes = []
-        sequences = []
+        t = time.perf_counter()
         for haplotype_id in [individual_id * 2, individual_id * 2 + 1]:
             nodes = haplotype_to_nodes.get_nodes(haplotype_id)
             nodes_index = np.zeros(n_nodes, dtype=np.uint8)
@@ -106,25 +136,20 @@ def _get_sampled_nodes_and_counts_for_range(graph, haplotype_to_nodes, k, kmer_i
             nodes = traverse_graph_by_following_nodes(graph, nodes_index)
             haplotype_nodes.append(nodes)
 
-            sequence = graph.get_numeric_node_sequences(nodes).astype(np.uint64)
-            assert sequence.dtype == np.uint64
-            sequences.append(sequence)
+        logging.info("Took %.3f sec to traverse graph for individual %d" % (time.perf_counter()-t, individual_id))
 
-            log_memory_usage_now("Got sequence")
-            if len(sequence) == 0:
-                logging.info("chromosome start node: %s" % graph.chromosome_start_nodes)
-                logging.info("Nodes index: %s" % nodes_index)
-                logging.error("Haplotype %d, nodes: %s" % (haplotype_id, nodes))
-                logging.error("Haplotype: %d" % haplotype_id)
-                raise Exception("Error")
-
+        sequences = chain.from_iterable((seq for seq in
+                                         graph.get_numeric_node_sequences_by_chromosomes(n))
+                     for n in haplotype_nodes)
+        log_memory_usage_now("Got sequences")
 
         node_counts = _map_haplotype_sequences(sequences, kmer_index, k, n_nodes)
         log_memory_usage_now("After mapping")
 
         # split into nodes that the haplotype has and nodes not
         # mask represents the number of haplotypes this individual has per node (0, 1 or 2 for diploid individuals)
-        mask = np.zeros(n_nodes)
+        t = time.perf_counter()
+        mask = np.zeros(n_nodes, dtype=np.int8)
         mask[haplotype_nodes[0]] += 1
         mask[haplotype_nodes[1]] += 1
         for genotype in [0, 1, 2]:
@@ -136,7 +161,9 @@ def _get_sampled_nodes_and_counts_for_range(graph, haplotype_to_nodes, k, kmer_i
             below_max_count = np.where(counts_on_nodes < max_count)[0]
             count_matrices.diplotype_counts[genotype][nodes_with_genotype[below_max_count],
                                      counts_on_nodes[below_max_count]] += 1
-            
+
+        logging.info("Took %.3f sec to update count matrices with counts for individual %d" % (time.perf_counter()-t, individual_id))
+
     return count_matrices
 
 

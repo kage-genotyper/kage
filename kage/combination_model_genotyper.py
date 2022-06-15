@@ -7,7 +7,7 @@ from .node_count_model import (
     NodeCountModelAdvanced,
 )
 from .combomodel import ComboModel
-from .models import HelperModel, ComboModelBothAlleles, ChunkedComboModelBothAlleles
+from .models import HelperModel, ComboModelBothAlleles, ChunkedComboModelBothAlleles, NoHelperModel
 from shared_memory_wrapper import (
     to_shared_memory,
     from_shared_memory,
@@ -15,6 +15,7 @@ from shared_memory_wrapper import (
 )
 from shared_memory_wrapper.shared_memory import get_shared_pool, object_to_shared_memory, object_from_shared_memory
 from .node_counts import NodeCounts
+from scipy.special import logsumexp
 
 
 genotypes = ["0/0", "1/1", "0/1"]
@@ -50,6 +51,8 @@ class CombinationModelGenotyper(Genotyper):
         helper_model=None,
         helper_model_combo=None,
         n_threads=8,
+        ignore_helper_model=False,
+        ignore_helper_variants=False,
     ):
 
         self._min_variant_id = min_variant_id
@@ -86,6 +89,8 @@ class CombinationModelGenotyper(Genotyper):
         self._helper_model = helper_model
         self._helper_model_combo_matrix = helper_model_combo
         self._n_threads = n_threads
+        self._ignore_helper_model = ignore_helper_model
+        self._ignore_helper_variants = ignore_helper_variants
 
     @staticmethod
     def make_combomodel_from_shared_memory_data(data):
@@ -147,19 +152,33 @@ class CombinationModelGenotyper(Genotyper):
 
         combination_model_both = ComboModelBothAlleles(*self._count_models)
 
-        helper_model = HelperModel(
-            combination_model_both,
-            self._helper_model,
-            self._helper_model_combo_matrix,
-            self._tricky_variants,
-            self._estimated_mapped_haplotype_coverage,
-        )
-        genotypes, probabilities = helper_model.predict(
+        if self._ignore_helper_model:
+            logging.info("Ignoring helper model! Will not use helper variants to improve genotype accuracy")
+            final_model = combination_model_both
+        elif self._ignore_helper_variants:
+            assert self._genotype_frequencies is not None
+            logging.info("Using NoHelperModel")
+            final_model = NoHelperModel(combination_model_both,
+                                        self._genotype_frequencies,
+                                        self._tricky_variants,
+                                        self._estimated_mapped_haplotype_coverage
+                                        )
+        else:
+            final_model = HelperModel(
+                combination_model_both,
+                self._helper_model,
+                self._helper_model_combo_matrix,
+                self._tricky_variants,
+                self._estimated_mapped_haplotype_coverage,
+                ignore_helper_variants=self._ignore_helper_variants
+            )
+
+        genotypes, probabilities = final_model.predict(
             observed_ref_nodes, observed_alt_nodes, return_probs=True
         )
         logging.info("Translating genotypes to numeric")
         self._predicted_genotypes = translate_to_numeric(genotypes)
-        self._count_probs = helper_model.count_probs
+        self._count_probs = final_model.count_probs
 
         # min_alt_node_counts = 0
         # too_low_alt_counts = np.where(observed_alt_nodes < min_alt_node_counts)[0]
@@ -167,6 +186,11 @@ class CombinationModelGenotyper(Genotyper):
         # self._predicted_genotypes[too_low_alt_counts] = 0
 
         self._prob_correct = probabilities
+        
+        if self._ignore_helper_model:
+            logging.info("Scaling prob correct to probabilities")
+            #self._prob_correct = self._prob_correct - logsumexp(self._prob_correct, axis=-1, keepdims=True)
+
 
     def genotype(self):
         self.predict()

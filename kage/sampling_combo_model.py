@@ -6,6 +6,7 @@ from npstructures import RaggedArray
 from dataclasses import dataclass
 from typing import List
 from .util import log_memory_usage_now
+from .models import Model
 
 
 @dataclass
@@ -29,7 +30,7 @@ class SimpleSamplingComboModel:
 
 
 @dataclass
-class LimitedFrequencySamplingComboModel:
+class LimitedFrequencySamplingComboModel(Model):
     # stores only number of individuals having counts up to a given limit
     diplotype_counts: List[np.ndarray]  # list of matrices, each matrix is n_variants x max count supported
 
@@ -39,7 +40,8 @@ class LimitedFrequencySamplingComboModel:
 
     def astype(self, dtype):
         for i in range(3):
-            self.diplotype_counts[i] = self[i].astype(dtype)
+            #logging.info(self.diplotype_counts[i])
+            self.diplotype_counts[i] = self.diplotype_counts[i].astype(dtype)
 
     def add_error_rate(self, error_rate=0.1):
         pass
@@ -71,7 +73,7 @@ class LimitedFrequencySamplingComboModel:
         counts1[:,1] += prior
         counts2 = empty.copy()
         counts2[:,2] = 1
-        counts1[:,2] += prior
+        counts2[:,2] += prior
         return cls([counts0, counts1, counts2])
 
     def subset_on_nodes(self, nodes):
@@ -102,7 +104,8 @@ class LimitedFrequencySamplingComboModel:
 
         return description
 
-    def fill_empty_data(self, prior=0.01):
+    def fill_empty_data(self, prior=0.1):
+        logging.info("Prior is %.4f" % prior)
         expected_counts = []
         for diplotype in [0, 1, 2]:
             logging.info("Computing expected counts for genotype %d" % diplotype)
@@ -129,6 +132,7 @@ class LimitedFrequencySamplingComboModel:
         m1[rows,np.minimum(max_count, np.round(e0).astype(int) + 1)] += prior
         logging.info("done 1")
         m2[rows,np.minimum(max_count, np.round(e0).astype(int) + 2)] += prior
+        #m2[rows,np.minimum(max_count, np.round(2*e1 - e0).astype(int))] += prior
         logging.info("done 2")
 
         assert all([np.all(np.sum(c, axis=-1) > 0) for c in self.diplotype_counts])
@@ -142,8 +146,12 @@ class LimitedFrequencySamplingComboModel:
         counts = [c[idx] for c in self.diplotype_counts]
         for i in range(3):
             # if there are counts outside position i, there are duplicates
-            if np.sum(counts[i]) - counts[i][i] > 0:
+            # also if any elements outside i, there are duplicates
+            #if np.sum(counts[i]) > counts[i][i] * 5:
+            if np.sum(counts[i][i+1:]) > 0:
+            #if np.argmax(counts[i]) != i:
                 return True
+
         return False
 
 

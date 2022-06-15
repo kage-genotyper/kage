@@ -100,7 +100,9 @@ def analyse_variants(args):
     logging.info("Reading model")
     #model = NodeCountModelAdvanced.from_file(args.model)
     model = from_file(args.model)
-    model.fill_empty_data()
+    logging.info(type(model))
+    #model.astype(float)
+    #model.fill_empty_data()
 
     logging.info("REading helper variants")
     helper_variants = np.load(args.helper_variants)
@@ -151,6 +153,8 @@ def genotype(args):
     p = get_shared_pool(args.n_threads)  # Pool(16)
     genotype_frequencies = None
 
+    models = None
+
     if args.index_bundle is not None:
         logging.info("Reading all indexes from an index bundle")
         index = IndexBundle.from_file(args.index_bundle, skip=["KmerIndex"]).indexes
@@ -170,8 +174,14 @@ def genotype(args):
 
         variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
 
+        if args.model_advanced is None:
+            logging.info("Model not specified. Creating a naive model, assuming kmers are unique")
+            args.model_advanced = LimitedFrequencySamplingComboModel.create_naive(np.maximum(np.max(variant_to_nodes.ref_nodes), np.max(variant_to_nodes.var_nodes))+1)
+        else:
+            args.model_advanced = from_file(args.model_advanced)
+
         if args.model_advanced is not None:
-            model = from_file(args.model_advanced)
+            model = args.model_advanced
             #model.astype(float)
             #model.scale(args.average_coverage/2)
             #model.add_error_rate(0.01 * args.average_coverage)
@@ -185,7 +195,6 @@ def genotype(args):
             for m in models:
                 m.astype(float)
                 m.fill_empty_data()
-
 
         else:
             try:
@@ -245,8 +254,13 @@ def genotype(args):
         helper_model=helper_model,
         helper_model_combo=helper_model_combo_matrix,
         n_threads=args.n_threads,
+        ignore_helper_model=args.ignore_helper_model,
+        ignore_helper_variants=args.ignore_helper_variants,
     )
     genotypes, probs, count_probs = genotyper.genotype()
+
+    logging.info("Count probs: %s" % count_probs)
+    logging.info("Probs: %s" % probs)
 
     if args.min_genotype_quality > 0.0:
         set_to_homo_ref = np.where(
@@ -271,8 +285,10 @@ def genotype(args):
         args.out_file_name,
         args.sample_name_output,
         numpy_genotypes,
-        add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">'],
+        add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">',
+                          '##FORMAT=<ID=PL,Number=G,Type=Integer,Description="PHRED-scaled genotype likelihoods.">'],
         ignore_homo_ref=False,
+        add_genotype_likelyhoods=probs,
     )
 
     close_shared_pool()
@@ -525,6 +541,8 @@ def run_argument_parser(args):
     )
     subparser.add_argument("-f", "--helper-model", required=False)
     subparser.add_argument("-F", "--helper-model-combo-matrix", required=False)
+    subparser.add_argument("-I", "--ignore-helper-model", required=False, type=bool, default=False)
+    subparser.add_argument("-V", "--ignore-helper-variants", required=False, type=bool, default=False)
 
     subparser.set_defaults(func=genotype)
 
@@ -694,6 +712,12 @@ def run_argument_parser(args):
                     tricky_variants[variant_id] = 1
                     n_tricky_kmers += 1
 
+
+        logging.info(
+            "Stats: %d tricky due to model, %d tricky due to kmers. N non-unique filtered: %d"
+            % (n_tricky_model, n_tricky_kmers, n_nonunique)
+        )
+
         TrickyVariants(tricky_variants).to_file(args.out_file_name)
         # np.save(args.out_file_name, tricky_variants)
         logging.info("Wrote tricky variants to file %s" % args.out_file_name)
@@ -719,6 +743,43 @@ def run_argument_parser(args):
         help="Only allow variants where all kmers are unique",
     )
     subparser.set_defaults(func=find_tricky_variants)
+
+
+    def find_variants_with_nonunique_kmers(args):
+        output = np.zeros(len(args.variant_to_nodes.ref_nodes), dtype=np.uint8)
+        n_filtered = 0
+        n_sharing_kmers = 0
+
+        for i, (ref_node, var_node) in enumerate(zip(args.variant_to_nodes.ref_nodes, args.variant_to_nodes.var_nodes)):
+            reference_kmers = args.reverse_kmer_index.get_node_kmers(ref_node)
+            variant_kmers = args.reverse_kmer_index.get_node_kmers(var_node)
+
+            if i % 1000 == 0:
+                logging.info("%d variants processed, %d filtered, %d sharing kmers" % (i, n_filtered, n_sharing_kmers))
+
+            frequencies_ref = np.array([args.population_kmer_index.get_frequency(k)-1 for k in reference_kmers])
+            frequencies_var = np.array([args.population_kmer_index.get_frequency(k)-1 for k in variant_kmers])
+            #print(frequencies_ref, frequencies_var)
+            #if sum(frequencies_ref) > 0 or sum(frequencies_var) > 0:
+            if np.all(frequencies_ref > 0) or np.all(frequencies_var > 0):
+                n_filtered += 1
+                output[i] = 1
+            elif len(set(reference_kmers).intersection(variant_kmers)) > 0:
+                n_sharing_kmers += 1
+                output[i] = 1
+
+        TrickyVariants(output).to_file(args.out_file_name)
+        #np.save(args.out_file_name, output)
+        logging.info("Saved array with variants to %s" % args.out_file_name)
+
+
+    subparser = subparsers.add_parser("find_variants_with_nonunique_kmers")
+    subparser.add_argument("-v", "--variant-to-nodes", required=True, type=VariantToNodes.from_file)
+    subparser.add_argument("-r", "--reverse-kmer-index", required=True, type=ReverseKmerIndex.from_file)
+    subparser.add_argument("-i", "--population-kmer-index", required=True, type=KmerIndex.from_file)
+    subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.set_defaults(func=find_variants_with_nonunique_kmers)
+
 
     def remove_shared_memory_command_line(args):
         remove_all_shared_memory()
@@ -999,6 +1060,11 @@ def run_argument_parser(args):
 
         if args.n_threads > 1:
             n_variants = len(variant_to_nodes.ref_nodes)
+            n_threads = args.n_threads
+            while n_variants < n_threads * 50 and n_threads > 2:
+                n_threads -= 1
+                logging.info("Lowered n threads to %d so that not too few variants are analysed together" % n_threads)
+
             intervals = [int(i) for i in np.linspace(0, n_variants, n_threads)]
             variant_intervals = [
                 (from_id, to_id)
@@ -1105,8 +1171,15 @@ def run_argument_parser(args):
             get_shared_pool(args.n_threads)
 
         args.graph = from_file(args.graph)
-        args.kmer_index = from_file(args.kmer_index)
-        args.haplotype_to_nodes = HaplotypeToNodes.from_file(args.haplotype_to_nodes)
+        try:
+            args.kmer_index = from_file(args.kmer_index)
+        except KeyError:
+            args.kmer_index = KmerIndex.from_file(args.kmer_index)
+            args.kmer_index.convert_to_int32()
+            args.kmer_index.remove_ref_offsets()  # not needed, will save us some memory
+
+        from obgraph.haplotype_nodes import HaplotypeToNodesRagged
+        args.haplotype_to_nodes = HaplotypeToNodesRagged.from_file(args.haplotype_to_nodes)
 
         counts = get_sampled_nodes_and_counts(args.graph,
                                               args.haplotype_to_nodes,

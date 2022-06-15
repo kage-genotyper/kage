@@ -30,6 +30,7 @@ class NumpyGenotyper(Genotyper):
         helper_model=None,
         helper_model_combo=None,
         n_threads=1,
+        ignore_helper_model=None,
     ):
         self._min_variant_id = min_variant_id
         self._max_variant_id = max_variant_id
@@ -57,7 +58,7 @@ class NumpyGenotyper(Genotyper):
         self._predicted_genotypes = np.zeros(
             max_variant_id - min_variant_id + 1, dtype=np.uint8
         )
-        self._prob_correct = np.zeros(max_variant_id - min_variant_id + 1, dtype=float)
+        self._prob_correct = np.zeros((max_variant_id - min_variant_id + 1, 3), dtype=float)
         self._dummy_count_having_variant = 0.1 * avg_coverage / 15
         self._dummy_counts_not_having_variant = 0.1 * avg_coverage / 15
         self._genotype_transition_probs = genotype_transition_probs
@@ -330,6 +331,10 @@ class NumpyGenotyper(Genotyper):
             + prob_posteriori_heterozygous
         )
 
+        self._prob_correct[variant_id-self._min_variant_id, :] = [
+            prob_posteriori_homozygous_ref, prob_posteriori_heterozygous, prob_posteriori_homozygous_alt
+        ]
+
         if abs(sum_of_probs - 1.0) > 0.01:
             logging.warning("Probs do not sum to 1.0: Sum is %.5f" % sum_of_probs)
 
@@ -415,9 +420,9 @@ class NumpyGenotyper(Genotyper):
                 numeric_genotype = 3
 
             self._predicted_genotypes[i] = numeric_genotype
-            self._prob_correct[i] = prob_correct
+            #self._prob_correct[i] = prob_correct
 
             if self._most_similar_variant_lookup is not None:
                 self._genotypes_called_at_variant[variant_id] = numeric_genotype
 
-        return self._predicted_genotypes, self._prob_correct
+        return self._predicted_genotypes, self._prob_correct, self._prob_correct
