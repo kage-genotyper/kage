@@ -43,7 +43,7 @@ def _map_haplotype_sequences(sequences, kmer_index, k, n_nodes):
                 t2 = time.perf_counter()
                 #kmers = fast_hash(sequence.astype(np.uint8)[::-1], k, do_encoding=False)
                 #kmers = np.convolve(sequence.astype(np.uint64), 4**np.arange(k, dtype=np.uint64), mode='valid')
-                kmers = fast_hash(s, k)
+                kmers = fast_hash(s[::-1], k)
                 #kmers = kmer_hash_wrapper(s.astype(np.int64)[::-1], k)
                 convolve_time += time.perf_counter()-t2
                 #logging.info("Hashing %d bases took %.4f sec" % (len(s), time.perf_counter()-t2))
