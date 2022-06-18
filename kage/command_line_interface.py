@@ -3,7 +3,7 @@ import sys
 from .util import log_memory_usage_now
 from .sampling_combo_model import RaggedFrequencySamplingComboModel
 from .models import ComboModelBothAlleles
-from .mapping_model import get_node_counts_from_haplotypes, get_node_counts_from_genotypes
+from .mapping_model import get_node_counts_from_haplotypes, get_node_counts_from_genotypes, get_sampled_nodes_and_counts2
 from .mapping_model import get_sampled_nodes_and_counts
 from .sampling_combo_model import LimitedFrequencySamplingComboModel
 
@@ -30,7 +30,7 @@ from graph_kmer_index import KmerIndex, ReverseKmerIndex
 from graph_kmer_index import ReferenceKmerIndex
 from .analysis import GenotypeDebugger
 from obgraph.variants import VcfVariants, TruthRegions
-from obgraph.haplotype_nodes import HaplotypeToNodes
+from obgraph.haplotype_nodes import HaplotypeToNodes, DiscBackedHaplotypeToNodes
 from .reads import read_chunks_from_fasta
 import platform
 from pathos.multiprocessing import Pool
@@ -286,7 +286,9 @@ def genotype(args):
         args.sample_name_output,
         numpy_genotypes,
         add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">',
-                          '##FORMAT=<ID=PL,Number=G,Type=Integer,Description="PHRED-scaled genotype likelihoods.">'],
+                          '##FORMAT=<ID=PL,Number=G,Type=Integer,Description="PHRED-scaled genotype likelihoods.">',
+                          '##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype likelihoods.">'
+                          ],
         ignore_homo_ref=False,
         add_genotype_likelyhoods=probs,
     )
@@ -703,6 +705,7 @@ def run_argument_parser(args):
                 # logging.warning(model_counts_ref)
                 # logging.warning(model_counts_ref)
                 tricky_variants[variant_id] = 1
+                #print(model[1][ref_node], model[1][var_node])
                 n_tricky_model += 1
             else:
                 reference_kmers = set(reverse_index.get_node_kmers(ref_node))
@@ -1170,7 +1173,9 @@ def run_argument_parser(args):
             logging.info("Creating pool to run in parallel")
             get_shared_pool(args.n_threads)
 
+        logging.info("Reading graph")
         args.graph = from_file(args.graph)
+        log_memory_usage_now("After reading graph")
         try:
             args.kmer_index = from_file(args.kmer_index)
         except KeyError:
@@ -1178,8 +1183,15 @@ def run_argument_parser(args):
             args.kmer_index.convert_to_int32()
             args.kmer_index.remove_ref_offsets()  # not needed, will save us some memory
 
+        log_memory_usage_now("After reading kmer index")
+
         from obgraph.haplotype_nodes import HaplotypeToNodesRagged
-        args.haplotype_to_nodes = HaplotypeToNodesRagged.from_file(args.haplotype_to_nodes)
+        if "disc" in args.haplotype_to_nodes:
+            args.haplotype_to_nodes = DiscBackedHaplotypeToNodes.from_file(args.haplotype_to_nodes)
+        else:
+            args.haplotype_to_nodes = HaplotypeToNodesRagged.from_file(args.haplotype_to_nodes)
+
+        log_memory_usage_now("After reading haplotype to nodes")
 
         counts = get_sampled_nodes_and_counts(args.graph,
                                               args.haplotype_to_nodes,
@@ -1188,7 +1200,8 @@ def run_argument_parser(args):
                                               max_count=args.max_count,
                                               n_threads=args.n_threads)
 
-        model = LimitedFrequencySamplingComboModel(counts)
+        close_shared_pool()
+        model = counts  # LimitedFrequencySamplingComboModel(counts)
         to_file(model, args.out_file_name)
 
 
