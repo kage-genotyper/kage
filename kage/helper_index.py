@@ -126,7 +126,7 @@ def get_helper_posterior(genotype_combo_matrix, global_helper_weight=5):
 
 def get_population_priors(
     genotype_combo_matrix,
-    weight=5,
+    weight=150,
     weight_diagonal=0,
     weight_left_column=0,
     weight_global=1,
@@ -135,11 +135,12 @@ def get_population_priors(
     prior = np.eye(3) * weight_diagonal
     prior[:, 0] = weight_left_column  # going to 0/0 is high
     prior += weight_global
-    # print("Weights added to population priors: \n%s" % prior)
+    #print("Weights added to population priors: \n%s" % prior)
     mean = np.sum(genotype_combo_matrix, axis=0) + prior
-    # print("Population prior before weighted: \n%s" % mean)
+    #print("Population prior before weighted: \n%s" % mean)
     weighted = mean / mean.sum(axis=M, keepdims=True) * weight  # helper_sum*weight
-    # print("Population prior after weighted: \n%s" % weighted)
+    #print("")
+    #print("Population prior after weighted: \n%s" % weighted)
     return weighted
 
 
@@ -181,7 +182,9 @@ def make_helper_model_from_genotype_matrix(
     # print(genotype_combo_matrix[0])
     # print("Population prior: \n%s" % population_prior)
     # print("Helper posterior:\n%s", helper_posterior[0])
+    #print("Combo matrix before population priors:\n%s" % genotype_combo_matrix)
     population_posterior = genotype_combo_matrix + population_prior
+    #print("Combo matrix after population priors:\n%s" % population_posterior)
     population_posterior = (
         population_posterior
         / population_posterior.sum(axis=M, keepdims=True)
