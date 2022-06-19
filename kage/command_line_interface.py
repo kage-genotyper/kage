@@ -672,7 +672,7 @@ def run_argument_parser(args):
         max_counts_model = args.max_counts_model
 
         for variant_id in range(0, len(variant_to_nodes.ref_nodes)):
-            if variant_id % 1000 == 0:
+            if variant_id % 100000 == 0:
                 logging.info(
                     "%d variants processed, %d tricky due to model, %d tricky due to kmers. N non-unique filtered: %d"
                     % (variant_id, n_tricky_model, n_tricky_kmers, n_nonunique)
@@ -1174,12 +1174,19 @@ def run_argument_parser(args):
 
         log_memory_usage_now("After reading haplotype to nodes")
 
+
+        limit_to_n_individuals = None
+        if args.limit_to_n_individuals > 0:
+            limit_to_n_individuals = args.limit_to_n_individuals
+
         counts = get_sampled_nodes_and_counts(args.graph,
                                               args.haplotype_to_nodes,
                                               args.kmer_size,
                                               args.kmer_index,
                                               max_count=args.max_count,
-                                              n_threads=args.n_threads)
+                                              n_threads=args.n_threads,
+                                              limit_to_n_individuals=limit_to_n_individuals
+                                              )
 
         close_shared_pool()
         model = counts  # LimitedFrequencySamplingComboModel(counts)
@@ -1195,6 +1202,7 @@ def run_argument_parser(args):
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.add_argument("-t", "--n-threads", required=False, type=int, default=1)
     subparser.add_argument("-M", "--max-count", required=False, type=int, default=30)
+    subparser.add_argument("-l", "--limit-to-n-individuals", required=False, type=int, default=0)
     subparser.set_defaults(func=sample_node_counts_from_population)
 
 

@@ -110,7 +110,7 @@ def get_node_counts_from_genotypes(
 
 
 
-def get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_count=30, n_threads=1):
+def get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_count=30, n_threads=1, limit_to_n_individuals=None):
 
 
     n_nodes = len(graph.nodes)
@@ -121,6 +121,10 @@ def get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_c
 
     start_individual = 0
     end_individual = n_haplotypes // 2
+    if limit_to_n_individuals is not None:
+        end_individual = limit_to_n_individuals
+        logging.warning("Will limit to %d individuals" % limit_to_n_individuals)
+
     logging.info("%d individuals" % end_individual)
 
     if n_threads == 1:
