@@ -1,5 +1,11 @@
 import logging
 import sys
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)s: %(message)s",
+)
+
 from .util import log_memory_usage_now
 from .sampling_combo_model import RaggedFrequencySamplingComboModel
 from .models import ComboModelBothAlleles
@@ -7,11 +13,7 @@ from .mapping_model import get_node_counts_from_haplotypes, get_node_counts_from
 from .mapping_model import get_sampled_nodes_and_counts
 from .sampling_combo_model import LimitedFrequencySamplingComboModel
 
-logging.basicConfig(
-    stream=sys.stdout,
-    level=logging.DEBUG,
-    format="%(asctime)s %(levelname)s: %(message)s",
-)
+
 import itertools
 from itertools import repeat
 import sys, argparse, time
@@ -178,23 +180,12 @@ def genotype(args):
             logging.info("Model not specified. Creating a naive model, assuming kmers are unique")
             args.model_advanced = LimitedFrequencySamplingComboModel.create_naive(np.maximum(np.max(variant_to_nodes.ref_nodes), np.max(variant_to_nodes.var_nodes))+1)
         else:
+            t0 = time.perf_counter()
             args.model_advanced = from_file(args.model_advanced)
+            logging.info("Took %.4f sec to read model" % (time.perf_counter()-t0))
 
         if args.model_advanced is not None:
-            model = args.model_advanced
-            #model.astype(float)
-            #model.scale(args.average_coverage/2)
-            #model.add_error_rate(0.01 * args.average_coverage)
-
-            #model = NodeCountModelAdvanced.from_file(args.model_advanced)
-            models = [
-                model.subset_on_nodes(variant_to_nodes.ref_nodes),
-                model.subset_on_nodes(variant_to_nodes.var_nodes)
-            ]
-            logging.info("Filling missing data")
-            for m in models:
-                m.astype(float)
-                m.fill_empty_data()
+            models = args.model_advanced
 
         else:
             try:
@@ -210,7 +201,10 @@ def genotype(args):
                     model = NodeCountModelAlleleFrequencies.from_file(args.model)
                     logging.info("Model is allele frequency model")
 
+        t0 = time.perf_counter()
         variants = NumpyVariants.from_file(args.vcf)
+        logging.info("Took %.3f sec to read variants" % (time.perf_counter()-t0))
+
         tricky_variants = None
         if args.tricky_variants is not None:
             logging.info("Using tricky variants")
@@ -259,9 +253,6 @@ def genotype(args):
     )
     genotypes, probs, count_probs = genotyper.genotype()
 
-    logging.info("Count probs: %s" % count_probs)
-    logging.info("Probs: %s" % probs)
-
     if args.min_genotype_quality > 0.0:
         set_to_homo_ref = np.where(
             math.e ** np.max(probs, axis=1) < args.min_genotype_quality
@@ -289,8 +280,8 @@ def genotype(args):
                           '##FORMAT=<ID=PL,Number=G,Type=Integer,Description="PHRED-scaled genotype likelihoods.">',
                           '##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype likelihoods.">'
                           ],
-        ignore_homo_ref=False,
-        add_genotype_likelyhoods=probs,
+        ignore_homo_ref=args.ignore_homo_ref,
+        add_genotype_likelyhoods=probs if not args.do_not_write_genotype_likelihoods else None,
     )
 
     close_shared_pool()
@@ -545,6 +536,8 @@ def run_argument_parser(args):
     subparser.add_argument("-F", "--helper-model-combo-matrix", required=False)
     subparser.add_argument("-I", "--ignore-helper-model", required=False, type=bool, default=False)
     subparser.add_argument("-V", "--ignore-helper-variants", required=False, type=bool, default=False)
+    subparser.add_argument("-b", "--ignore-homo-ref", required=False, type=bool, default=False, help="Set to True to not write homo ref variants to output vcf")
+    subparser.add_argument("-B", "--do-not-write-genotype-likelihoods", required=False, type=bool, default=False, help="Set to True to not write genotype likelihoods to output vcf")
 
     subparser.set_defaults(func=genotype)
 
@@ -995,9 +988,7 @@ def run_argument_parser(args):
     def create_helper_model_single_thread(data):
         interval, args = data
         from_variant, to_variant = interval
-        model = from_shared_memory(
-            NodeCountModelAdvanced, "model" + args.shared_memory_unique_id
-        )
+
         variant_to_nodes = from_shared_memory(
             VariantToNodes, "variant_to_nodes" + args.shared_memory_unique_id
         )
@@ -1018,19 +1009,10 @@ def run_argument_parser(args):
         )
         sub_variant_to_nodes = variant_to_nodes.slice(from_variant, to_variant)
         use_duplicate_counts = args.use_duplicate_counts
-        if use_duplicate_counts:
-            logging.info("Making helper using duplicate count info")
-            (
-                subhelpers,
-                subcombo,
-            ) = make_helper_model_from_genotype_matrix_and_node_counts(
-                submatrix, model, sub_variant_to_nodes, args.window_size
-            )
-        else:
-            logging.info("Making helper without using duplicate count info")
-            subhelpers, subcombo = make_helper_model_from_genotype_matrix(
-                submatrix.matrix, None, dummy_count=1.0, window_size=args.window_size
-            )
+
+        subhelpers, subcombo = make_helper_model_from_genotype_matrix(
+            submatrix.matrix, None, dummy_count=1.0, window_size=args.window_size
+        )
 
         # variant ids in results are now from 0 to (to_variant-from_variant)
         subhelpers += from_variant
@@ -1041,8 +1023,8 @@ def run_argument_parser(args):
         n_threads = args.n_threads
         pool = Pool(args.n_threads)
         logging.info("Made pool")
+        model = None
 
-        model = NodeCountModelAdvanced.from_file(args.node_count_model)
         variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
         genotype_matrix = GenotypeMatrix.from_file(args.genotype_matrix)
         # NB: Transpose
@@ -1086,7 +1068,7 @@ def run_argument_parser(args):
             to_shared_memory(
                 variant_to_nodes, "variant_to_nodes" + args.shared_memory_unique_id
             )
-            to_shared_memory(model, "model" + args.shared_memory_unique_id)
+
             logging.info("Put data in shared memory")
 
             for from_variant, to_variant, subhelpers, subcombo in pool.imap(
@@ -1114,7 +1096,6 @@ def run_argument_parser(args):
 
     subparser = subparsers.add_parser("create_helper_model")
     subparser.add_argument("-g", "--genotype-matrix", required=False)
-    subparser.add_argument("-n", "--node-count-model", required=True)
     subparser.add_argument("-v", "--variant-to-nodes", required=True)
     subparser.add_argument("-m", "--most-similar-variants", required=False)
     subparser.add_argument("-o", "--out-file-name", required=True)
@@ -1204,8 +1185,6 @@ def run_argument_parser(args):
         model = counts  # LimitedFrequencySamplingComboModel(counts)
         to_file(model, args.out_file_name)
 
-
-
     subparser = subparsers.add_parser("sample_node_counts_from_population")
     subparser.add_argument("-g", "--graph", required=True)
     subparser.add_argument("-i", "--kmer-index", required=True)
@@ -1217,6 +1196,29 @@ def run_argument_parser(args):
     subparser.add_argument("-t", "--n-threads", required=False, type=int, default=1)
     subparser.add_argument("-M", "--max-count", required=False, type=int, default=30)
     subparser.set_defaults(func=sample_node_counts_from_population)
+
+
+    def refine_sampling_model(args):
+        model = from_file(args.sampling_model)
+        variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
+
+        models = [
+            model.subset_on_nodes(variant_to_nodes.ref_nodes),
+            model.subset_on_nodes(variant_to_nodes.var_nodes)
+        ]
+        logging.info("Filling missing data")
+        for m in models:
+            m.astype(np.float16)
+            m.fill_empty_data()
+
+        to_file(models, args.out_file_name)
+        logging.info("Wrote refined model to %s" % args.out_file_name)
+
+    subparser = subparsers.add_parser("refine_sampling_model")
+    subparser.add_argument("-s", "--sampling_model", required=True)
+    subparser.add_argument("-v", "--variant-to-nodes", required=True)
+    subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.set_defaults(func=refine_sampling_model)
 
 
     def node_counts_from_gaf_cmd(args):

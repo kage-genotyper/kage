@@ -13,6 +13,7 @@ from itertools import chain
 from graph_kmer_index import KmerIndex
 from bionumpy.kmers import fast_hash
 from bionumpy.kmers import KmerEncoding
+import math
 
 
 
@@ -126,7 +127,7 @@ def get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_c
         count_matrices = _get_sampled_nodes_and_counts_for_range(graph, haplotype_to_nodes, k, kmer_index,
                                             max_count, n_nodes, [start_individual, end_individual])
     else:
-        chunks = interval_chunks(0, end_individual, end_individual//n_threads+1)
+        chunks = interval_chunks(0, end_individual, math.ceil(end_individual/n_threads))
         logging.info("Chunks: %s" % chunks)
         count_matrices = parallel_map_reduce_with_adding(_get_sampled_nodes_and_counts_for_range,
                             (graph, haplotype_to_nodes, k, kmer_index, max_count, n_nodes),

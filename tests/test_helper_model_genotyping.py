@@ -42,11 +42,4 @@ def test():
     genotypes = VcfVariants.translate_numeric_genotypes_to_literal(genotypes)
 
 
-    logging.info("Genotypes: %s" % genotypes)
-    logging.info("Probs: %s" % probs)
-    logging.info("Count probs: %s" % count_probs)
-
-    #assert genotypes[0] == "0/0"
-    #assert genotypes[1] == "0/0"
-
 test()

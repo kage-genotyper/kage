@@ -113,12 +113,12 @@ class NoHelperModel(Model):
         # multiply probs with population genotype frequencies
         e = 0.001
         probs = count_probs
-        probs[:,0] += np.log(self._genotype_frequencies.homo_ref + e)
-        probs[:,1] += np.log(self._genotype_frequencies.hetero + e)
-        probs[:,2] += np.log(self._genotype_frequencies.homo_alt + e)
-
-        logging.info("PROBS")
-        logging.info(probs)
+        if self._genotype_frequencies is not None:
+            probs[:,0] += np.log(self._genotype_frequencies.homo_ref + e)
+            probs[:,1] += np.log(self._genotype_frequencies.hetero + e)
+            probs[:,2] += np.log(self._genotype_frequencies.homo_alt + e)
+        else:
+            logging.warning("Not using population priors at all. Genotypes will only be predicted based on kmer counts!")
 
         probs =  probs - logsumexp(probs, axis=-1, keepdims=True)
         return probs
@@ -173,7 +173,7 @@ class HelperModel(Model):
                 + count_probs.reshape(-1, 1, 3)
             )
 
-        logging.debug(
+        logging.info(
             "Time spent on log_probs in HelperModel.score: %.4f"
             % (time.perf_counter() - time_start)
         )
@@ -188,7 +188,7 @@ class HelperModel(Model):
             16,
             [result],
         )
-        logging.debug(
+        logging.info(
             "Time spent to compute probs using helper probs in HelperModel.score: %.4f"
             % (time.perf_counter() - time_start)
         )

@@ -156,7 +156,6 @@ class CombinationModelGenotyper(Genotyper):
             logging.info("Ignoring helper model! Will not use helper variants to improve genotype accuracy")
             final_model = combination_model_both
         elif self._ignore_helper_variants:
-            assert self._genotype_frequencies is not None
             logging.info("Using NoHelperModel")
             final_model = NoHelperModel(combination_model_both,
                                         self._genotype_frequencies,
