@@ -14,7 +14,17 @@ from graph_kmer_index import KmerIndex
 from bionumpy.kmers import fast_hash
 from bionumpy.kmers import KmerEncoding
 import math
+from bionumpy.util import convolution
+from npstructures.bitarray import BitArray
 
+@convolution
+def fast_hash_fix(sequence, k, encoding=None):
+    if encoding:
+        sequence = encoding.encode(sequence)
+
+    bit_array = BitArray.pack(sequence, bit_stride=2)
+    hashes = bit_array.sliding_window(k)
+    return hashes
 
 
 def kmer_hash_wrapper(sequence, k):
@@ -44,7 +54,7 @@ def _map_haplotype_sequences(sequences, kmer_index, k, n_nodes):
                 t2 = time.perf_counter()
                 #kmers = fast_hash(sequence.astype(np.uint8)[::-1], k, do_encoding=False)
                 #kmers = np.convolve(sequence.astype(np.uint64), 4**np.arange(k, dtype=np.uint64), mode='valid')
-                kmers = fast_hash(s[::-1], k)
+                kmers = fast_hash_fix(s[::-1], k)
                 #kmers = kmer_hash_wrapper(s.astype(np.int64)[::-1], k)
                 convolve_time += time.perf_counter()-t2
                 #logging.info("Hashing %d bases took %.4f sec" % (len(s), time.perf_counter()-t2))
@@ -60,7 +70,7 @@ def _map_haplotype_sequences(sequences, kmer_index, k, n_nodes):
             log_memory_usage_now("Before hashing")
             t2 = time.perf_counter()
             #kmers = np.convolve(sequence, power_vector, mode="valid")
-            kmers = fast_hash(sequence.astype(np.uint8)[::-1], k)
+            kmers = fast_hash_fix(sequence.astype(np.uint8)[::-1], k)
             convolve_time += time.perf_counter()-t2
             log_memory_usage_now("After hashing")
 
