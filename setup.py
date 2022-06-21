@@ -15,7 +15,7 @@ setup(name='kage-genotyper',
                         'graph_kmer_index>=0.0.19',
                         'kmer_mapper>=0.0.19',
                         'graph_read_simulator>=0.0.6',
-                        'shared_memory_wrapper>=0.0.13',
+                        'shared_memory_wrapper>=0.0.14',
                         'bionumpy>=0.1.0', 'npstructures'
                         ],
       include_dirs=["."],
