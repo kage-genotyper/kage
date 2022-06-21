@@ -160,7 +160,7 @@ def genotype(args):
     if args.index_bundle is not None:
         logging.info("Reading all indexes from an index bundle")
         index = IndexBundle.from_file(args.index_bundle, skip=["KmerIndex"]).indexes
-        model = index["NodeCountModelAdvanced"]
+        models = index["CountModel"]
         variant_to_nodes = index["VariantToNodes"]
         variants = index["NumpyVariants"]
         helper_model = index["HelperVariants"].helper_variants
@@ -176,30 +176,21 @@ def genotype(args):
 
         variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
 
-        if args.model_advanced is None:
+        if args.count_model is None:
             logging.info("Model not specified. Creating a naive model, assuming kmers are unique")
-            args.model_advanced = LimitedFrequencySamplingComboModel.create_naive(np.maximum(np.max(variant_to_nodes.ref_nodes), np.max(variant_to_nodes.var_nodes))+1)
+            args.count_model = [
+                LimitedFrequencySamplingComboModel.create_naive(len(variant_to_nodes.ref_nodes)),
+                LimitedFrequencySamplingComboModel.create_naive(len(variant_to_nodes.var_nodes))
+            ]
         else:
             t0 = time.perf_counter()
-            args.model_advanced = from_file(args.model_advanced)
+            args.count_model = from_file(args.count_model)
             logging.info("Took %.4f sec to read model" % (time.perf_counter()-t0))
 
-        if args.model_advanced is not None:
-            models = args.model_advanced
+        if args.count_model is not None:
+            models = args.count_model
 
-        else:
-            try:
-                model = (
-                    GenotypeNodeCountModel.from_file(args.model)
-                    if args.model is not None
-                    else None
-                )
-            except KeyError:
-                try:
-                    model = NodeCountModel.from_file(args.model)
-                except KeyError:
-                    model = NodeCountModelAlleleFrequencies.from_file(args.model)
-                    logging.info("Model is allele frequency model")
+
 
         t0 = time.perf_counter()
         variants = NumpyVariants.from_file(args.vcf)
@@ -222,6 +213,8 @@ def genotype(args):
             genotype_frequencies = GenotypeFrequencies.from_file(
                 args.genotype_frequencies
             )
+
+    assert models is not None
 
     node_counts = NodeCounts.from_file(args.counts)
     max_variant_id = len(variant_to_nodes.ref_nodes) - 1
@@ -476,7 +469,7 @@ def run_argument_parser(args):
     subparser.add_argument("-v", "--vcf", required=False, help="Vcf to genotype")
     subparser.add_argument("-m", "--model", required=False, help="Node count model")
     subparser.add_argument(
-        "-A", "--model_advanced", required=False, help="Node count model"
+        "-A", "--count-model", required=False, help="Node count model"
     )
     subparser.add_argument(
         "-G", "--genotype-frequencies", required=False, help="Genotype frequencies"
@@ -1117,8 +1110,8 @@ def run_argument_parser(args):
         indexes = {
             "VariantToNodes": VariantToNodes.from_file(args.variant_to_nodes),
             "NumpyVariants": NumpyVariants.from_file(args.numpy_variants),
-            "NodeCountModelAdvanced": NodeCountModelAdvanced.from_file(
-                args.model_advanced
+            "CountModel": from_file(
+                args.count_model
             ),
             "TrickyVariants": TrickyVariants.from_file(args.tricky_variants),
             "HelperVariants": HelperVariants.from_file(args.helper_model),
@@ -1128,14 +1121,14 @@ def run_argument_parser(args):
             "KmerIndex": KmerIndex.from_file(args.kmer_index),
         }
         bundle = IndexBundle(indexes)
-        bundle.to_file(args.out_file_name)
+        bundle.to_file(args.out_file_name, compress=True)
         logging.info("Wrote index bundle to file %s" % args.out_file_name)
 
     subparser = subparsers.add_parser("make_index_bundle")
     subparser.add_argument("-g", "--variant-to-nodes", required=True)
     subparser.add_argument("-v", "--numpy-variants", required=True)
     subparser.add_argument(
-        "-A", "--model_advanced", required=True, help="Node count model"
+        "-A", "--count-model", required=True, help="Node count model"
     )
     subparser.add_argument(
         "-o",
