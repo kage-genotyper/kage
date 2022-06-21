@@ -7,7 +7,7 @@ class DummyBoth:
     def __init__(self, prob):
         self._prob = np.asanyarray(prob)
 
-    def logpmf(self, k1, k2, genotype):
+    def logpmf(self, k1, k2, genotype, base_lambda=1):
         return np.log(self._prob[:, genotype])
 
 pi = np.array([[0.4, 0.2, 0],
@@ -36,6 +36,7 @@ dummy = DummyBoth([[0.1, 0.2, 0.3],
 combo_matrix = np.array([pi, pi.T, pi*2])
 helper_model = HelperModel(dummy, [1, 0, 0], combo_matrix)
 
+
 def test_helper_model_pmf():
     pmf = np.exp(helper_model.logpmf(None, None, 0))
     assert np.allclose(pmf, true_pmfs[0] )
@@ -45,9 +46,11 @@ def test_helper_model_pmf():
     pmf_2 = np.exp(helper_model.logpmf(None, None, 2))
     assert np.allclose(pmf_2, true_pmfs[2])
 
+
 def test_helper_model_scores():
     scores = np.exp(helper_model.score(None, None))
     assert np.allclose(scores.T, true_scores)
+
 
 class VariantMock:
     ref_nodes = np.array([None, 0, 2, 4, None])

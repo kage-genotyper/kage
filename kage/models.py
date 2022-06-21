@@ -48,7 +48,7 @@ class ComboModelBothAlleles(Model):
         if genotype in self._logpmf_cache:
             return self._logpmf_cache[genotype]
 
-        logging.info("Using base lambda %.3f in combo model both alleles" % base_lambda)
+        logging.debug("Using base lambda %.3f in combo model both alleles" % base_lambda)
         logging.info("Model is %s" % type(self._model_ref))
         ref_probs = self._model_ref.logpmf(k1, 2 - genotype, base_lambda=base_lambda)
         alt_probs = self._model_alt.logpmf(k2, genotype, base_lambda=base_lambda)
@@ -195,7 +195,7 @@ class HelperModel(Model):
         return result
 
     def logpmf(self, ref_counts, alt_counts, genotype):
-        return NotImplemented
+        #return NotImplemented
         count_probs = np.array(
             [self._model.logpmf(ref_counts, alt_counts, g) for g in [0, 1, 2]]
         ).T

@@ -2,14 +2,14 @@ import logging
 import sys
 logging.basicConfig(
     stream=sys.stdout,
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s %(levelname)s: %(message)s",
 )
 
 from .util import log_memory_usage_now
 from .sampling_combo_model import RaggedFrequencySamplingComboModel
 from .models import ComboModelBothAlleles
-from .mapping_model import get_node_counts_from_haplotypes, get_node_counts_from_genotypes, get_sampled_nodes_and_counts2
+from .mapping_model import get_node_counts_from_haplotypes
 from .mapping_model import get_sampled_nodes_and_counts
 from .sampling_combo_model import LimitedFrequencySamplingComboModel
 
@@ -540,51 +540,15 @@ def run_argument_parser(args):
         np.random.seed(args.random_seed)
         random.seed(args.random_seed)
         genotyper = globals()[args.genotyper]
-        if args.type == "simulated":
-            run_genotyper_on_simualated_data(
-                genotyper,
-                args.n_variants,
-                args.n_individuals,
-                args.average_coverage,
-                args.coverage_std,
-                args.duplication_rate,
-            )
-        else:
-            raise NotImplementedError("Not implemented")
-            node_counts = NodeCounts.from_file("tests/testdata_genotyping/node_counts")
-            model = GenotypeNodeCountModel.from_file(
-                "tests/testdata_genotyping/genotype_model.npz"
-            )
-            variant_to_nodes = VariantToNodes.from_file(
-                "tests/testdata_genotyping/variant_to_nodes"
-            )
-            genotype_frequencies = GenotypeFrequencies.from_file(
-                "tests/testdata_genotyping/genotype_frequencies"
-            )
-            most_similar_variant_lookup = MostSimilarVariantLookup.from_file(
-                "tests/testdata_genotyping/most_similar_variant_lookup.npz"
-            )
-            variants = VcfVariants.from_vcf(
-                "tests/testdata_genotyping/variants_no_genotypes.vcf"
-            )
-            truth_variants = VcfVariants.from_vcf("tests/testdata_genotyping/truth.vcf")
-            truth_regions = TruthRegions("tests/testdata_genotyping/truth_regions.bed")
-            g = genotyper(
-                model,
-                variants,
-                variant_to_nodes,
-                node_counts,
-                genotype_frequencies,
-                most_similar_variant_lookup,
-            )
-            g.genotype()
 
-            from .analysis import SimpleRecallPrecisionAnalyser
-
-            analyser = SimpleRecallPrecisionAnalyser(
-                variants, truth_variants, truth_regions
-            )
-            analyser.analyse()
+        run_genotyper_on_simualated_data(
+            genotyper,
+            args.n_variants,
+            args.n_individuals,
+            args.average_coverage,
+            args.coverage_std,
+            args.duplication_rate,
+        )
 
     subparser = subparsers.add_parser("test")
     subparser.add_argument(
@@ -632,7 +596,6 @@ def run_argument_parser(args):
         default=0.1,
         help="Ratio of variants with duplications",
     )
-    subparser.add_argument("-T", "--type", required=False, default="simulated")
     subparser.set_defaults(func=run_tests)
 
     def make_genotype_model(args):

@@ -1,5 +1,6 @@
 import logging
 logging.basicConfig(level=logging.ERROR)
+import pytest
 from kage.node_count_model import NodeCountModelAdvanced
 from kage.combomodel import ComboModel
 from kage.models import ComboModelBothAlleles, HelperModel
@@ -7,6 +8,7 @@ import numpy as np
 np.seterr(all="ignore")
 
 
+@pytest.mark.skip("Outdated model")
 def test_simple():
     coverage = 0.85 * 0.75 * 15 / 2
 
@@ -42,4 +44,3 @@ def test_simple():
     print(probs_homo_alt)
 
 
-test_simple()

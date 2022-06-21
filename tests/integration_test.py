@@ -12,7 +12,7 @@ def test_simple():
                                                     duplication_rate=0.03, average_coverage=15, coverage_std=0.5)
 
 
-    assert correct_rate >= 0.990, "Correct rate on trivial genotyping dropped" \
-                                  " below 0.990 and is %.5f. Something may be wrong." % correct_rate
+    assert correct_rate >= 0.980, "Correct rate on trivial genotyping dropped" \
+                                  " below 0.980 and is %.5f. Something may be wrong." % correct_rate
 
 test_simple()

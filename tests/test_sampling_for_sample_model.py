@@ -2,7 +2,7 @@ import logging
 import pytest
 from obgraph import Graph
 from obgraph.haplotype_nodes import HaplotypeToNodes
-from kage.mapping_model import get_node_counts_from_genotypes, get_sampled_nodes_and_counts
+from kage.mapping_model import get_sampled_nodes_and_counts
 from kage.sampling_combo_model import RaggedFrequencySamplingComboModel
 from graph_kmer_index import KmerIndex, FlatKmers, sequence_to_kmer_hash, CounterKmerIndex
 from graph_kmer_index.kmer_counter import KmerCounter
@@ -43,25 +43,6 @@ def kmer_index():
         )
     ))
     return kmer_index
-
-
-def test_get_node_counts_from_genotypes(graph, haplotype_to_nodes, kmer_index):
-    k = 3
-
-    logging.info("N haplotypes: %d" % haplotype_to_nodes.n_haplotypes())
-    counts = get_node_counts_from_genotypes(haplotype_to_nodes, kmer_index, graph, k=k)
-    logging.info(counts)
-
-    assert counts[1][3] == [3]
-    assert counts[1][2] == [3]
-    assert counts[0][2] == [2]
-    assert counts[2][3] == [4]
-    assert len(counts[2][2]) == 0
-
-    frequency_model = RaggedFrequencySamplingComboModel.from_counts(counts)
-
-    assert frequency_model.diplotype_counts[2][0][3] == [4]
-    assert frequency_model.diplotype_counts[2][1][3] == [1]
 
 
 def test_get_as_count_matrix(graph, haplotype_to_nodes, kmer_index):

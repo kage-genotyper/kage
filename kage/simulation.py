@@ -39,17 +39,7 @@ def run_genotyper_on_simualated_data(
     truth_variants = variants.copy()
 
     # g = genotyper(model, variants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup)
-    count_models = [
-        ComboModel.from_counts(
-            average_coverage,
-            node_count_model.frequencies[nodes],
-            node_count_model.frequencies_squared[nodes],
-            node_count_model.has_too_many[nodes],
-            node_count_model.certain[nodes],
-            node_count_model.frequency_matrix[nodes],
-        )
-        for nodes in (variant_to_nodes.ref_nodes, variant_to_nodes.var_nodes)
-    ]
+    count_models = node_count_model
 
     g = genotyper(
         count_models,
@@ -65,7 +55,6 @@ def run_genotyper_on_simualated_data(
     )
     genotypes, probs, _ = g.genotype()
     correct = np.array([t.get_numeric_genotype() for t in truth_variants])
-    print(np.where(correct != genotypes)[0])
 
     for variant, genotype in zip(variants, genotypes):
         variant.set_genotype(genotype, is_numeric=True)
@@ -274,11 +263,17 @@ class GenotypingDataSimulator:
             ] += self._average_coverage
 
         # make model
-        from .node_count_model import NodeCountModelAdvanced
+        from .mapping_model import LimitedFrequencySamplingComboModel
+        from .mapping_model import get_sampled_nodes_and_counts
+        self._model = [
+            LimitedFrequencySamplingComboModel.create_naive(self._n_variants),
+            LimitedFrequencySamplingComboModel.create_naive(self._n_variants)
+            ]
+            #from .node_count_model import NodeCountModelAdvanced
 
-        self._model = NodeCountModelAdvanced.from_dict_of_frequencies(
-            duplicate_frequencies, self._n_nodes
-        )
+        #self._model = NodeCountModelAdvanced.from_dict_of_frequencies(
+        #    duplicate_frequencies, self._n_nodes
+        #)
 
         # make helper model
 

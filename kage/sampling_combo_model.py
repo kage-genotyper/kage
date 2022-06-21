@@ -56,7 +56,7 @@ class LimitedFrequencySamplingComboModel(Model):
         pass
 
     @classmethod
-    def create_empty(cls, n_variants, max_count):
+    def create_empty(cls, n_variants, max_count=3):
         logging.info("Creating empty limited freq model with dimensions %d x %d "% (n_variants, max_count))
         log_memory_usage_now("Before creating empty")
         ret = cls([np.zeros((n_variants, max_count), dtype=np.uint16) for i in range(3)])
@@ -102,15 +102,15 @@ class LimitedFrequencySamplingComboModel(Model):
 
 
     def logpmf(self, observed_counts, d, base_lambda=1.0, error_rate=0.01):
-        logging.info("base lambda in LimitedFreq model is %.3f" % base_lambda)
-        logging.info("Error rate is %.3f" % error_rate)
+        logging.debug("base lambda in LimitedFreq model is %.3f" % base_lambda)
+        logging.debug("Error rate is %.3f" % error_rate)
         t0 = time.perf_counter()
         counts = self.diplotype_counts[d]
         counts = counts.astype(float)
         prob = run_numpy_based_function_in_parallel(
             LimitedFrequencySamplingComboModel._logpmf, 16, (observed_counts, counts, base_lambda, error_rate)
         )
-        logging.info("Logpmf took %.4f sec" % (time.perf_counter()-t0))
+        logging.debug("Logpmf took %.4f sec" % (time.perf_counter()-t0))
 
         return prob
         #return LimitedFrequencySamplingComboModel._logpmf(observed_counts, counts, base_lambda, error_rate)
@@ -124,22 +124,22 @@ class LimitedFrequencySamplingComboModel(Model):
         #frequencies = np.log(counts / sums)
         t0 = time.perf_counter()
         frequencies = run_numpy_based_function_in_parallel(np.log, 16, (counts/sums,))
-        logging.info("Frequencies took %.4f sec" % (time.perf_counter()-t0))
+        logging.debug("Frequencies took %.4f sec" % (time.perf_counter()-t0))
 
         poisson_lambda = (np.arange(counts.shape[1])[None,:] + error_rate) * base_lambda
 
         #prob = poisson.logpmf(observed_counts[:,None], poisson_lambda)
         t0 = time.perf_counter()
         prob = run_numpy_based_function_in_parallel(fast_poisson_logpmf, 16, (observed_counts[:,None], poisson_lambda))
-        logging.info("Prob took %.4f sec" % (time.perf_counter()-t0))
+        logging.debug("Prob took %.4f sec" % (time.perf_counter()-t0))
 
 
         #prob = logsumexp(frequencies + prob, axis=-1)
         t0 = time.perf_counter()
         prob = run_numpy_based_function_in_parallel(lambda x: logsumexp(x, axis=-1), 16, (frequencies+prob,))
-        logging.info("Prob2 took %.4f sec" % (time.perf_counter()-t0))
+        logging.debug("Prob2 took %.4f sec" % (time.perf_counter()-t0))
 
-        logging.info("LimitedFreqModel logpmf took %.4f sec" % (time.perf_counter()-t))
+        logging.debug("LimitedFreqModel logpmf took %.4f sec" % (time.perf_counter()-t))
         return prob
         # sum(diplo_counts[node]/n_diplotypes_for_having[diplotype, node]*np.exp(poisson.logpmf(observed_counts[node], kmer_counts[node]))))
 
@@ -170,23 +170,19 @@ class LimitedFrequencySamplingComboModel(Model):
         e0, e1, e2 = expected_counts
         m0, m1, m2 = self.diplotype_counts
         max_count = m0.shape[1]-1
-        logging.info("Adding priors")
-        logging.info("Size of e: %s" % (e1.shape))
+        logging.debug("Adding priors")
+        logging.debug("Size of e: %s" % (e1.shape))
         positions = np.round(e1).astype(int) - 1
-        logging.info("Found positions")
+        logging.debug("Found positions")
         positions = np.maximum(0, positions)
-        logging.info("Found max")
+        logging.debug("Found max")
         rows = np.arange(0, m0.shape[0])
         m0[rows, positions] += prior
-        logging.info("done 0")
         m1[rows,np.minimum(max_count, np.round(e0).astype(int) + 1)] += prior
-        logging.info("done 1")
         m2[rows,np.minimum(max_count, np.round(e0).astype(int) + 2)] += prior
-        #m2[rows,np.minimum(max_count, np.round(2*e1 - e0).astype(int))] += prior
-        logging.info("done 2")
 
         assert all([np.all(np.sum(c, axis=-1) > 0) for c in self.diplotype_counts])
-        logging.info("Filling empty data took %.2f sec " % (time.perf_counter()-t))
+        logging.debug("Filling empty data took %.2f sec " % (time.perf_counter()-t))
 
     def has_no_data(self, idx):
         missing = [np.sum(c[idx]) == 0 for c in self.diplotype_counts]

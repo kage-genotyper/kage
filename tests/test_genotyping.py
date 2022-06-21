@@ -9,7 +9,7 @@ from obgraph.variants import VcfVariants, VcfVariant
 from kage.node_count_model import NodeCountModelAdvanced
 from kage.combination_model_genotyper import CombinationModelGenotyper
 from kage.helper_index import make_helper_model_from_genotype_matrix,make_helper_model_from_genotype_matrix_and_node_counts
-from kage.sampling_combo_model import RaggedFrequencySamplingComboModel
+from kage.sampling_combo_model import LimitedFrequencySamplingComboModel
 
 class Helper:
     def __init__(self):
@@ -26,7 +26,7 @@ class Helper:
         self.variant_to_nodes = VariantToNodes(np.array([1, 2, 3, 4]), np.array([5, 6, 7, 8]))
         self.most_simliar_variant_lookup = MostSimilarVariantLookup(np.arange(self.n_variants)-1, np.ones(self.n_variants))
         self.node_count_model = NodeCountModelAdvanced(np.zeros(self.max_node_id), np.zeros(self.max_node_id), np.zeros(self.max_node_id), np.zeros((self.max_node_id, 5)), np.zeros(self.max_node_id, dtype=bool))
-        self.sampling_count_models = [RaggedFrequencySamplingComboModel.create_naive(4), RaggedFrequencySamplingComboModel.create_naive(4)]
+        self.sampling_count_models = [LimitedFrequencySamplingComboModel.create_naive(4), LimitedFrequencySamplingComboModel.create_naive(4)]
        # self.helper_variants, self.genotype_combo_matrix = make_helper_model_from_genotype_matrix(self.genotype_matrix, self.most_simliar_variant_lookup)
         self.helper_variants, self.genotype_combo_matrix = \
             make_helper_model_from_genotype_matrix_and_node_counts(self.genotype_matrix, self.node_count_model, self.variant_to_nodes)
@@ -89,24 +89,6 @@ class Helper:
                 print(variant)
                 assert variant.genotype == genotype
 
-    def testcase2(self):
-        # Case 2
-        node_counts = NodeCounts(np.array([0.0] + [3.0] * 4 + [3.0] * 4))
-        genotyper = Genotyper(node_count_model, input_variants, variant_to_nodes, node_counts,
-                              genotype_frequencies, most_simliar_variant_lookup)
-
-        genotyper.genotype()
-        for variant in input_variants:
-            assert variant.genotype == "0/1"
-
-        # Case 3
-        node_counts = NodeCounts(np.array([0.0] + [3.0] * 4 + [0.0] * 4))
-        genotyper = Genotyper(node_count_model, input_variants, variant_to_nodes, node_counts,
-                              genotype_frequencies, most_simliar_variant_lookup)
-
-        genotyper.genotype()
-        for variant in input_variants:
-            assert variant.genotype == "0/0"
 
 tester = Helper()
 
@@ -116,6 +98,3 @@ def test1():
 def test2():
     tester.testcase_all_equally_likely_but_higher_priors_for_one_genotype()
 
-
-test1()
-test2()

@@ -90,35 +90,6 @@ def _map_haplotype_sequences(sequences, kmer_index, k, n_nodes):
 
 
 
-def get_node_counts_from_genotypes(
-    haplotype_to_nodes, kmer_index, graph, n_haplotypes=None, k=31
-):
-    """
-    Returns three HashTables for gentype 0, 1 and 2 (having node 0, 1 or 2 times)
-    Each HashTable has kmer counts for all possible individuals with that genotype
-    position/index in that HashTable is node id
-    """
-    n_nodes = len(graph.nodes)
-
-    sampled_counts, sampled_nodes = get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index,
-                                                                 n_haplotypes)
-    # sampled_nodes and sampled_counts represent for each possible genotype count (0, 1, 2)
-    # nodes and counts. Counts are num
-
-    # put nodes and counts into a ragged array
-    output = []
-    for nodes, counts in zip(sampled_nodes, sampled_counts):
-        nodes = nodes.get_nparray()
-        counts = counts.get_nparray()
-
-        data = counts[np.argsort(nodes)]
-        lengths = np.bincount(nodes, minlength=n_nodes)
-        output.append(RaggedArray(data, lengths))
-
-    return output
-    #return [HashTable(nodes.get_nparray(), counts.get_nparray()) for nodes, counts in zip(sampled_nodes, sampled_counts)]
-
-
 
 def get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_count=30, n_threads=1, limit_to_n_individuals=None):
 
