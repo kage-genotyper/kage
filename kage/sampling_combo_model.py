@@ -96,7 +96,7 @@ class LimitedFrequencySamplingComboModel(Model):
         sums = np.sum(counts, axis=-1)[:,None]
         frequencies = np.log(counts / sums)
         poisson_lambda = (np.arange(counts.shape[1])[None,:] + error_rate) * base_lambda
-        prob = poisson.logpmf(observed_counts[:,None], poisson_lambda)
+        prob = fast_poisson_logpmf(observed_counts[:,None], poisson_lambda)
         prob = logsumexp(frequencies + prob, axis=-1)
         return prob
 
@@ -106,7 +106,7 @@ class LimitedFrequencySamplingComboModel(Model):
         logging.debug("Error rate is %.3f" % error_rate)
         t0 = time.perf_counter()
         counts = self.diplotype_counts[d]
-        counts = counts.astype(float)
+        counts = counts.astype(np.float16)
         prob = run_numpy_based_function_in_parallel(
             LimitedFrequencySamplingComboModel._logpmf, 16, (observed_counts, counts, base_lambda, error_rate)
         )
