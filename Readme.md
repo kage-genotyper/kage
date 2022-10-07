@@ -6,6 +6,7 @@
 ## KAGE: *K*mer-based *A*lignment-free *G*raph G*e*notyper
 KAGE is a tool for efficiently genotyping short SNPs and indels from short genomic reads.
 
+A manuscript describing the method [can be found here](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-022-02771-2).
 
 ## Installation
 KAGE requires Python 3, and can be installed using Pip: 
@@ -31,12 +32,12 @@ Once you have an index of the variants you want to genotype, running KAGE is str
 
 ### Step 1: Map fasta kmers to the pangenome index:
 ```python
-kmer_mapper map -b index -f reads.fa -o kmer_counts -l 150
+kmer_mapper map -b index -f reads.fa -o kmer_counts
 ```
 
-The Kmer Mapper requires for now a two-line fasta file. If you have a fastq file, you should convert that to fasta before mapping (e.g. by using [Seqtk](https://github.com/lh3/seqtk)).
+In the above example, the index specified by `-b` is an index bundle (see explanation above).
 
-Note: Make sure l is the max read length of your input reads, and not any lower than that. The index specified by `-b` is an index bundle (see explanation above).
+The kmer mapper works with .fa and .fq files. It can also takes gzipped-files, but for now this is a bit experimentally and may be a bit slow (it is using BioNumPy's parser which is under development).
 
 
 ### Step 2: Do the genotyping
@@ -50,3 +51,17 @@ Make sure to set `--average-coverage` to the expected average coverage of your i
 
 Note:
 KAGE puts data and arrays in shared memory to speed up computation. It automatically frees this memory when finished, but KAGE gets accidentally killed or stops before finishing, you might end up with allocated memory not being freed. You can free this memory by calling `kage free_memory`.
+
+
+## Recent changes and future plans
+Recent changes:
+* June 2022: Release of version for manuscript in Genome Biology
+* October 7 2022: Minor update. Now using [BioNumPy](https://gitub.com/uio-bmi/bionumpy) do parse input files and hash kmers.
+
+Future plans:
+* Ultra-fast genotyping using GPU (a master student at Sandve lab is currently working on this)
+* Support for structural variation
+
+
+## Support
+Please post an issue or email ivargry@ifi.uio.no if you encounter any problems or have any questions.
