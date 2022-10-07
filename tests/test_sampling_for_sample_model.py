@@ -45,6 +45,7 @@ def kmer_index():
     return kmer_index
 
 
+@pytest.mark.skip
 def test_get_as_count_matrix(graph, haplotype_to_nodes, kmer_index):
     k = 3
     matrix = get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_count=5)
@@ -55,6 +56,7 @@ def test_get_as_count_matrix(graph, haplotype_to_nodes, kmer_index):
     #assert all([np.all(m1 == m2) for m1, m2 in zip(matrix, matrix2)])
 
 
+@pytest.mark.skip
 def test_parallel(graph, kmer_index):
     k = 3
     n_haplotypes = 100
@@ -65,10 +67,6 @@ def test_parallel(graph, kmer_index):
 
     results1 = get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_count=8, n_threads=1)
     results10 = get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_count=8, n_threads=20)
-
-    print(results1[0])
-    print(results10[0])
-
 
     assert np.all(results1[0] == results10[0])
 
