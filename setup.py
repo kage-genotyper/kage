@@ -13,10 +13,10 @@ setup(name='kage-genotyper',
       install_requires=['numpy', 'tqdm', 'pyfaidx', 'pathos', 'cython', 'scipy',
                         'obgraph>=0.0.27',
                         'graph_kmer_index>=0.0.21',
-                        'kmer_mapper>=0.0.21',
+                        'kmer_mapper>=0.0.22',
                         'graph_read_simulator>=0.0.7',
                         'shared_memory_wrapper>=0.0.18',
-                        'bionumpy>=0.2.0'
+                        'bionumpy>=0.2.1'
                         ],
       include_dirs=["."],
       classifiers=[
