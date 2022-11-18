@@ -16,27 +16,14 @@ import bionumpy as bnp
 import math
 from npstructures.bitarray import BitArray
 
+
 def fast_hash_fix(sequence, k, encoding=None):
     hashes = bnp.sequence.get_kmers(
-        bnp.EncodedArray(sequence, bnp.encodings.alphabet_encoding.ACTGEncoding),
+        bnp.EncodedArray(sequence, bnp.DNAEncoding),
         k
     ).ravel().raw().astype(np.uint64)
     return hashes
 
-    # old bionumpy
-    if encoding:
-        sequence = encoding.encode(sequence)
-
-    bit_array = BitArray.pack(sequence, bit_stride=2)
-    hashes = bit_array.sliding_window(k)
-    return hashes
-
-
-def kmer_hash_wrapper(sequence, k):
-    assert sequence.dtype == np.int64
-    hasher = KmerEncoding(k, None, 4)
-    hashes = hasher.rolling_window(sequence)
-    return hashes.astype(np.uint64)
 
 def _map_haplotype_sequences(sequences, kmer_index, k, n_nodes):
     t = time.perf_counter()
@@ -55,27 +42,20 @@ def _map_haplotype_sequences(sequences, kmer_index, k, n_nodes):
                 logging.info("did not split sequence")
 
             for j, s in enumerate(sequence_chunks):
-                #log_memory_usage_now("Starting sequence %d" % j)
                 t2 = time.perf_counter()
-                #kmers = fast_hash(sequence.astype(np.uint8)[::-1], k, do_encoding=False)
-                #kmers = np.convolve(sequence.astype(np.uint64), 4**np.arange(k, dtype=np.uint64), mode='valid')
-                kmers = fast_hash_fix(s[::-1], k)
-                #kmers = kmer_hash_wrapper(s.astype(np.int64)[::-1], k)
+                kmers = fast_hash_fix(s, k)
                 convolve_time += time.perf_counter()-t2
-                #logging.info("Hashing %d bases took %.4f sec" % (len(s), time.perf_counter()-t2))
                 t3 = time.perf_counter()
                 counts += map_kmers_to_graph_index(kmer_index, n_nodes-1, kmers)
-                #logging.info("Mapping %d kmers took %.4f sec" % (len(kmers), time.perf_counter()-t3))
 
             #log_memory_usage_now("Done mapping sequence %d" % i)
     else:
         kmer_index.reset()
         for i, sequence in enumerate(sequences):
-            #power_vector = np.power(4, np.arange(0, k)).astype(np.uint64)
             log_memory_usage_now("Before hashing")
             t2 = time.perf_counter()
             #kmers = np.convolve(sequence, power_vector, mode="valid")
-            kmers = fast_hash_fix(sequence.astype(np.uint8)[::-1], k)
+            kmers = fast_hash_fix(sequence.astype(np.uint8), k)
             convolve_time += time.perf_counter()-t2
             log_memory_usage_now("After hashing")
 
@@ -303,15 +283,14 @@ def get_node_counts_from_haplotypes(
         sequence = graph.get_numeric_node_sequences(nodes).astype(np.uint64)
         logging.info("Time to get haplotype sequence: %.3f" % (time.perf_counter() - t))
         assert sequence.dtype == np.uint64
-        power_vector = np.power(4, np.arange(0, k)).astype(np.uint64)
+        power_vector = np.power(4, np.arange(k-1, -1, -1)).astype(np.uint64)
         logging.info("Getting kmers")
         t = time.perf_counter()
         kmers = np.convolve(sequence, power_vector, mode="valid")
         logging.info("Time to get kmers: %.3f" % (time.perf_counter() - t))
 
         logging.info("N kmers for haplotype: %d" % len(kmers))
-        # complement_sequence = (sequence+2) % 4
-        # reverse_kmers = np.consolve(complement_sequence, np.arange(0, k).astype(np.uint64)[::-1])
+
         # all_kmers = np.concatenate([kmers, reverse_kmers])
         all_kmers = kmers
         # node_counts = map_kmers_to_graph_index(kmer_index, max_node_id, all_kmers)

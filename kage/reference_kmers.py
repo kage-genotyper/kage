@@ -17,6 +17,6 @@ class ReferenceKmers:
         else:
             logging.info("Creating reference kmers")
             self.reference_kmers = ReadKmers.get_kmers_from_read_dynamic(
-                str(Fasta("ref.fa")[reference_name]), np.power(4, np.arange(0, k))
+                str(Fasta("ref.fa")[reference_name]), np.power(4, np.arange(0, k)[::-1])
             )
             np.save(reference_kmers_cache_file_name, self.reference_kmers)
