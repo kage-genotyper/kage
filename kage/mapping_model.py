@@ -11,14 +11,19 @@ from .sampling_combo_model import LimitedFrequencySamplingComboModel
 from .util import log_memory_usage_now
 from itertools import chain
 from graph_kmer_index import KmerIndex
-from bionumpy.kmers import fast_hash
-from bionumpy.kmers import KmerEncoding
+import bionumpy as bnp
+#from bionumpy.kmers import KmerEncoding
 import math
-from bionumpy.util import convolution
 from npstructures.bitarray import BitArray
 
-@convolution
 def fast_hash_fix(sequence, k, encoding=None):
+    hashes = bnp.sequence.get_kmers(
+        bnp.EncodedArray(sequence, bnp.encodings.alphabet_encoding.ACTGEncoding),
+        k
+    ).ravel().raw().astype(np.uint64)
+    return hashes
+
+    # old bionumpy
     if encoding:
         sequence = encoding.encode(sequence)
 
