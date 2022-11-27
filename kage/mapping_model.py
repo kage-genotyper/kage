@@ -12,7 +12,6 @@ from .util import log_memory_usage_now
 from itertools import chain
 from graph_kmer_index import KmerIndex
 import bionumpy as bnp
-#from bionumpy.kmers import KmerEncoding
 import math
 from npstructures.bitarray import BitArray
 
