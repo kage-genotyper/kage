@@ -681,31 +681,6 @@ def run_argument_parser(args):
     )
     subparser.set_defaults(func=filter_variants)
 
-    def analyse_kmer_index(args):
-
-        reverse_kmers = ReverseKmerIndex.from_file(args.reverse_kmer_index)
-        index = KmerIndex.from_file(args.kmer_index)
-        variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
-        from .variant_kmer_analyser import VariantKmerAnalyser
-
-        analyser = VariantKmerAnalyser(
-            reverse_kmers, index, variant_to_nodes, args.write_good_variants_to_file
-        )
-        analyser.analyse()
-        logging.info("Done")
-
-    # Analyse variant kmers
-    subparser = subparsers.add_parser("analyse_kmer_index")
-    subparser.add_argument("-r", "--reverse-kmer-index", required=True)
-    subparser.add_argument("-i", "--kmer-index", required=True)
-    subparser.add_argument("-g", "--variant-to-nodes", required=True)
-    subparser.add_argument(
-        "-o",
-        "--write-good-variants-to-file",
-        required=False,
-        help="When specified, good variant IDs will be written to file",
-    )
-    subparser.set_defaults(func=analyse_kmer_index)
 
     subparser = subparsers.add_parser("model")
     subparser.add_argument("-g", "--variant-to-nodes", required=True)

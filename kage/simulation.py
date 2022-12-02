@@ -128,8 +128,6 @@ class GenotypingDataSimulator:
         )
         self._simulate_variants()
 
-        # self.helper_variants, self.genotype_combo_matrix = make_helper_model_from_genotype_matrix_and_node_counts(
-        #    self.genotype_matrix, self._model, variant_to_nodes)
         (
             self.helper_variants,
             self.genotype_combo_matrix,

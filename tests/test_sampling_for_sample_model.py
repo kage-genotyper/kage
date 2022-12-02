@@ -30,33 +30,29 @@ def haplotype_to_nodes():
 
 @pytest.fixture
 def kmer_index():
-    kmer_index = CounterKmerIndex.from_kmer_index(KmerIndex.from_flat_kmers(
+    kmer_index = KmerIndex.from_flat_kmers(
         FlatKmers(
             np.array([
                 sequence_to_kmer_hash("TTT"),
                 sequence_to_kmer_hash("TGT")
-            ]),
+            ]).astype(np.uint64),
             np.array([
                 2, 3
             ])
 
         )
-    ))
+    )
+    kmer_index.convert_to_int32()
     return kmer_index
 
 
-@pytest.mark.skip
 def test_get_as_count_matrix(graph, haplotype_to_nodes, kmer_index):
     k = 3
     matrix = get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_count=5)
     assert matrix[1][3][3] == 1
     assert matrix[1][3][2] == 0
 
-    #matrix2 = get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, n_threads=3, max_count=5)
-    #assert all([np.all(m1 == m2) for m1, m2 in zip(matrix, matrix2)])
 
-
-@pytest.mark.skip
 def test_parallel(graph, kmer_index):
     k = 3
     n_haplotypes = 100
