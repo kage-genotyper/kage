@@ -23,13 +23,13 @@ class IndexBundle:
     @classmethod
     def from_args(cls, args):
         return cls([
-            ("VariantToNodes", VariantToNodes.from_file(args.variant_to_nodes)),
-            ("NumpyVariants", NumpyVariants.from_file(args.numpy_variants)),
-            ("CountModel", from_file(args.count_model)),
-            ("TrickyVariants", TrickyVariants.from_file(args.tricky_variants)),
-            ("HelperVariants", HelperVariants.from_file(args.helper_model)),
-            ("CombinationMatrix", CombinationMatrix.from_file(args.helper_model_combo_matrix)),
-            ("KmerIndex", KmerIndex.from_file(args.kmer_index))
+            ("variant_to_nodes", VariantToNodes.from_file(args.variant_to_nodes)),
+            ("numpy_variants", NumpyVariants.from_file(args.numpy_variants)),
+            ("count_model", from_file(args.count_model)),
+            ("tricky_variants", TrickyVariants.from_file(args.tricky_variants)),
+            ("helper_variants", HelperVariants.from_file(args.helper_model)),
+            ("combination_matrix", CombinationMatrix.from_file(args.helper_model_combo_matrix)),
+            ("kmer_index", KmerIndex.from_file(args.kmer_index))
         ])
 
     @classmethod
@@ -46,3 +46,7 @@ class IndexBundle:
         # for backwards compatibility
         return self
 
+    def __getattr__(self, item):
+        if item not in self._index:
+            return None
+        return self._index[item]

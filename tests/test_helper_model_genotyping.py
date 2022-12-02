@@ -1,4 +1,8 @@
 import logging
+
+from kage.indexing.index_bundle import IndexBundle
+from kage.models.helper_model import HelperVariants, CombinationMatrix
+
 logging.basicConfig(level=logging.DEBUG)
 import numpy as np
 from kage.genotyping.combination_model_genotyper import CombinationModelGenotyper
@@ -11,15 +15,6 @@ def test():
     variant_to_nodes = VariantToNodes(np.array([0, 2]), np.array([1, 3]))
     node_counts = NodeCounts(np.array([4, 3, 10, 0]))
 
-
-
-    combo_matrix = np.array([
-        np.zeros((3, 3)),
-        np.array([[0.21643952, 0.00000853, 0.00000594],
-         [0.00257945, 0.4476593,  0.00050901],
-        [0.00022379,  0.00488694,  0.32768752,]])
-    ]
-    )
     combo_matrix = np.array([
         np.zeros((3, 3)),
         [[0.20867266, 0.00922959, 0.00097657],
@@ -33,8 +28,20 @@ def test():
     model_ref = LimitedFrequencySamplingComboModel.create_naive(2)
     model_var = LimitedFrequencySamplingComboModel.create_naive(2)
 
+    index = IndexBundle({
+        "count_model": [model_ref, model_var],
+        "helper_variants": HelperVariants(helpers),
+        "combination_matrix": CombinationMatrix(combo_matrix),
+        "variant_to_nodes": variant_to_nodes
+    })
+
     genotyper = CombinationModelGenotyper(
-        [model_ref, model_var], 0, 3, variant_to_nodes, node_counts, helper_model=helpers, helper_model_combo=combo_matrix
+         0, 3, node_counts,
+        index
+        #[model_ref, model_var],
+        #variant_to_nodes,
+        #helper_model=helpers,
+        #helper_model_combo=combo_matrix
     )
 
     genotypes, probs, count_probs = genotyper.genotype()

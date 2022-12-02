@@ -28,21 +28,17 @@ def translate_to_numeric(internal_genotypes, out=None):
 class CombinationModelGenotyper:
     def __init__(
         self,
-        count_models,
-        min_variant_id,
-        max_variant_id,
-        variant_to_nodes,
+        min_variant_id: int,
+        max_variant_id: int,
         node_counts,
-        genotype_frequencies=None,
-        tricky_variants=None,
-        helper_model=None,
-        helper_model_combo=None,
+        index,
+        #count_models,
+        #variant_to_nodes,
+        #genotype_frequencies=None,
+        #tricky_variants=None,
+        #helper_model=None,
+        #helper_model_combo=None,
         config=None
-        #use_naive_priors=False,
-        #n_threads=8,
-        #avg_coverage=15,
-        #ignore_helper_model=False,
-        #ignore_helper_variants=False,
     ):
 
         self.config = config if config is not None else GenotypingConfig()  # GenotypingConfig(avg_coverage, use_naive_priors, n_threads, ignore_helper_model, ignore_helper_variants)
@@ -50,9 +46,8 @@ class CombinationModelGenotyper:
 
         self._min_variant_id = min_variant_id
         self._max_variant_id = max_variant_id
-        self._count_models = count_models
-        self._genotype_frequencies = genotype_frequencies
-        self._variant_to_nodes = variant_to_nodes
+        self._count_models = index.count_model
+        self._variant_to_nodes = index.variant_to_nodes
         self._node_counts = node_counts
         self.expected_read_error_rate = 0.03
         #self._average_coverage = 7.0
@@ -69,15 +64,14 @@ class CombinationModelGenotyper:
             max_variant_id - min_variant_id + 1, dtype=np.uint8
         )
         self._prob_correct = np.zeros(max_variant_id - min_variant_id + 1, dtype=float)
-        self._tricky_variants = tricky_variants
-        #self._use_naive_priors = use_naive_priors
+        self._tricky_variants = index.tricky_variants.tricky_variants if index.tricky_variants is not None else None
         self._haplotype_coverage = self.config.avg_coverage / 2
         self._estimated_mapped_haplotype_coverage = (
             self._haplotype_coverage * 0.75 * 0.85
         )
         self.marginal_probs = None
-        self._helper_model = helper_model
-        self._helper_model_combo_matrix = helper_model_combo
+        self._helper_model = index.helper_variants.helper_variants  # helper_model
+        self._helper_model_combo_matrix = index.combination_matrix.matrix  # helper_model_combo
         #self._n_threads = n_threads
         #self._ignore_helper_model = ignore_helper_model
         #self._ignore_helper_variants = ignore_helper_variants

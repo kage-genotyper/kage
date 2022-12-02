@@ -11,7 +11,6 @@ logging.basicConfig(
 
 from .configuration import GenotypingConfig
 from kage.models.mapping_model import sample_node_counts_from_population_cli, refine_sampling_model
-from kage.models.sampling_combo_model import LimitedFrequencySamplingComboModel
 
 from shared_memory_wrapper.shared_memory import (
     from_file,
@@ -27,19 +26,10 @@ import numpy as np
 
 np.set_printoptions(suppress=True)
 from .node_counts import NodeCounts
-from obgraph.genotype_matrix import (
-    GenotypeFrequencies,
-)
 from obgraph.variant_to_nodes import VariantToNodes
-from kage.models.helper_model import (
-    make_helper_model_from_genotype_matrix,
-    HelperVariants,
-    CombinationMatrix,
-)
+from kage.models.helper_model import make_helper_model_from_genotype_matrix
 from obgraph.genotype_matrix import GenotypeMatrix
-from obgraph.numpy_variants import NumpyVariants
-from kage.indexing.tricky_variants import TrickyVariants, find_variants_with_nonunique_kmers, find_tricky_variants
-#from graph_kmer_index.index_bundle import IndexBundle
+from kage.indexing.tricky_variants import find_variants_with_nonunique_kmers, find_tricky_variants
 from .indexing.index_bundle import IndexBundle
 from .genotyping.combination_model_genotyper import CombinationModelGenotyper
 
@@ -53,85 +43,42 @@ def main():
 
 def genotype(args):
     start_time = time.perf_counter()
-    logging.info("Using genotyper %s" % args.genotyper)
     logging.info("Read coverage is set to %.3f" % args.average_coverage)
     get_shared_pool(args.n_threads)
 
     genotype_frequencies = None
 
-    models = None
+    logging.info("Reading all indexes from an index bundle")
+    index = IndexBundle.from_file(args.index_bundle, skip=["KmerIndex"]).indexes
+    #models = index.count_model  # ["count_model"]
+    #variant_to_nodes = index.variant_to_nodes  # ["variant_to_nodes"]
+    #variants = index.numpy_variants  # ["numpy_variants"]
+    #helper_model = index.helper_variants.helper_variants  # ["helper_variants"].helper_variants
+    #helper_model_combo_matrix = index.combination_matrix.matrix  # ["combination_matrix"].matrix
+    #tricky_variants = index.tricky_variants.tricky_variants  # ["tricky_variants"].tricky_variants
 
-    if args.index_bundle is not None:
-        logging.info("Reading all indexes from an index bundle")
-        index = IndexBundle.from_file(args.index_bundle, skip=["KmerIndex"]).indexes
-        models = index["CountModel"]
-        variant_to_nodes = index["VariantToNodes"]
-        variants = index["NumpyVariants"]
-        helper_model = index["HelperVariants"].helper_variants
-        helper_model_combo_matrix = index["CombinationMatrix"].matrix
-        tricky_variants = index["TrickyVariants"].tricky_variants
-    else:
-        logging.info("Not reading indexes from bundle, but from separate files")
-
-        variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
-
-        if args.count_model is None:
-            logging.info("Model not specified. Creating a naive model, assuming kmers are unique")
-            args.count_model = [
-                LimitedFrequencySamplingComboModel.create_naive(len(variant_to_nodes.ref_nodes)),
-                LimitedFrequencySamplingComboModel.create_naive(len(variant_to_nodes.var_nodes))
-            ]
-        else:
-            args.count_model = from_file(args.count_model)
-
-        if args.count_model is not None:
-            models = args.count_model
-
-        variants = NumpyVariants.from_file(args.vcf)
-
-        tricky_variants = None
-        if args.tricky_variants is not None:
-            logging.info("Using tricky variants")
-            tricky_variants = TrickyVariants.from_file(
-                args.tricky_variants
-            ).tricky_variants
-
-        helper_model = None
-        helper_model_combo_matrix = None
-        if args.helper_model is not None:
-            helper_model = HelperVariants.from_file(args.helper_model).helper_variants
-            helper_model_combo_matrix = np.load(args.helper_model_combo_matrix)
-
-        if args.genotype_frequencies is not None:
-            genotype_frequencies = GenotypeFrequencies.from_file(
-                args.genotype_frequencies
-            )
-
-    assert models is not None
+    assert models is not None, "Model does not exist in index"
 
     node_counts = NodeCounts.from_file(args.counts)
     max_variant_id = len(variant_to_nodes.ref_nodes) - 1
     logging.info("Max variant id is assumed to be %d" % max_variant_id)
-
-    genotyper_class = CombinationModelGenotyper if args.genotyper is not None else globals()[args.genotyper]
-
     config = GenotypingConfig.from_command_line_args(args)
 
-    genotyper = genotyper_class(
-        models,  # should be one model for ref node and one for var node in a list
+    genotyper = CombinationModelGenotyper(
         0,
         max_variant_id,
-        variant_to_nodes,
         node_counts,
-        genotype_frequencies,
-        tricky_variants=tricky_variants,
-        helper_model=helper_model,
-        helper_model_combo=helper_model_combo_matrix,
+        index,
+        #models,
+        #variant_to_nodes,
+        #tricky_variants=tricky_variants,
+        #helper_model=helper_model,
+        #helper_model_combo=helper_model_combo_matrix,
         config=config
     )
     genotypes, probs, count_probs = genotyper.genotype()
 
-    if args.min_genotype_quality > 0.0:
+    if config.min_genotype_quality > 0.0:
         set_to_homo_ref = math.e ** np.max(probs, axis=1) < args.min_genotype_quality
         logging.warning(
             "%d genotypes have lower prob than %.4f. Setting these to homo ref."
@@ -144,14 +91,14 @@ def genotype(args):
     numpy_genotypes = np.array([numeric_genotypes[g] for g in genotypes], dtype="|S3")
     variants.to_vcf_with_genotypes(
         args.out_file_name,
-        args.sample_name_output,
+        config.sample_name_output,
         numpy_genotypes,
         add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">',
                           '##FORMAT=<ID=PL,Number=G,Type=Integer,Description="PHRED-scaled genotype likelihoods.">',
                           '##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype likelihoods.">'
                           ],
-        ignore_homo_ref=args.ignore_homo_ref,
-        add_genotype_likelyhoods=probs if not args.do_not_write_genotype_likelihoods else None,
+        ignore_homo_ref=config.ignore_homo_ref,
+        add_genotype_likelyhoods=probs if not config.do_not_write_genotype_likelihoods else None,
     )
 
     close_shared_pool()
@@ -209,69 +156,18 @@ def run_argument_parser(args):
 
     subparser = subparsers.add_parser("genotype")
     subparser.add_argument("-c", "--counts", required=True)
-    subparser.add_argument(
-        "-i",
-        "--index-bundle",
-        required=False,
-        help="If set, needs to be a bundle of all the indexes. If not set, other indexes needs to be specified.",
-    )
-    subparser.add_argument("-g", "--variant-to-nodes", required=False)
+    subparser.add_argument("-i", "--index-bundle", required=True)
     subparser.add_argument("-v", "--vcf", required=False, help="Vcf to genotype")
     subparser.add_argument("-m", "--model", required=False, help="Node count model")
-    subparser.add_argument(
-        "-A", "--count-model", required=False, help="Node count model"
-    )
-    subparser.add_argument(
-        "-G", "--genotype-frequencies", required=False, help="Genotype frequencies"
-    )
-
-    subparser.add_argument(
-        "-o",
-        "--out-file-name",
-        required=True,
-        help="Will write genotyped variants to this file",
-    )
-    subparser.add_argument(
-        "-C",
-        "--genotyper",
-        required=False,
-        default="CombinationModelGenotyper",
-        help="Genotyper to use",
-    )
+    subparser.add_argument("-o", "--out-file-name", required=True, help="Will write genotyped variants to this file")
     subparser.add_argument("-t", "--n-threads", type=int, required=False, default=8)
-    subparser.add_argument(
-        "-a",
-        "--average-coverage",
-        type=float,
-        default=15,
-        help="Expected average read coverage",
-    )
-    subparser.add_argument(
-        "-q",
-        "--min-genotype-quality",
-        type=float,
-        default=0.0,
-        help="Min prob of genotype being correct. Genotypes with prob less than this are set to homo ref.",
-    )
-    subparser.add_argument("-p", "--genotype-transition-probs", required=False)
-    subparser.add_argument("-x", "--tricky-variants", required=False)
-    subparser.add_argument(
-        "-s",
-        "--sample-name-output",
-        required=False,
-        default="DONOR",
-        help="Sample name that will be used in the output vcf",
-    )
-    subparser.add_argument(
-        "-u",
-        "--use-naive-priors",
-        required=False,
-        type=bool,
-        default=False,
+    subparser.add_argument("-a", "--average-coverage", type=float, default=15, help="Expected average read coverage", )
+    subparser.add_argument("-q", "--min-genotype-quality", type=float, default=0.0,
+        help="Min prob of genotype being correct. Genotypes with prob less than this are set to homo ref.")
+    subparser.add_argument( "-s", "--sample-name-output", required=False, default="DONOR", help="Sample name that will be used in the output vcf")
+    subparser.add_argument( "-u", "--use-naive-priors", required=False, type=bool, default=False,
         help="Set to True to use only population allele frequencies as priors.",
     )
-    subparser.add_argument("-f", "--helper-model", required=False)
-    subparser.add_argument("-F", "--helper-model-combo-matrix", required=False)
     subparser.add_argument("-I", "--ignore-helper-model", required=False, type=bool, default=False)
     subparser.add_argument("-V", "--ignore-helper-variants", required=False, type=bool, default=False)
     subparser.add_argument("-b", "--ignore-homo-ref", required=False, type=bool, default=False, help="Set to True to not write homo ref variants to output vcf")

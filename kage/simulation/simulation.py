@@ -1,6 +1,7 @@
 import logging
 
 from kage.configuration import GenotypingConfig
+from kage.indexing.index_bundle import IndexBundle
 from kage.node_counts import NodeCounts
 import random
 from obgraph.variant_to_nodes import VariantToNodes
@@ -9,7 +10,7 @@ import numpy as np
 from obgraph.variants import VcfVariant, VcfVariants
 from collections import defaultdict
 from kage.models.helper_model import (
-    make_helper_model_from_genotype_matrix,
+    make_helper_model_from_genotype_matrix, HelperVariants, CombinationMatrix,
 )
 from obgraph.genotype_matrix import GenotypeMatrix
 from kage.models.mapping_model import LimitedFrequencySamplingComboModel
@@ -40,14 +41,18 @@ def run_genotyper_on_simualated_data(
     # g = genotyper(model, variants, variant_to_nodes, node_counts, genotype_frequencies, most_similar_variant_lookup)
     count_models = node_count_model
 
+    index = IndexBundle({
+        "count_model": count_models,
+        "variant_to_nodes": variant_to_nodes,
+        "helper_variants": HelperVariants(helper_model),
+        "combination_matrix": CombinationMatrix(helper_model_combo_matrix)
+    })
+
     g = genotyper(
-        count_models,
         0,
         len(variants) - 1,
-        variant_to_nodes,
         node_counts,
-        helper_model=helper_model,
-        helper_model_combo=helper_model_combo_matrix,
+        index,
         config=GenotypingConfig(
             avg_coverage=1
         )
