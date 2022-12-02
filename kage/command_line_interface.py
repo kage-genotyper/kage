@@ -9,6 +9,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s: %(message)s",
 )
 
+from .configuration import GenotypingConfig
 from kage.models.mapping_model import sample_node_counts_from_population_cli, refine_sampling_model
 from kage.models.sampling_combo_model import LimitedFrequencySamplingComboModel
 
@@ -120,6 +121,8 @@ def genotype(args):
 
     genotyper_class = CombinationModelGenotyper if args.genotyper is not None else globals()[args.genotyper]
 
+    config = GenotypingConfig.from_command_line_args(args)
+
     genotyper = genotyper_class(
         models,  # should be one model for ref node and one for var node in a list
         0,
@@ -127,15 +130,15 @@ def genotype(args):
         variant_to_nodes,
         node_counts,
         genotype_frequencies,
-        None,
-        avg_coverage=args.average_coverage,
         tricky_variants=tricky_variants,
-        use_naive_priors=args.use_naive_priors,
         helper_model=helper_model,
         helper_model_combo=helper_model_combo_matrix,
-        n_threads=args.n_threads,
-        ignore_helper_model=args.ignore_helper_model,
-        ignore_helper_variants=args.ignore_helper_variants,
+        config=config
+        #avg_coverage=args.average_coverage,
+        #use_naive_priors=args.use_naive_priors,
+        #n_threads=args.n_threads,
+        #ignore_helper_model=args.ignore_helper_model,
+        #ignore_helper_variants=args.ignore_helper_variants,
     )
     genotypes, probs, count_probs = genotyper.genotype()
 

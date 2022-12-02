@@ -1,5 +1,6 @@
 import logging
 
+from kage.configuration import GenotypingConfig
 from kage.node_counts import NodeCounts
 import random
 from obgraph.variant_to_nodes import VariantToNodes
@@ -45,11 +46,11 @@ def run_genotyper_on_simualated_data(
         len(variants) - 1,
         variant_to_nodes,
         node_counts,
-        None,
-        None,
-        avg_coverage=1,
         helper_model=helper_model,
         helper_model_combo=helper_model_combo_matrix,
+        config=GenotypingConfig(
+            avg_coverage=1
+        )
     )
     genotypes, probs, _ = g.genotype()
     correct = np.array([t.get_numeric_genotype() for t in truth_variants])

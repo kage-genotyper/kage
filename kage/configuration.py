@@ -13,7 +13,7 @@ class GenotypingConfig:
     @classmethod
     def from_command_line_args(cls, args):
         return cls(
-            args.avg_coverage,
+            args.average_coverage,
             args.use_naive_priors,
             args.n_threads,
             args.ignore_helper_model,
