@@ -27,10 +27,6 @@ import numpy as np
 
 np.set_printoptions(suppress=True)
 from .node_counts import NodeCounts
-from kage.models.node_count_model import (
-    NodeCountModel,
-    GenotypeNodeCountModel,
-)
 from obgraph.genotype_matrix import (
     GenotypeFrequencies,
 )
@@ -43,7 +39,8 @@ from kage.models.helper_model import (
 from obgraph.genotype_matrix import GenotypeMatrix
 from obgraph.numpy_variants import NumpyVariants
 from kage.indexing.tricky_variants import TrickyVariants, find_variants_with_nonunique_kmers, find_tricky_variants
-from graph_kmer_index.index_bundle import IndexBundle
+#from graph_kmer_index.index_bundle import IndexBundle
+from .indexing.index_bundle import IndexBundle
 from .genotyping.combination_model_genotyper import CombinationModelGenotyper
 
 np.random.seed(1)
@@ -60,9 +57,6 @@ def genotype(args):
     logging.info("Read coverage is set to %.3f" % args.average_coverage)
     get_shared_pool(args.n_threads)
 
-    args.shared_memory_unique_id = str(random.randint(0, 1e15))
-    logging.info("Random id for shared memory: %s" % args.shared_memory_unique_id)
-    p = get_shared_pool(args.n_threads)  # Pool(16)
     genotype_frequencies = None
 
     models = None
@@ -134,11 +128,6 @@ def genotype(args):
         helper_model=helper_model,
         helper_model_combo=helper_model_combo_matrix,
         config=config
-        #avg_coverage=args.average_coverage,
-        #use_naive_priors=args.use_naive_priors,
-        #n_threads=args.n_threads,
-        #ignore_helper_model=args.ignore_helper_model,
-        #ignore_helper_variants=args.ignore_helper_variants,
     )
     genotypes, probs, count_probs = genotyper.genotype()
 
@@ -167,14 +156,15 @@ def genotype(args):
 
     close_shared_pool()
     logging.info("Genotyping took %d sec" % (time.perf_counter() - start_time))
-    np.save(args.out_file_name + ".probs", probs)
-    np.save(args.out_file_name + ".count_probs", count_probs)
 
-    out_name = args.out_file_name
-    _write_genotype_debug_data(genotypes, numpy_genotypes, out_name, variant_to_nodes)
+    _write_genotype_debug_data(genotypes, numpy_genotypes, args.out_file_name, variant_to_nodes, probs, count_probs)
 
 
-def _write_genotype_debug_data(genotypes, numpy_genotypes, out_name, variant_to_nodes):
+def _write_genotype_debug_data(genotypes, numpy_genotypes, out_name, variant_to_nodes, probs, count_probs):
+
+    np.save(out_name + ".probs", probs)
+    np.save(out_name + ".count_probs", count_probs)
+
     # Make arrays with haplotypes
     haplotype_array1 = np.zeros(len(numpy_genotypes), dtype=np.uint8)
     haplotype_array1[np.where((genotypes == 2) | (genotypes == 3))[0]] = 1
@@ -353,20 +343,6 @@ def run_argument_parser(args):
     )
     subparser.set_defaults(func=run_tests)
 
-    def make_genotype_model(args):
-        node_counts = NodeCountModel.from_file(args.node_count_model)
-        variant_nodes = VariantToNodes.from_file(args.variant_to_nodes)
-        genotype_model = GenotypeNodeCountModel.from_node_count_model(
-            node_counts, variant_nodes
-        )
-        genotype_model.to_file(args.out_file_name)
-
-    subparser = subparsers.add_parser("make_genotype_model")
-    subparser.add_argument("-n", "--node-count-model", required=True)
-    subparser.add_argument("-v", "--variant-to-nodes", required=True)
-    subparser.add_argument("-o", "--out-file-name", required=True)
-    subparser.set_defaults(func=make_genotype_model)
-
 
     subparser = subparsers.add_parser("find_tricky_variants")
     subparser.add_argument("-v", "--variant-to-nodes", required=True)
@@ -508,20 +484,7 @@ def run_argument_parser(args):
     subparser.set_defaults(func=create_helper_model)
 
     def make_index_bundle(args):
-        indexes = {
-            "VariantToNodes": VariantToNodes.from_file(args.variant_to_nodes),
-            "NumpyVariants": NumpyVariants.from_file(args.numpy_variants),
-            "CountModel": from_file(
-                args.count_model
-            ),
-            "TrickyVariants": TrickyVariants.from_file(args.tricky_variants),
-            "HelperVariants": HelperVariants.from_file(args.helper_model),
-            "CombinationMatrix": CombinationMatrix.from_file(
-                args.helper_model_combo_matrix
-            ),
-            "KmerIndex": KmerIndex.from_file(args.kmer_index),
-        }
-        bundle = IndexBundle(indexes)
+        bundle = IndexBundle.from_args(args)
         bundle.to_file(args.out_file_name, compress=True)
         logging.info("Wrote index bundle to file %s" % args.out_file_name)
 

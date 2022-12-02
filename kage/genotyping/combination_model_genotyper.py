@@ -1,7 +1,6 @@
 import logging
 import time
 import numpy as np
-from kage.genotyping.genotyper import Genotyper
 from kage.models.models import HelperModel, ComboModelBothAlleles, NoHelperModel
 from shared_memory_wrapper import (
     from_shared_memory,
@@ -26,7 +25,7 @@ def translate_to_numeric(internal_genotypes, out=None):
     return out
 
 
-class CombinationModelGenotyper(Genotyper):
+class CombinationModelGenotyper:
     def __init__(
         self,
         count_models,
