@@ -1,5 +1,4 @@
-from kage.models import *
-from kage.combomodel import *
+from kage.models.models import *
 import numpy as np
 
 class DummyBoth:

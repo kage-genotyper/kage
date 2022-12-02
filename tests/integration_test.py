@@ -1,4 +1,4 @@
-from kage.simulation import run_genotyper_on_simualated_data
+from kage.simulation.simulation import run_genotyper_on_simualated_data
 from kage.combination_model_genotyper import CombinationModelGenotyper
 import numpy as np
 np.seterr(all="ignore")

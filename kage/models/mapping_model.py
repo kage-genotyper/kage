@@ -7,8 +7,8 @@ from npstructures.hashtable import HashTable
 from obgraph.cython_traversing import traverse_graph_by_following_nodes
 from shared_memory_wrapper.util import interval_chunks
 from shared_memory_wrapper.util import parallel_map_reduce, parallel_map_reduce_with_adding
-from .sampling_combo_model import LimitedFrequencySamplingComboModel
-from .util import log_memory_usage_now
+from kage.sampling_combo_model import LimitedFrequencySamplingComboModel
+from kage.util import log_memory_usage_now
 from itertools import chain
 from graph_kmer_index import KmerIndex
 import bionumpy as bnp

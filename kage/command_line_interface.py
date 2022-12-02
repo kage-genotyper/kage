@@ -7,10 +7,8 @@ logging.basicConfig(
 )
 
 from .util import log_memory_usage_now
-from .mapping_model import get_sampled_nodes_and_counts
+from kage.models.mapping_model import get_sampled_nodes_and_counts
 from .sampling_combo_model import LimitedFrequencySamplingComboModel
-from .combination_model_genotyper import CombinationModelGenotyper
-
 
 import itertools
 from itertools import repeat
@@ -23,7 +21,6 @@ from shared_memory_wrapper.shared_memory import (
     get_shared_pool,
     close_shared_pool,
 )
-from obgraph import Graph as ObGraph
 from graph_kmer_index import KmerIndex, ReverseKmerIndex
 from .analysis import analyse_variants
 from obgraph.haplotype_nodes import DiscBackedHaplotypeToNodes
@@ -59,8 +56,6 @@ from .tricky_variants import TrickyVariants
 from graph_kmer_index.index_bundle import IndexBundle
 from shared_memory_wrapper import from_file, to_file
 import math
-from .gaf_parsing import node_counts_from_gaf, parse_gaf
-import pickle
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -441,7 +436,7 @@ def run_argument_parser(args):
     subparser.set_defaults(func=genotype)
 
     def run_tests(args):
-        from .simulation import run_genotyper_on_simualated_data
+        from kage.simulation.simulation import run_genotyper_on_simualated_data
 
         np.random.seed(args.random_seed)
         random.seed(args.random_seed)

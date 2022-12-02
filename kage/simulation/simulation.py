@@ -1,19 +1,17 @@
 import logging
 
-from .combomodel import ComboModel
-from .node_counts import NodeCounts
+from kage.node_counts import NodeCounts
 import random
 from obgraph.variant_to_nodes import VariantToNodes
-from obgraph import GenotypeFrequencies, MostSimilarVariantLookup
-from .node_count_model import NodeCountModel, GenotypeNodeCountModel
+from obgraph import MostSimilarVariantLookup
 import numpy as np
 from obgraph.variants import VcfVariant, VcfVariants
 from collections import defaultdict
-from .helper_index import (
+from kage.helper_index import (
     make_helper_model_from_genotype_matrix,
-    make_helper_model_from_genotype_matrix_and_node_counts,
 )
 from obgraph.genotype_matrix import GenotypeMatrix
+from kage.models.mapping_model import LimitedFrequencySamplingComboModel
 
 
 def run_genotyper_on_simualated_data(
@@ -261,8 +259,6 @@ class GenotypingDataSimulator:
             ] += self._average_coverage
 
         # make model
-        from .mapping_model import LimitedFrequencySamplingComboModel
-        from .mapping_model import get_sampled_nodes_and_counts
         self._model = [
             LimitedFrequencySamplingComboModel.create_naive(self._n_variants),
             LimitedFrequencySamplingComboModel.create_naive(self._n_variants)

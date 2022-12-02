@@ -2,10 +2,8 @@ import logging
 import pytest
 from obgraph import Graph
 from obgraph.haplotype_nodes import HaplotypeToNodes
-from kage.mapping_model import get_sampled_nodes_and_counts
-from kage.sampling_combo_model import RaggedFrequencySamplingComboModel
-from graph_kmer_index import KmerIndex, FlatKmers, sequence_to_kmer_hash, CounterKmerIndex
-from graph_kmer_index.kmer_counter import KmerCounter
+from kage.models.mapping_model import get_sampled_nodes_and_counts
+from graph_kmer_index import KmerIndex, FlatKmers, sequence_to_kmer_hash
 import numpy as np
 np.random.seed(2)
 
