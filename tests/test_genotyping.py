@@ -6,7 +6,7 @@ np.random.seed(1)
 from kage import NodeCounts
 from obgraph.variants import VcfVariants, VcfVariant
 from kage.node_count_model import NodeCountModelAdvanced
-from kage.combination_model_genotyper import CombinationModelGenotyper
+from kage.genotyping.combination_model_genotyper import CombinationModelGenotyper
 from kage.models.helper_index import make_helper_model_from_genotype_matrix_and_node_counts
 from kage.models.sampling_combo_model import LimitedFrequencySamplingComboModel
 

@@ -56,6 +56,8 @@ from .tricky_variants import TrickyVariants
 from graph_kmer_index.index_bundle import IndexBundle
 from shared_memory_wrapper import from_file, to_file
 import math
+from .genotyping.combination_model_genotyper import CombinationModelGenotyper
+
 
 np.random.seed(1)
 np.seterr(all="ignore")

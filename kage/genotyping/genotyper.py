@@ -1,14 +1,12 @@
+"""
+Proof of concept genotyper. Not used except for testing.
+"""
 import logging
-from scipy.special import comb
-
-from .node_count_model import GenotypeNodeCountModel
+from kage.node_count_model import GenotypeNodeCountModel
 from obgraph.variants import VcfVariant, VcfVariants
-from collections import defaultdict
 import numpy as np
 from scipy.stats import poisson, binom
 from obgraph import VariantNotFoundException
-from Bio.Seq import Seq
-from .node_counts import NodeCounts
 
 
 def parse_vcf_genotype(genotype):
@@ -28,10 +26,6 @@ class Genotyper:
     ):
         self._variants = variants
         self._node_count_model = node_count_model
-
-        # if self._node_count_model is None:
-        #    logging.warning("No node count model specified: Will use pseudocounts")
-
         self._genotype_frequencies = genotype_frequencies
         self._variant_to_nodes = variant_to_nodes
         self._node_counts = node_counts
@@ -92,17 +86,6 @@ class Genotyper:
             expected_count_ref = counts[ref_node]
 
             # Add dummy counts
-            """
-            if genotype == "1/1":
-                expected_count_alt = max(2, expected_count_alt)
-                expected_count_ref = max(0.01, expected_count_ref)
-            elif genotype == "0/0":
-                expected_count_ref = max(2, expected_count_ref)
-                expected_count_alt = max(0.01, expected_count_alt)
-            elif genotype == "0/1":
-                expected_count_ref = max(1, expected_count_ref)
-                expected_count_alt = max(1, expected_count_alt)
-            """
             if genotype == "1/1":
                 expected_count_alt += 0.1
                 expected_count_ref += 0.01
@@ -269,14 +252,6 @@ class Genotyper:
         elif prob_posteriori_heterozygous > 0.0:
             predicted_genotype = "0/1"
         else:
-            # logging.warning("All probs are zero for variant at node %d/%d." % (reference_node, variant_node))
-            # logging.warning("Model counts ref: %d/%d/%d." % (self._node_count_model.counts_homo_ref[reference_node], self._node_count_model.counts_homo_alt[reference_node], self._node_count_model.counts_hetero[reference_node]))
-            # logging.warning("Model counts var: %d/%d/%d." % (self._node_count_model.counts_homo_ref[variant_node], self._node_count_model.counts_homo_alt[variant_node], self._node_count_model.counts_hetero[variant_node]))
-            # logging.warning("Node counts: %d/%d." % (self._node_counts.node_counts[reference_node], self._node_counts.node_counts[variant_node]))
-            # logging.warning("Posteriori probs: %.4f, %.4f, %.4f" % (p_counts_given_homozygous_ref, p_counts_given_homozygous_alt, p_counts_given_heterozygous))
-            # logging.warning("A priori probs  : %.4f, %.4f, %.4f" % (a_priori_homozygous_ref, a_priori_homozygous_alt, a_priori_heterozygous))
-            # logging.warning("%.5f / %.5f / %.5f" % (
-            # prob_posteriori_homozygous_ref, prob_posteriori_homozygous_alt, prob_posteriori_heterozygous))
             predicted_genotype = "0/0"
 
         self._set_predicted_allele_frequency(
@@ -334,19 +309,6 @@ class Genotyper:
                 # no data, probably no individuals having that genotype, fallback to population probs
                 return orig_prob_homo_ref, orig_prob_homo_alt, orig_prob_hetero
 
-            """
-            prob_homo_ref_given_prev = 0
-            prob_homo_alt_given_prev = 0
-            prob_hetero_given_prev = 0
-
-            if most_similar_genotype == 1:
-                prob_homo_ref_given_prev = self._most_similar_variant_lookup.prob_of_having_the_same_genotype_as_most_similar(variant_id)
-            elif most_similar_genotype == 2:
-                prob_homo_alt_given_prev = self._most_similar_variant_lookup.prob_of_having_the_same_genotype_as_most_similar(variant_id)
-            elif most_similar_genotype == 3:
-                prob_hetero_ref_given_prev = self._most_similar_variant_lookup.prob_of_having_the_same_genotype_as_most_similar(variant_id)
-            """
-
             sum_of_probs_given_prev = (
                 prob_homo_alt_given_prev
                 + prob_homo_ref_given_prev
@@ -379,20 +341,6 @@ class Genotyper:
                 prob_hetero_given_prev * prob_prev_genotype_is_correct
                 + (1 - prob_prev_genotype_is_correct) * orig_prob_hetero
             )
-
-            """
-            # First init probs for having genotypes and not having same genotypes as most similar
-            prob_homo_ref = (1 - prob_same_genotype) * orig_prob_homo_ref
-            prob_homo_alt = (1 - prob_same_genotype) * orig_prob_homo_alt
-            prob_hetero = (1 - prob_same_genotype) * orig_prob_hetero
-
-            if most_similar_genotype == 1:
-                prob_homo_ref += prob_same_genotype
-            elif most_similar_genotype == 2:
-                prob_homo_alt += prob_same_genotype
-            elif most_similar_genotype == 3:
-                prob_hetero += prob_same_genotype
-            """
 
             return prob_homo_ref, prob_homo_alt, prob_hetero
         else:

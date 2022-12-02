@@ -1,5 +1,5 @@
 from kage.simulation.simulation import run_genotyper_on_simualated_data
-from kage.combination_model_genotyper import CombinationModelGenotyper
+from kage.genotyping.combination_model_genotyper import CombinationModelGenotyper
 import numpy as np
 np.seterr(all="ignore")
 import random

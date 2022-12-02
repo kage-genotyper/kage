@@ -1,14 +1,14 @@
 import logging
 import time
 import numpy as np
-from .genotyper import Genotyper
+from kage.genotyping.genotyper import Genotyper
 from kage.models.models import HelperModel, ComboModelBothAlleles, NoHelperModel
 from shared_memory_wrapper import (
     from_shared_memory,
     SingleSharedArray,
 )
 from shared_memory_wrapper.shared_memory import object_from_shared_memory
-from .node_counts import NodeCounts
+from kage.node_counts import NodeCounts
 
 genotypes = ["0/0", "1/1", "0/1"]
 numeric_genotypes = [1, 2, 3]

@@ -5,6 +5,8 @@ from obgraph.haplotype_nodes import HaplotypeToNodes
 from kage.models.mapping_model import get_sampled_nodes_and_counts
 from graph_kmer_index import KmerIndex, FlatKmers, sequence_to_kmer_hash
 import numpy as np
+from shared_memory_wrapper import free_memory_in_session
+
 np.random.seed(2)
 
 
@@ -63,4 +65,5 @@ def test_parallel(graph, kmer_index):
     results10 = get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_count=8, n_threads=20)
 
     assert np.all(results1[0] == results10[0])
+    free_memory_in_session()
 

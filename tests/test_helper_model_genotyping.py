@@ -1,7 +1,7 @@
 import logging
 logging.basicConfig(level=logging.DEBUG)
 import numpy as np
-from kage.combination_model_genotyper import CombinationModelGenotyper
+from kage.genotyping.combination_model_genotyper import CombinationModelGenotyper
 from obgraph.variant_to_nodes import VariantToNodes
 from kage.node_counts import  NodeCounts
 from obgraph.variants import VcfVariants
