@@ -469,10 +469,10 @@ class GenotypeDebugger:
 
 
 def analyse_variants(args):
-    from .node_count_model import NodeCountModel
+    from ..node_count_model import NodeCountModel
     from obgraph.genotype_matrix import MostSimilarVariantLookup
     from obgraph.variant_to_nodes import VariantToNodes
-    from .helper_index import CombinationMatrix
+    from ..helper_index import CombinationMatrix
 
     whitelist = None
     # pangenie = VcfVariants.from_vcf(args.pangenie)

@@ -1,8 +1,10 @@
 import logging
 import time
 import numpy as np
+from graph_kmer_index import CollisionFreeKmerIndex
 from npstructures.hashtable import HashTable
 from obgraph.cython_traversing import traverse_graph_by_following_nodes
+from shared_memory_wrapper import get_shared_pool, from_file, close_shared_pool, to_file
 from shared_memory_wrapper.util import interval_chunks
 from shared_memory_wrapper.util import parallel_map_reduce_with_adding
 from .sampling_combo_model import LimitedFrequencySamplingComboModel
@@ -11,6 +13,8 @@ from itertools import chain
 import bionumpy as bnp
 import math
 from kmer_mapper.mapper import map_kmers_to_graph_index
+from graph_kmer_index import KmerIndex
+from obgraph.haplotype_nodes import DiscBackedHaplotypeToNodes
 
 
 def bnp_get_kmers_wrapper(sequence, k):
@@ -65,7 +69,7 @@ def get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_c
         count_matrices = _get_sampled_nodes_and_counts_for_range(graph, haplotype_to_nodes, k, kmer_index,
                                             max_count, n_nodes, [start_individual, end_individual])
     else:
-        chunks = interval_chunks(0, end_individual, math.ceil(end_individual/n_threads))
+        chunks = interval_chunks(0, end_individual, n_threads)
         logging.info("Chunks: %s" % chunks)
         count_matrices = parallel_map_reduce_with_adding(_get_sampled_nodes_and_counts_for_range,
                             (graph, haplotype_to_nodes, k, kmer_index, max_count, n_nodes),
@@ -134,3 +138,55 @@ def _get_sampled_nodes_and_counts_for_range(graph, haplotype_to_nodes, k, kmer_i
     return count_matrices
 
 
+def sample_node_counts_from_population_cli(args):
+    if args.n_threads > 0:
+        logging.info("Creating pool to run in parallel")
+        get_shared_pool(args.n_threads)
+
+    logging.info("Reading graph")
+    args.graph = from_file(args.graph)
+    log_memory_usage_now("After reading graph")
+
+    args.kmer_index = KmerIndex.from_file(args.kmer_index)
+    args.kmer_index.convert_to_int32()
+    args.kmer_index.remove_ref_offsets()  # not needed, will save us some memory
+
+    log_memory_usage_now("After reading kmer index")
+
+    args.haplotype_to_nodes = DiscBackedHaplotypeToNodes.from_file(args.haplotype_to_nodes)
+    log_memory_usage_now("After reading haplotype to nodes")
+
+
+    limit_to_n_individuals = None
+    if args.limit_to_n_individuals > 0:
+        limit_to_n_individuals = args.limit_to_n_individuals
+
+    counts = get_sampled_nodes_and_counts(args.graph,
+                                          args.haplotype_to_nodes,
+                                          args.kmer_size,
+                                          args.kmer_index,
+                                          max_count=args.max_count,
+                                          n_threads=args.n_threads,
+                                          limit_to_n_individuals=limit_to_n_individuals
+                                          )
+
+    close_shared_pool()
+    model = counts  # LimitedFrequencySamplingComboModel(counts)
+    to_file(model, args.out_file_name)
+
+
+def refine_sampling_model(args):
+    model = from_file(args.sampling_model)
+    variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
+
+    models = [
+        model.subset_on_nodes(variant_to_nodes.ref_nodes),
+        model.subset_on_nodes(variant_to_nodes.var_nodes)
+    ]
+    logging.info("Filling missing data")
+    for m in models:
+        m.astype(np.float16)
+        m.fill_empty_data()
+
+    to_file(models, args.out_file_name)
+    logging.info("Wrote refined model to %s" % args.out_file_name)

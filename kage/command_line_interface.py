@@ -1,19 +1,19 @@
 import logging
-import sys
+import sys, argparse, time, itertools, math, random
+
+from shared_memory_wrapper.util import interval_chunks
+
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
     format="%(asctime)s %(levelname)s: %(message)s",
 )
 
-from .util import log_memory_usage_now
-from kage.models.mapping_model import get_sampled_nodes_and_counts
+from kage.models.mapping_model import sample_node_counts_from_population_cli, refine_sampling_model
 from kage.models.sampling_combo_model import LimitedFrequencySamplingComboModel
 
-import itertools
-from itertools import repeat
-import sys, argparse, time
 from shared_memory_wrapper.shared_memory import (
+    from_file,
     from_shared_memory,
     to_shared_memory,
     remove_all_shared_memory,
@@ -23,7 +23,6 @@ from shared_memory_wrapper.shared_memory import (
 )
 from graph_kmer_index import KmerIndex, ReverseKmerIndex
 from kage.analysis.analysis import analyse_variants
-from obgraph.haplotype_nodes import DiscBackedHaplotypeToNodes
 from pathos.multiprocessing import Pool
 import numpy as np
 
@@ -32,18 +31,12 @@ from .node_counts import NodeCounts
 from .node_count_model import (
     NodeCountModel,
     GenotypeNodeCountModel,
-    NodeCountModelAlleleFrequencies,
-    NodeCountModelAdvanced,
-    NodeCountModelCreatorAdvanced,
 )
 from obgraph.genotype_matrix import (
     MostSimilarVariantLookup,
     GenotypeFrequencies,
 )
 from obgraph.variant_to_nodes import VariantToNodes
-from obgraph.haplotype_matrix import HaplotypeMatrix
-from obgraph.variant_to_nodes import NodeToVariants
-import random
 from kage.models.helper_index import (
     make_helper_model_from_genotype_matrix,
     make_helper_model_from_genotype_matrix_and_node_counts,
@@ -52,12 +45,9 @@ from kage.models.helper_index import (
 )
 from obgraph.genotype_matrix import GenotypeMatrix
 from obgraph.numpy_variants import NumpyVariants
-from .tricky_variants import TrickyVariants
+from kage.indexing.tricky_variants import TrickyVariants, find_variants_with_nonunique_kmers, find_tricky_variants
 from graph_kmer_index.index_bundle import IndexBundle
-from shared_memory_wrapper import from_file, to_file
-import math
 from .genotyping.combination_model_genotyper import CombinationModelGenotyper
-
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -92,11 +82,6 @@ def genotype(args):
     else:
         logging.info("Not reading indexes from bundle, but from separate files")
 
-        if args.most_similar_variant_lookup is not None:
-            most_similar_variant_lookup = MostSimilarVariantLookup.from_file(
-                args.most_similar_variant_lookup
-            )
-
         variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
 
         if args.count_model is None:
@@ -106,18 +91,12 @@ def genotype(args):
                 LimitedFrequencySamplingComboModel.create_naive(len(variant_to_nodes.var_nodes))
             ]
         else:
-            t0 = time.perf_counter()
             args.count_model = from_file(args.count_model)
-            logging.info("Took %.4f sec to read model" % (time.perf_counter()-t0))
 
         if args.count_model is not None:
             models = args.count_model
 
-
-
-        t0 = time.perf_counter()
         variants = NumpyVariants.from_file(args.vcf)
-        logging.info("Took %.3f sec to read variants" % (time.perf_counter()-t0))
 
         tricky_variants = None
         if args.tricky_variants is not None:
@@ -147,8 +126,8 @@ def genotype(args):
     variant_chunks = [(0, max_variant_id)]
     logging.info("Will genotype intervals %s" % variant_chunks)
 
-    results = []
-    genotyper_class = globals()[args.genotyper]
+    genotyper_class = CombinationModelGenotyper if args.genotyper is not None else globals()[args.genotyper]
+
     genotyper = genotyper_class(
         models,  # should be one model for ref node and one for var node in a list
         0,
@@ -170,22 +149,14 @@ def genotype(args):
     genotypes, probs, count_probs = genotyper.genotype()
 
     if args.min_genotype_quality > 0.0:
-        set_to_homo_ref = np.where(
-            math.e ** np.max(probs, axis=1) < args.min_genotype_quality
-        )[0]
+        set_to_homo_ref = math.e ** np.max(probs, axis=1) < args.min_genotype_quality
         logging.warning(
             "%d genotypes have lower prob than %.4f. Setting these to homo ref."
-            % (len(set_to_homo_ref), args.min_genotype_quality)
-        )
-        logging.warning(
-            "N non homo ref genotypes before: %d" % len(np.where(genotypes > 0)[0])
+            % (np.sum(set_to_homo_ref), args.min_genotype_quality)
         )
         genotypes[set_to_homo_ref] = 0
-        logging.warning(
-            "N non homo ref genotypes after: %d" % len(np.where(genotypes > 0)[0])
-        )
 
-    # numpy_genotypes = np.empty(max_variant_id+1, dtype="|S3")
+
     numeric_genotypes = ["0/0", "0/0", "1/1", "0/1"]
     numpy_genotypes = np.array([numeric_genotypes[g] for g in genotypes], dtype="|S3")
     variants.to_vcf_with_genotypes(
@@ -220,117 +191,6 @@ def genotype(args):
     np.save(args.out_file_name + ".haplotype2_nodes", variant_nodes_haplotype2)
 
 
-def model_using_kmer_index(variant_id_interval, args):
-    variant_start_id, variant_end_id = variant_id_interval
-    logging.info(
-        "Processing variants with id between %d and %d"
-        % (variant_start_id, variant_end_id)
-    )
-
-    allele_frequency_index = None
-    if args.allele_frequency_index is not None:
-        allele_frequency_index = np.load(args.allele_frequency_index)
-
-    haplotype_matrix = None
-    node_to_variants = None
-    if args.haplotype_matrix is not None:
-        haplotype_matrix = HaplotypeMatrix.from_file(args.haplotype_matrix)
-        node_to_variants = NodeToVariants.from_file(args.node_to_variants)
-
-    if args.version == "":
-        model_class = NodeCountModelCreatorFromNoChaining
-    elif args.version == "v3":
-        model_class = NodeCountModelCreatorAdvanced
-    elif args.version == "v2":
-        model_class = NodeCountModelCreatorFromNoChainingOnlyAlleleFrequencies
-        logging.warning(
-            "Using new version which gets sum of allele frequencies and squared sum"
-        )
-
-    model_creator = model_class(
-        from_shared_memory(KmerIndex, "kmer_index_shared"),
-        from_shared_memory(ReverseKmerIndex, "reverse_index_shared"),
-        from_shared_memory(VariantToNodes, "variant_to_nodes_shared"),
-        variant_start_id,
-        variant_end_id,
-        args.max_node_id,
-        scale_by_frequency=args.scale_by_frequency,
-        allele_frequency_index=allele_frequency_index,
-        haplotype_matrix=haplotype_matrix,
-        node_to_variants=node_to_variants,
-    )
-    model_creator.create_model()
-    return model_creator.get_results()
-
-
-def model_using_kmer_index_multiprocess(args):
-    reverse_index = ReverseKmerIndex.from_file(args.reverse_node_kmer_index)
-    to_shared_memory(reverse_index, "reverse_index_shared")
-    index = KmerIndex.from_file(args.kmer_index)
-    to_shared_memory(index, "kmer_index_shared")
-    variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
-    to_shared_memory(variant_to_nodes, "variant_to_nodes_shared")
-
-    max_node_id = args.max_node_id
-
-    logging.info("Will use %d threads" % args.n_threads)
-    # variants = VcfVariants.from_vcf(args.vcf, skip_index=True, make_generator=True)
-    # variants = variants.get_chunks(chunk_size=args.chunk_size)
-
-    n_threads = args.n_threads
-    n_variants = len(variant_to_nodes.ref_nodes)
-    intervals = [int(i) for i in np.linspace(0, n_variants, n_threads)]
-    variant_intervals = [
-        (from_id, to_id) for from_id, to_id in zip(intervals[0:-1], intervals[1:])
-    ]
-    logging.info("Will process variant intervals: %s" % variant_intervals)
-    data_to_process = zip(variant_intervals, repeat(args))
-
-    if args.version == "":
-        expected_node_counts_not_following_node = np.zeros(max_node_id + 1, dtype=float)
-        expected_node_counts_following_node = np.zeros(max_node_id + 1, dtype=float)
-    elif args.version == "v3":
-        resulting_model = NodeCountModelAdvanced.create_empty(max_node_id)
-    elif args.version == "v2":
-        allele_frequencies = np.zeros(max_node_id + 1, dtype=float)
-        allele_frequencies_squared = np.zeros(max_node_id + 1, dtype=float)
-
-    pool = Pool(args.n_threads)
-
-    while True:
-        results = pool.starmap(
-            model_using_kmer_index, itertools.islice(data_to_process, args.n_threads)
-        )
-        if results:
-            for res in results:
-                if args.version == "":
-                    expected_node_counts_following_node += res[0]
-                    expected_node_counts_not_following_node += res[1]
-                elif args.version == "v3":
-                    resulting_model = resulting_model + res
-                elif args.version == "v2":
-                    allele_frequencies += res[0]
-                    allele_frequencies_squared += res[1]
-        else:
-            logging.info("No results, breaking")
-            break
-
-    if args.version == "":
-        model = NodeCountModel(
-            expected_node_counts_following_node, expected_node_counts_not_following_node
-        )
-    elif args.version == "v3":
-        model = resulting_model
-    elif args.version == "v2":
-        model = NodeCountModelAlleleFrequencies(
-            allele_frequencies, allele_frequencies_squared
-        )
-
-    model.to_file(args.out_file_name)
-    logging.info("Wrote model to %s" % args.out_file_name)
-
-
-
 def run_argument_parser(args):
     parser = argparse.ArgumentParser(
         description="Alignment free graph genotyper",
@@ -357,7 +217,6 @@ def run_argument_parser(args):
     subparser.add_argument("-F", "--combination-matrix", required=True)
     subparser.add_argument("-p", "--probs", required=True)
     subparser.add_argument("-c", "--count_probs", required=True)
-    # subparser.add_argument("-a", "--pangenie", required=False)
     subparser.set_defaults(func=analyse_variants)
 
     subparser = subparsers.add_parser("genotype")
@@ -377,12 +236,7 @@ def run_argument_parser(args):
     subparser.add_argument(
         "-G", "--genotype-frequencies", required=False, help="Genotype frequencies"
     )
-    subparser.add_argument(
-        "-M",
-        "--most_similar_variant_lookup",
-        required=False,
-        help="Most similar variant lookup",
-    )
+
     subparser.add_argument(
         "-o",
         "--out-file-name",
@@ -515,67 +369,6 @@ def run_argument_parser(args):
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.set_defaults(func=make_genotype_model)
 
-    def find_tricky_variants(args):
-        variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
-        # model = GenotypeNodeCountModel.from_file(args.node_count_model)
-        #model = NodeCountModelAdvanced.from_file(args.node_count_model)
-        model = from_file(args.node_count_model)
-        reverse_index = ReverseKmerIndex.from_file(args.reverse_kmer_index)
-
-        tricky_variants = np.zeros(len(variant_to_nodes.ref_nodes + 1), dtype=np.uint32)
-
-        n_tricky_model = 0
-        n_tricky_kmers = 0
-        n_nonunique = 0
-
-        max_counts_model = args.max_counts_model
-
-        for variant_id in range(0, len(variant_to_nodes.ref_nodes)):
-            if variant_id % 100000 == 0:
-                logging.info(
-                    "%d variants processed, %d tricky due to model, %d tricky due to kmers. N non-unique filtered: %d"
-                    % (variant_id, n_tricky_model, n_tricky_kmers, n_nonunique)
-                )
-
-            ref_node = variant_to_nodes.ref_nodes[variant_id]
-            var_node = variant_to_nodes.var_nodes[variant_id]
-
-            #model_counts_ref = 1 + model.certain[ref_node] + model.frequencies[ref_node]
-            #model_counts_var = 1 + model.certain[var_node] + model.frequencies[var_node]
-
-            if args.only_allow_unique:
-                # if model.counts_homo_ref[var_node] > 0 or model.counts_homo_alt[ref_node] > 0:
-                if model.has_duplicates(ref_node) or model.has_duplicates(var_node):
-                #if model_counts_ref > 1 or model_counts_var > 1:
-                    n_nonunique += 1
-                    tricky_variants[variant_id] = 1
-
-            # if model_counts_ref[2] > max_counts_model and model_counts_var[2] > max_counts_model:
-            # if model_counts_ref[2] < model_counts_ref[1] * 1.1 or model_counts_var[2] < model_counts_var[1] * 1.1:
-            m = args.max_counts_model
-            if model.has_no_data(ref_node) or model.has_no_data(var_node):
-                # logging.warning(model_counts_ref)
-                # logging.warning(model_counts_ref)
-                tricky_variants[variant_id] = 1
-                #print(model[1][ref_node], model[1][var_node])
-                n_tricky_model += 1
-            else:
-                reference_kmers = set(reverse_index.get_node_kmers(ref_node))
-                variant_kmers = set(reverse_index.get_node_kmers(var_node))
-                if len(reference_kmers.intersection(variant_kmers)) > 0:
-                    # logging.warning("-----\nKmer crash on variant %d \n Ref kmers: %s\n Var kmers: %s" % (variant_id, reference_kmers, variant_kmers))
-                    tricky_variants[variant_id] = 1
-                    n_tricky_kmers += 1
-
-
-        logging.info(
-            "Stats: %d tricky due to model, %d tricky due to kmers. N non-unique filtered: %d"
-            % (n_tricky_model, n_tricky_kmers, n_nonunique)
-        )
-
-        TrickyVariants(tricky_variants).to_file(args.out_file_name)
-        # np.save(args.out_file_name, tricky_variants)
-        logging.info("Wrote tricky variants to file %s" % args.out_file_name)
 
     subparser = subparsers.add_parser("find_tricky_variants")
     subparser.add_argument("-v", "--variant-to-nodes", required=True)
@@ -598,34 +391,6 @@ def run_argument_parser(args):
         help="Only allow variants where all kmers are unique",
     )
     subparser.set_defaults(func=find_tricky_variants)
-
-
-    def find_variants_with_nonunique_kmers(args):
-        output = np.zeros(len(args.variant_to_nodes.ref_nodes), dtype=np.uint8)
-        n_filtered = 0
-        n_sharing_kmers = 0
-
-        for i, (ref_node, var_node) in enumerate(zip(args.variant_to_nodes.ref_nodes, args.variant_to_nodes.var_nodes)):
-            reference_kmers = args.reverse_kmer_index.get_node_kmers(ref_node)
-            variant_kmers = args.reverse_kmer_index.get_node_kmers(var_node)
-
-            if i % 1000 == 0:
-                logging.info("%d variants processed, %d filtered, %d sharing kmers" % (i, n_filtered, n_sharing_kmers))
-
-            frequencies_ref = np.array([args.population_kmer_index.get_frequency(k)-1 for k in reference_kmers])
-            frequencies_var = np.array([args.population_kmer_index.get_frequency(k)-1 for k in variant_kmers])
-            #print(frequencies_ref, frequencies_var)
-            #if sum(frequencies_ref) > 0 or sum(frequencies_var) > 0:
-            if np.all(frequencies_ref > 0) or np.all(frequencies_var > 0):
-                n_filtered += 1
-                output[i] = 1
-            elif len(set(reference_kmers).intersection(variant_kmers)) > 0:
-                n_sharing_kmers += 1
-                output[i] = 1
-
-        TrickyVariants(output).to_file(args.out_file_name)
-        #np.save(args.out_file_name, output)
-        logging.info("Saved array with variants to %s" % args.out_file_name)
 
 
     subparser = subparsers.add_parser("find_variants_with_nonunique_kmers")
@@ -679,25 +444,6 @@ def run_argument_parser(args):
     subparser.set_defaults(func=filter_variants)
 
 
-    subparser = subparsers.add_parser("model")
-    subparser.add_argument("-g", "--variant-to-nodes", required=True)
-    subparser.add_argument("-N", "--node-to-variants", required=False)
-    subparser.add_argument("-H", "--haplotype-matrix", required=False)
-    subparser.add_argument("-k", "--kmer-size", required=True, type=int)
-    subparser.add_argument("-i", "--kmer-index", required=True)
-    subparser.add_argument("-o", "--out-file-name", required=True)
-    subparser.add_argument("-m", "--max-node-id", type=int, required=True)
-    subparser.add_argument("-r", "--reverse_node_kmer_index", required=True)
-    # subparser.add_argument("-v", "--vcf", required=True)
-    # subparser.add_argument("-c", "--chunk-size", type=int, default=100000, help="Number of variants to process in each chunk")
-    subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
-    subparser.add_argument(
-        "-f", "--scale-by-frequency", required=False, type=bool, default=False
-    )
-    subparser.add_argument("-a", "--allele-frequency-index", required=False)
-    subparser.add_argument("-V", "--version", required=False, default="v3")
-    subparser.set_defaults(func=model_using_kmer_index_multiprocess)
-
 
     def filter_vcf(args):
         from .variant_filtering import remove_overlapping_indels
@@ -745,7 +491,6 @@ def run_argument_parser(args):
 
     def create_helper_model(args):
         args.shared_memory_unique_id = str(random.randint(0, 1e15))
-        n_threads = args.n_threads
         pool = Pool(args.n_threads)
         logging.info("Made pool")
         model = None
@@ -755,19 +500,6 @@ def run_argument_parser(args):
         # NB: Transpose
         genotype_matrix.matrix = genotype_matrix.matrix.transpose()
 
-        logging.info("Genotype matrix shape: %s" % str(genotype_matrix.matrix.shape))
-        # convert to format used in helper code
-        # genotype_matrix = genotype_matrix.convert_to_other_format()
-        logging.info(
-            "Genotype matrix shape after conversion: %s"
-            % str(genotype_matrix.matrix.shape)
-        )
-        most_similar = None
-        if args.most_similar_variants is not None:
-            most_similar = MostSimilarVariantLookup.from_file(
-                args.most_similar_variants
-            )
-
         if args.n_threads > 1:
             n_variants = len(variant_to_nodes.ref_nodes)
             n_threads = args.n_threads
@@ -775,11 +507,7 @@ def run_argument_parser(args):
                 n_threads -= 1
                 logging.info("Lowered n threads to %d so that not too few variants are analysed together" % n_threads)
 
-            intervals = [int(i) for i in np.linspace(0, n_variants, n_threads)]
-            variant_intervals = [
-                (from_id, to_id)
-                for from_id, to_id in zip(intervals[0:-1], intervals[1:])
-            ]
+            variant_intervals = interval_chunks(0, n_variants, n_threads)
             logging.info("Will process variant intervals: %s" % variant_intervals)
 
             helpers = np.zeros(n_variants, dtype=np.uint32)
@@ -797,7 +525,7 @@ def run_argument_parser(args):
             logging.info("Put data in shared memory")
 
             for from_variant, to_variant, subhelpers, subcombo in pool.imap(
-                create_helper_model_single_thread, zip(variant_intervals, repeat(args))
+                create_helper_model_single_thread, zip(variant_intervals, itertools.repeat(args))
             ):
                 logging.info("Done with one chunk")
                 helpers[from_variant:to_variant] = subhelpers
@@ -859,98 +587,30 @@ def run_argument_parser(args):
     subparser = subparsers.add_parser("make_index_bundle")
     subparser.add_argument("-g", "--variant-to-nodes", required=True)
     subparser.add_argument("-v", "--numpy-variants", required=True)
-    subparser.add_argument(
-        "-A", "--count-model", required=True, help="Node count model"
-    )
-    subparser.add_argument(
-        "-o",
-        "--out-file-name",
-        required=True,
-        help="Will write genotyped variants to this file",
-    )
+    subparser.add_argument("-A", "--count-model", required=True, help="Node count model")
+    subparser.add_argument("-o", "--out-file-name", required=True, help="Will write genotyped variants to this file")
     subparser.add_argument("-x", "--tricky-variants", required=True)
     subparser.add_argument("-f", "--helper-model", required=True)
     subparser.add_argument("-F", "--helper-model-combo-matrix", required=True)
     subparser.add_argument("-i", "--kmer-index", required=True)
     subparser.set_defaults(func=make_index_bundle)
 
-
-    def sample_node_counts_from_population(args):
-        if args.n_threads > 0:
-            logging.info("Creating pool to run in parallel")
-            get_shared_pool(args.n_threads)
-
-        logging.info("Reading graph")
-        args.graph = from_file(args.graph)
-        log_memory_usage_now("After reading graph")
-        try:
-            args.kmer_index = from_file(args.kmer_index)
-        except KeyError:
-            args.kmer_index = KmerIndex.from_file(args.kmer_index)
-            args.kmer_index.convert_to_int32()
-            args.kmer_index.remove_ref_offsets()  # not needed, will save us some memory
-
-        log_memory_usage_now("After reading kmer index")
-
-        args.haplotype_to_nodes = DiscBackedHaplotypeToNodes.from_file(args.haplotype_to_nodes)
-        log_memory_usage_now("After reading haplotype to nodes")
-
-
-        limit_to_n_individuals = None
-        if args.limit_to_n_individuals > 0:
-            limit_to_n_individuals = args.limit_to_n_individuals
-
-        counts = get_sampled_nodes_and_counts(args.graph,
-                                              args.haplotype_to_nodes,
-                                              args.kmer_size,
-                                              args.kmer_index,
-                                              max_count=args.max_count,
-                                              n_threads=args.n_threads,
-                                              limit_to_n_individuals=limit_to_n_individuals
-                                              )
-
-        close_shared_pool()
-        model = counts  # LimitedFrequencySamplingComboModel(counts)
-        to_file(model, args.out_file_name)
-
-
     subparser = subparsers.add_parser("sample_node_counts_from_population")
     subparser.add_argument("-g", "--graph", required=True)
     subparser.add_argument("-i", "--kmer-index", required=True)
     subparser.add_argument("-k", "--kmer-size", required=False, type=int, default=31)
-    subparser.add_argument(
-        "-H", "--haplotype-to-nodes", required=True
-    )
+    subparser.add_argument("-H", "--haplotype-to-nodes", required=True)
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.add_argument("-t", "--n-threads", required=False, type=int, default=1)
     subparser.add_argument("-M", "--max-count", required=False, type=int, default=30)
     subparser.add_argument("-l", "--limit-to-n-individuals", required=False, type=int, default=0)
-    subparser.set_defaults(func=sample_node_counts_from_population)
-
-
-    def refine_sampling_model(args):
-        model = from_file(args.sampling_model)
-        variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
-
-        models = [
-            model.subset_on_nodes(variant_to_nodes.ref_nodes),
-            model.subset_on_nodes(variant_to_nodes.var_nodes)
-        ]
-        logging.info("Filling missing data")
-        for m in models:
-            m.astype(np.float16)
-            m.fill_empty_data()
-
-        to_file(models, args.out_file_name)
-        logging.info("Wrote refined model to %s" % args.out_file_name)
+    subparser.set_defaults(func=sample_node_counts_from_population_cli)
 
     subparser = subparsers.add_parser("refine_sampling_model")
     subparser.add_argument("-s", "--sampling_model", required=True)
     subparser.add_argument("-v", "--variant-to-nodes", required=True)
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.set_defaults(func=refine_sampling_model)
-
-
 
     if len(args) == 0:
         parser.print_help()
@@ -959,3 +619,5 @@ def run_argument_parser(args):
     args = parser.parse_args(args)
     args.func(args)
     remove_shared_memory_in_session()
+
+
