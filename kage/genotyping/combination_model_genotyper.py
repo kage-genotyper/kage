@@ -1,4 +1,5 @@
 import logging
+import math
 import time
 import numpy as np
 from kage.models.models import HelperModel, ComboModelBothAlleles, NoHelperModel
@@ -26,98 +27,29 @@ def translate_to_numeric(internal_genotypes, out=None):
 
 
 class CombinationModelGenotyper:
-    def __init__(
-        self,
-        min_variant_id: int,
-        max_variant_id: int,
-        node_counts,
-        index,
-        config=None
-    ):
+    def __init__( self, min_variant_id: int, max_variant_id: int, node_counts, index, config=None):
 
-        self.config = config if config is not None else GenotypingConfig()  # GenotypingConfig(avg_coverage, use_naive_priors, n_threads, ignore_helper_model, ignore_helper_variants)
-
+        self.config = config if config is not None else GenotypingConfig()
+        self.index = index
 
         self._min_variant_id = min_variant_id
         self._max_variant_id = max_variant_id
-        self._count_models = index.count_model
-        self._variant_to_nodes = index.variant_to_nodes
         self._node_counts = node_counts
-        self.expected_read_error_rate = 0.03
-        #self._average_coverage = 7.0
-        self._average_node_count_followed_node = 7.0
-        self._individuals_with_genotypes = []
-        self._variant_counter = 0
-        self._genotypes_called_at_variant = (
-            {}
-        )  # index is variant id, genotype is 1,2,3 (homo ref, homo alt, hetero)
-        self._predicted_allele_frequencies = (
-            np.zeros(len(node_counts.node_counts)) + 1.0
-        )  # default is 1.0, we will only change variant nodes
-        self._predicted_genotypes = np.zeros(
-            max_variant_id - min_variant_id + 1, dtype=np.uint8
-        )
-        self._prob_correct = np.zeros(max_variant_id - min_variant_id + 1, dtype=float)
+
         self._tricky_variants = index.tricky_variants.tricky_variants if index.tricky_variants is not None else None
+
+        self._predicted_genotypes = np.zeros(max_variant_id - min_variant_id + 1, dtype=np.uint8)
+        self._prob_correct = np.zeros(max_variant_id - min_variant_id + 1, dtype=float)
         self._haplotype_coverage = self.config.avg_coverage / 2
-        self._estimated_mapped_haplotype_coverage = (
-            self._haplotype_coverage * 0.75 * 0.85
-        )
+        self._estimated_mapped_haplotype_coverage = self._haplotype_coverage * 0.75 * 0.85
         self.marginal_probs = None
-        self._helper_model = index.helper_variants.helper_variants  # helper_model
-        self._helper_model_combo_matrix = index.combination_matrix.matrix  # helper_model_combo
-        #self._n_threads = n_threads
-        #self._ignore_helper_model = ignore_helper_model
-        #self._ignore_helper_variants = ignore_helper_variants
-
-    @staticmethod
-    def make_combomodel_from_shared_memory_data(data):
-        logging.info("Starting creating combomodel in sepearte thread")
-        t_start = time.perf_counter()
-        (from_variant, to_variant), data = data
-        (
-            count_model_name,
-            ref_nodes_name,
-            alt_nodes_name,
-            node_counts_name,
-            self.config.avg_coverage,
-        ) = data
-
-        node_counts = from_shared_memory(NodeCounts, node_counts_name)
-        ref_nodes = from_shared_memory(SingleSharedArray, ref_nodes_name).array
-        alt_nodes = from_shared_memory(SingleSharedArray, alt_nodes_name).array
-        count_models = object_from_shared_memory(count_model_name)
-
-        observed_ref_nodes = node_counts.get_node_count_array()[ref_nodes]
-        observed_alt_nodes = node_counts.get_node_count_array()[alt_nodes]
-
-        t = time.perf_counter()
-        models = [c.slice(from_variant, to_variant) for c in count_models]
-        model_both_alleles = ComboModelBothAlleles(*models)
-        logging.info(
-            "Time spent on thread making models: %.3f" % (time.perf_counter() - t)
-        )
-        t = time.perf_counter()
-        model_both_alleles.compute_logpmfs(
-            observed_ref_nodes[from_variant:to_variant],
-            observed_alt_nodes[from_variant:to_variant],
-        )
-        logging.info(
-            "Time spent on thread computing logpmfs: %.3f" % (time.perf_counter() - t)
-        )
-
-        model_both_alleles.clear()  # remove data we don't need to make pickling faster
-        logging.info(
-            "Time spent making combomodel one thread: %.4f" % (time.perf_counter() - t)
-        )
-        return model_both_alleles
 
     def predict(self):
         # find expected count ref, alt for the three different genotypes
-        ref_nodes = self._variant_to_nodes.ref_nodes[
+        ref_nodes = self.index.variant_to_nodes.ref_nodes[
             self._min_variant_id : self._max_variant_id + 1
         ]
-        alt_nodes = self._variant_to_nodes.var_nodes[
+        alt_nodes = self.index.variant_to_nodes.var_nodes[
             self._min_variant_id : self._max_variant_id + 1
         ]
 
@@ -128,23 +60,24 @@ class CombinationModelGenotyper:
         # One model for ref nodes and one for alt nodes
         logging.info("Creating combomodels")
 
-        combination_model_both = ComboModelBothAlleles(*self._count_models)
+        combination_model_both = ComboModelBothAlleles(*self.index.count_model)
 
         if self.config.ignore_helper_model:
             logging.info("Ignoring helper model! Will not use helper variants to improve genotype accuracy")
             final_model = combination_model_both
         elif self.config.ignore_helper_variants:
-            logging.info("Using NoHelperModel")
-            final_model = NoHelperModel(combination_model_both,
-                                        self._genotype_frequencies,
-                                        self._tricky_variants,
-                                        self._estimated_mapped_haplotype_coverage
-                                        )
+            assert False, "Not supported now"
+            #logging.info("Using NoHelperModel")
+            #final_model = NoHelperModel(combination_model_both,
+            #                            self._genotype_frequencies,
+            #                            self._tricky_variants,
+            #                            self._estimated_mapped_haplotype_coverage
+            #                            )
         else:
             final_model = HelperModel(
                 combination_model_both,
-                self._helper_model,
-                self._helper_model_combo_matrix,
+                self.index.helper_variants.helper_variants,
+                self.index.combination_matrix.matrix,
                 self._tricky_variants,
                 self._estimated_mapped_haplotype_coverage,
                 ignore_helper_variants=self.config.ignore_helper_variants
@@ -158,9 +91,14 @@ class CombinationModelGenotyper:
         self._count_probs = final_model.count_probs
         self._prob_correct = probabilities
         
-
     def genotype(self):
         self.predict()
+        if self.config.min_genotype_quality > 0:
+            set_to_homo_ref = math.e ** np.max(self._prob_correct, axis=1) < self.config.min_genotype_quality
+            logging.warning("%d genotypes have lower prob than %.4f. Setting these to homo ref."
+                            % (np.sum(set_to_homo_ref), self.config.min_genotype_quality))
+            self._predicted_genotypes[set_to_homo_ref] = 0
+
         return self._predicted_genotypes, self._prob_correct, self._count_probs
 
     def genotype_and_modify_variants(self, variants):

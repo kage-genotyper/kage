@@ -8,8 +8,8 @@ class GenotypingConfig:
     n_threads: int = 4
     ignore_helper_model: bool = False
     ignore_helper_variants: bool = False
-    min_genotype_quality: float = 0,
-    sample_name_output: str = "DONOR",
+    min_genotype_quality: float = 0
+    sample_name_output: str = "DONOR"
     ignore_homo_ref: bool = False
     do_not_write_genotype_likelihoods: bool = False
 

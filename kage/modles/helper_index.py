@@ -2,9 +2,49 @@ import itertools
 import logging
 import random
 from multiprocessing.pool import Pool
+from obgraph.variant_to_nodes import VariantToNodes
+from obgraph.genotype_matrix import GenotypeMatrix
 
 import numpy as np
-from kage.models.helper_model import make_helper_model_from_genotype_matrix_and_node_counts
+from shared_memory_wrapper import from_shared_memory, to_shared_memory
+from shared_memory_wrapper.util import interval_chunks
+
+from kage.models.helper_model import make_helper_model_from_genotype_matrix_and_node_counts, \
+    make_helper_model_from_genotype_matrix
+
+
+def create_helper_model_single_thread(data):
+    interval, args = data
+    from_variant, to_variant = interval
+
+    variant_to_nodes = from_shared_memory(
+        VariantToNodes, "variant_to_nodes" + args.shared_memory_unique_id
+    )
+    genotype_matrix = from_shared_memory(
+        GenotypeMatrix, "genotype_matrix" + args.shared_memory_unique_id
+    )
+
+    # read genotype matrix etc from shared memory
+    # submatrix = GenotypeMatrix(genotype_matrix.matrix[from_variant:to_variant,:])
+    submatrix = GenotypeMatrix(
+        genotype_matrix.matrix[
+        from_variant:to_variant:,
+        ]
+    )
+    logging.info(
+        "Creating helper model for %d individuals and %d variants"
+        % (submatrix.matrix.shape[1], submatrix.matrix.shape[0])
+    )
+    sub_variant_to_nodes = variant_to_nodes.slice(from_variant, to_variant)
+    use_duplicate_counts = args.use_duplicate_counts
+
+    subhelpers, subcombo = make_helper_model_from_genotype_matrix(
+        submatrix.matrix, None, dummy_count=1.0, window_size=args.window_size
+    )
+
+    # variant ids in results are now from 0 to (to_variant-from_variant)
+    subhelpers += from_variant
+    return from_variant, to_variant, subhelpers, subcombo
 
 
 def create_helper_model(args):

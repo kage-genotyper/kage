@@ -1,19 +1,18 @@
 import logging
-import sys, argparse, time, math, random
+import sys
 
-from kage.modles.helper_index import create_helper_model
+from .util import vcf_pl_and_gl_header_lines, convert_string_genotypes_to_numeric_array, _write_genotype_debug_data
 
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
     format="%(asctime)s %(levelname)s: %(message)s",
 )
-
+import argparse, time, random
+from kage.modles.helper_index import create_helper_model
 from .configuration import GenotypingConfig
 from kage.models.mapping_model import sample_node_counts_from_population_cli, refine_sampling_model
-
 from shared_memory_wrapper.shared_memory import (
-    from_file,
     from_shared_memory,
     remove_all_shared_memory,
     remove_shared_memory_in_session,
@@ -23,18 +22,17 @@ from shared_memory_wrapper.shared_memory import (
 from graph_kmer_index import KmerIndex, ReverseKmerIndex
 from kage.analysis.analysis import analyse_variants
 import numpy as np
-
-np.set_printoptions(suppress=True)
 from .node_counts import NodeCounts
 from obgraph.variant_to_nodes import VariantToNodes
-from kage.models.helper_model import make_helper_model_from_genotype_matrix
+from .models.helper_model import make_helper_model_from_genotype_matrix
 from obgraph.genotype_matrix import GenotypeMatrix
-from kage.indexing.tricky_variants import find_variants_with_nonunique_kmers, find_tricky_variants
+from .indexing.tricky_variants import find_variants_with_nonunique_kmers, find_tricky_variants
 from .indexing.index_bundle import IndexBundle
 from .genotyping.combination_model_genotyper import CombinationModelGenotyper
 
 np.random.seed(1)
 np.seterr(all="ignore")
+np.set_printoptions(suppress=True)
 
 
 def main():
@@ -54,61 +52,22 @@ def genotype(args):
     max_variant_id = len(index.variant_to_nodes.ref_nodes) - 1
     logging.info("Max variant id is assumed to be %d" % max_variant_id)
 
-    genotyper = CombinationModelGenotyper(
-        0,
-        max_variant_id,
-        node_counts,
-        index,
-        config=config
-    )
+    genotyper = CombinationModelGenotyper(0, max_variant_id, node_counts, index, config=config)
     genotypes, probs, count_probs = genotyper.genotype()
 
-    if config.min_genotype_quality > 0.0:
-        set_to_homo_ref = math.e ** np.max(probs, axis=1) < args.min_genotype_quality
-        logging.warning(
-            "%d genotypes have lower prob than %.4f. Setting these to homo ref."
-            % (np.sum(set_to_homo_ref), args.min_genotype_quality)
-        )
-        genotypes[set_to_homo_ref] = 0
-
-
-    numeric_genotypes = ["0/0", "0/0", "1/1", "0/1"]
-    numpy_genotypes = np.array([numeric_genotypes[g] for g in genotypes], dtype="|S3")
+    numpy_genotypes = convert_string_genotypes_to_numeric_array(genotypes)
     index.numpy_variants.to_vcf_with_genotypes(
         args.out_file_name,
         config.sample_name_output,
         numpy_genotypes,
-        add_header_lines=['##FILTER=<ID=LowQUAL,Description="Quality is low">',
-                          '##FORMAT=<ID=PL,Number=G,Type=Integer,Description="PHRED-scaled genotype likelihoods.">',
-                          '##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype likelihoods.">'
-                          ],
+        add_header_lines=vcf_pl_and_gl_header_lines(),
         ignore_homo_ref=config.ignore_homo_ref,
         add_genotype_likelyhoods=probs if not config.do_not_write_genotype_likelihoods else None,
     )
 
     close_shared_pool()
     logging.info("Genotyping took %d sec" % (time.perf_counter() - start_time))
-
     _write_genotype_debug_data(genotypes, numpy_genotypes, args.out_file_name, index.variant_to_nodes, probs, count_probs)
-
-
-def _write_genotype_debug_data(genotypes, numpy_genotypes, out_name, variant_to_nodes, probs, count_probs):
-
-    np.save(out_name + ".probs", probs)
-    np.save(out_name + ".count_probs", count_probs)
-
-    # Make arrays with haplotypes
-    haplotype_array1 = np.zeros(len(numpy_genotypes), dtype=np.uint8)
-    haplotype_array1[np.where((genotypes == 2) | (genotypes == 3))[0]] = 1
-    haplotype_array2 = np.zeros(len(numpy_genotypes), dtype=np.uint8)
-    haplotype_array2[np.where(genotypes == 2)[0]] = 1
-    np.save(out_name + ".haplotype1", haplotype_array1)
-    np.save(out_name + ".haplotype2", haplotype_array2)
-    # also store variant nodes from the two haplotypes
-    variant_nodes_haplotype1 = variant_to_nodes.var_nodes[np.nonzero(haplotype_array1)]
-    variant_nodes_haplotype2 = variant_to_nodes.var_nodes[np.nonzero(haplotype_array2)]
-    np.save(out_name + ".haplotype1_nodes", variant_nodes_haplotype1)
-    np.save(out_name + ".haplotype2_nodes", variant_nodes_haplotype2)
 
 
 def run_argument_parser(args):
@@ -309,39 +268,6 @@ def run_argument_parser(args):
     subparser.add_argument("-v", "--vcf-file-name", required=True)
     subparser.set_defaults(func=filter_vcf)
 
-
-    def create_helper_model_single_thread(data):
-        interval, args = data
-        from_variant, to_variant = interval
-
-        variant_to_nodes = from_shared_memory(
-            VariantToNodes, "variant_to_nodes" + args.shared_memory_unique_id
-        )
-        genotype_matrix = from_shared_memory(
-            GenotypeMatrix, "genotype_matrix" + args.shared_memory_unique_id
-        )
-
-        # read genotype matrix etc from shared memory
-        # submatrix = GenotypeMatrix(genotype_matrix.matrix[from_variant:to_variant,:])
-        submatrix = GenotypeMatrix(
-            genotype_matrix.matrix[
-                from_variant:to_variant:,
-            ]
-        )
-        logging.info(
-            "Creating helper model for %d individuals and %d variants"
-            % (submatrix.matrix.shape[1], submatrix.matrix.shape[0])
-        )
-        sub_variant_to_nodes = variant_to_nodes.slice(from_variant, to_variant)
-        use_duplicate_counts = args.use_duplicate_counts
-
-        subhelpers, subcombo = make_helper_model_from_genotype_matrix(
-            submatrix.matrix, None, dummy_count=1.0, window_size=args.window_size
-        )
-
-        # variant ids in results are now from 0 to (to_variant-from_variant)
-        subhelpers += from_variant
-        return from_variant, to_variant, subhelpers, subcombo
 
 
 

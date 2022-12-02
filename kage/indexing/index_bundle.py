@@ -12,13 +12,15 @@ class IndexBundle:
     def __init__(self, index):
         if isinstance(index, list):
             index = dict(index)
-        self._index = index
+            logging.info("Initing index with list")
+
+        self.index = index
 
     def __getitem__(self, e):
-        return self._index[e]
+        return self.index[e]
 
     def __setitem__(self, e, v):
-        self._index[e] = v
+        self.index[e] = v
 
     @classmethod
     def from_args(cls, args):
@@ -47,6 +49,7 @@ class IndexBundle:
         return self
 
     def __getattr__(self, item):
-        if item not in self._index:
+        if item not in self.index:
+            assert item in ["variant_to_nodes", "numpy_variants", "count_model", "tricky_variants", "helper_variants", "combination_matrix", "kmer_index"], item
             return None
-        return self._index[item]
+        return self.index[item]
