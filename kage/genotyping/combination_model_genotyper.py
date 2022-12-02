@@ -37,7 +37,6 @@ class CombinationModelGenotyper(Genotyper):
         most_similar_variant_lookup=None,
         variant_window_size=500,
         avg_coverage=15,
-        genotype_transition_probs=None,
         tricky_variants=None,
         use_naive_priors=False,
         helper_model=None,
@@ -70,7 +69,6 @@ class CombinationModelGenotyper(Genotyper):
             max_variant_id - min_variant_id + 1, dtype=np.uint8
         )
         self._prob_correct = np.zeros(max_variant_id - min_variant_id + 1, dtype=float)
-        self._genotype_transition_probs = genotype_transition_probs
         self._tricky_variants = tricky_variants
         self._use_naive_priors = use_naive_priors
         self._haplotype_coverage = avg_coverage / 2

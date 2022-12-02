@@ -1,5 +1,5 @@
 import pytest
-from kage.models.helper_index import get_population_priors
+from kage.models.helper_model import get_population_priors
 import numpy as np
 
 @pytest.fixture

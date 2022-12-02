@@ -1,8 +1,7 @@
 import numpy as np
-from obgraph.variants import get_variant_type, VcfVariants, TruthRegions
 import logging
 from collections import defaultdict
-from obgraph.variants import TruthRegions, VcfVariant, VcfVariants
+from obgraph.variants import TruthRegions, VcfVariants
 from graph_kmer_index import kmer_hash_to_sequence, sequence_to_kmer_hash, CollisionFreeKmerIndex, ReverseKmerIndex
 
 from obgraph import VariantNotFoundException
@@ -469,7 +468,6 @@ class GenotypeDebugger:
 
 
 def analyse_variants(args):
-    from ..node_count_model import NodeCountModel
     from obgraph.genotype_matrix import MostSimilarVariantLookup
     from obgraph.variant_to_nodes import VariantToNodes
     from ..helper_index import CombinationMatrix

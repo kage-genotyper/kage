@@ -2,8 +2,8 @@
 Proof of concept genotyper. Not used except for testing.
 """
 import logging
-from kage.node_count_model import GenotypeNodeCountModel
-from obgraph.variants import VcfVariant, VcfVariants
+from kage.models.node_count_model import GenotypeNodeCountModel
+from obgraph.variants import VcfVariants
 import numpy as np
 from scipy.stats import poisson, binom
 from obgraph import VariantNotFoundException

@@ -1,7 +1,7 @@
 import logging
-import sys, argparse, time, itertools, math, random
+import sys, argparse, time, math, random
 
-from shared_memory_wrapper.util import interval_chunks
+from kage.modles.helper_index import create_helper_model
 
 logging.basicConfig(
     stream=sys.stdout,
@@ -15,7 +15,6 @@ from kage.models.sampling_combo_model import LimitedFrequencySamplingComboModel
 from shared_memory_wrapper.shared_memory import (
     from_file,
     from_shared_memory,
-    to_shared_memory,
     remove_all_shared_memory,
     remove_shared_memory_in_session,
     get_shared_pool,
@@ -23,23 +22,20 @@ from shared_memory_wrapper.shared_memory import (
 )
 from graph_kmer_index import KmerIndex, ReverseKmerIndex
 from kage.analysis.analysis import analyse_variants
-from pathos.multiprocessing import Pool
 import numpy as np
 
 np.set_printoptions(suppress=True)
 from .node_counts import NodeCounts
-from .node_count_model import (
+from kage.models.node_count_model import (
     NodeCountModel,
     GenotypeNodeCountModel,
 )
 from obgraph.genotype_matrix import (
-    MostSimilarVariantLookup,
     GenotypeFrequencies,
 )
 from obgraph.variant_to_nodes import VariantToNodes
-from kage.models.helper_index import (
+from kage.models.helper_model import (
     make_helper_model_from_genotype_matrix,
-    make_helper_model_from_genotype_matrix_and_node_counts,
     HelperVariants,
     CombinationMatrix,
 )
@@ -121,10 +117,6 @@ def genotype(args):
     node_counts = NodeCounts.from_file(args.counts)
     max_variant_id = len(variant_to_nodes.ref_nodes) - 1
     logging.info("Max variant id is assumed to be %d" % max_variant_id)
-    # variant_chunks = list([int(i) for i in np.linspace(0, max_variant_id, args.n_threads + 1)])
-    # variant_chunks = [(from_pos, to_pos) for from_pos, to_pos in zip(variant_chunks[0:-1], variant_chunks[1:])]
-    variant_chunks = [(0, max_variant_id)]
-    logging.info("Will genotype intervals %s" % variant_chunks)
 
     genotyper_class = CombinationModelGenotyper if args.genotyper is not None else globals()[args.genotyper]
 
@@ -137,7 +129,6 @@ def genotype(args):
         genotype_frequencies,
         None,
         avg_coverage=args.average_coverage,
-        genotype_transition_probs=None,
         tricky_variants=tricky_variants,
         use_naive_priors=args.use_naive_priors,
         helper_model=helper_model,
@@ -176,19 +167,23 @@ def genotype(args):
     np.save(args.out_file_name + ".probs", probs)
     np.save(args.out_file_name + ".count_probs", count_probs)
 
+    out_name = args.out_file_name
+    _write_genotype_debug_data(genotypes, numpy_genotypes, out_name, variant_to_nodes)
+
+
+def _write_genotype_debug_data(genotypes, numpy_genotypes, out_name, variant_to_nodes):
     # Make arrays with haplotypes
     haplotype_array1 = np.zeros(len(numpy_genotypes), dtype=np.uint8)
     haplotype_array1[np.where((genotypes == 2) | (genotypes == 3))[0]] = 1
     haplotype_array2 = np.zeros(len(numpy_genotypes), dtype=np.uint8)
     haplotype_array2[np.where(genotypes == 2)[0]] = 1
-    np.save(args.out_file_name + ".haplotype1", haplotype_array1)
-    np.save(args.out_file_name + ".haplotype2", haplotype_array2)
-
+    np.save(out_name + ".haplotype1", haplotype_array1)
+    np.save(out_name + ".haplotype2", haplotype_array2)
     # also store variant nodes from the two haplotypes
     variant_nodes_haplotype1 = variant_to_nodes.var_nodes[np.nonzero(haplotype_array1)]
     variant_nodes_haplotype2 = variant_to_nodes.var_nodes[np.nonzero(haplotype_array2)]
-    np.save(args.out_file_name + ".haplotype1_nodes", variant_nodes_haplotype1)
-    np.save(args.out_file_name + ".haplotype2_nodes", variant_nodes_haplotype2)
+    np.save(out_name + ".haplotype1_nodes", variant_nodes_haplotype1)
+    np.save(out_name + ".haplotype2_nodes", variant_nodes_haplotype2)
 
 
 def run_argument_parser(args):
@@ -489,63 +484,6 @@ def run_argument_parser(args):
         return from_variant, to_variant, subhelpers, subcombo
 
 
-    def create_helper_model(args):
-        args.shared_memory_unique_id = str(random.randint(0, 1e15))
-        pool = Pool(args.n_threads)
-        logging.info("Made pool")
-        model = None
-
-        variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
-        genotype_matrix = GenotypeMatrix.from_file(args.genotype_matrix)
-        # NB: Transpose
-        genotype_matrix.matrix = genotype_matrix.matrix.transpose()
-
-        if args.n_threads > 1:
-            n_variants = len(variant_to_nodes.ref_nodes)
-            n_threads = args.n_threads
-            while n_variants < n_threads * 50 and n_threads > 2:
-                n_threads -= 1
-                logging.info("Lowered n threads to %d so that not too few variants are analysed together" % n_threads)
-
-            variant_intervals = interval_chunks(0, n_variants, n_threads)
-            logging.info("Will process variant intervals: %s" % variant_intervals)
-
-            helpers = np.zeros(n_variants, dtype=np.uint32)
-            genotype_matrix_combo = np.zeros((n_variants, 3, 3), dtype=float)
-
-            logging.info("Putting data in shared memory")
-            # put data in shared memory
-            to_shared_memory(
-                genotype_matrix, "genotype_matrix" + args.shared_memory_unique_id
-            )
-            to_shared_memory(
-                variant_to_nodes, "variant_to_nodes" + args.shared_memory_unique_id
-            )
-
-            logging.info("Put data in shared memory")
-
-            for from_variant, to_variant, subhelpers, subcombo in pool.imap(
-                create_helper_model_single_thread, zip(variant_intervals, itertools.repeat(args))
-            ):
-                logging.info("Done with one chunk")
-                helpers[from_variant:to_variant] = subhelpers
-                genotype_matrix_combo[from_variant:to_variant] = subcombo
-
-        else:
-            (
-                helpers,
-                genotype_matrix_combo,
-            ) = make_helper_model_from_genotype_matrix_and_node_counts(
-                genotype_matrix, model, variant_to_nodes, args.window_size
-            )
-        genotype_matrix_combo = genotype_matrix_combo.astype(np.float32)
-
-        np.save(args.out_file_name, helpers)
-        logging.info("Saved helper model to file: %s" % args.out_file_name)
-        np.save(args.out_file_name + "_combo_matrix", genotype_matrix_combo)
-        logging.info(
-            "Saved combo matrix to file %s" % args.out_file_name + "_combo_matrix"
-        )
 
     subparser = subparsers.add_parser("create_helper_model")
     subparser.add_argument("-g", "--genotype-matrix", required=False)
