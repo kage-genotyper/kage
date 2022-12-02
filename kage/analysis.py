@@ -1,10 +1,14 @@
-from obgraph.variants import get_variant_type
+import numpy as np
+from obgraph.variants import get_variant_type, VcfVariants, TruthRegions
 import logging
 from collections import defaultdict
 from obgraph.variants import TruthRegions, VcfVariant, VcfVariants
-from graph_kmer_index import kmer_hash_to_sequence, sequence_to_kmer_hash
+from graph_kmer_index import kmer_hash_to_sequence, sequence_to_kmer_hash, CollisionFreeKmerIndex, ReverseKmerIndex
 
 from obgraph import VariantNotFoundException
+from shared_memory_wrapper import from_file
+
+from kage import NodeCounts
 
 
 class SimpleRecallPrecisionAnalyser:
@@ -462,3 +466,63 @@ class GenotypeDebugger:
         )
         print(self.n_truth_variants)
         self.print_report()
+
+
+def analyse_variants(args):
+    from .node_count_model import NodeCountModel
+    from obgraph.genotype_matrix import MostSimilarVariantLookup
+    from obgraph.variant_to_nodes import VariantToNodes
+    from .helper_index import CombinationMatrix
+
+    whitelist = None
+    # pangenie = VcfVariants.from_vcf(args.pangenie)
+
+    logging.info("Reading variant nodes")
+    variant_nodes = VariantToNodes.from_file(args.variant_nodes)
+    logging.info("Reading kmer index")
+    kmer_index = KmerIndex.from_file(args.kmer_index)
+    logging.info("Reading reverse index")
+    reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
+    logging.info("Reading model")
+    #model = NodeCountModelAdvanced.from_file(args.model)
+    model = from_file(args.model)
+    logging.info(type(model))
+    #model.astype(float)
+    #model.fill_empty_data()
+
+    logging.info("REading helper variants")
+    helper_variants = np.load(args.helper_variants)
+    logging.info("Reading combination matrix")
+    combination_matrix = CombinationMatrix.from_file(args.combination_matrix)
+    logging.info("Reading probs")
+    probs = np.load(args.probs)
+    logging.info("Reading count probs")
+    count_probs = np.load(args.count_probs)
+
+    logging.info("REading predicted genotyppes")
+    predicted_genotypes = VcfVariants.from_vcf(args.predicted_vcf)
+
+    logging.info("Reading true genotypes")
+    true_genotypes = VcfVariants.from_vcf(args.truth_vcf)
+
+    logging.info("Reading all genotypes")
+    all_variants = VcfVariants.from_vcf(args.vcf)
+
+    analyser = GenotypeDebugger(
+        variant_nodes,
+        args.kmer_size,
+        all_variants,
+        kmer_index,
+        reverse_index,
+        predicted_genotypes,
+        true_genotypes,
+        TruthRegions(args.truth_regions_file),
+        NodeCounts.from_file(args.node_counts),
+        model,
+        helper_variants,
+        combination_matrix,
+        probs,
+        count_probs,
+        None,
+    )
+    analyser.analyse_unique_kmers_on_variants()

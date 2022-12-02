@@ -13,7 +13,7 @@ from itertools import chain
 from graph_kmer_index import KmerIndex
 import bionumpy as bnp
 import math
-from npstructures.bitarray import BitArray
+from kmer_mapper.mapper import map_kmers_to_graph_index
 
 
 def fast_hash_fix(sequence, k, encoding=None):
@@ -28,45 +28,25 @@ def _map_haplotype_sequences(sequences, kmer_index, k, n_nodes):
     t = time.perf_counter()
     convolve_time = 0
 
-    if isinstance(kmer_index, KmerIndex):
-        counts = np.zeros(n_nodes, dtype=np.uint32)
-        from kmer_mapper.mapper import map_kmers_to_graph_index
-        for i, sequence in enumerate(sequences):
-            # split into even smaller chunks to save memory if sequence is large
-            if len(sequence) > 25000000:
-                sequence_chunks = np.array_split(sequence, len(sequence)//15000000)
-                #logging.info("Split sequence into %d chunks" % len(sequence_chunks))
-            else:
-                sequence_chunks = [sequence]
-                logging.info("did not split sequence")
+    counts = np.zeros(n_nodes, dtype=np.uint32)
+    for i, sequence in enumerate(sequences):
+        # split into even smaller chunks to save memory if sequence is large
+        if len(sequence) > 25000000:
+            sequence_chunks = np.array_split(sequence, len(sequence)//15000000)
+            #logging.info("Split sequence into %d chunks" % len(sequence_chunks))
+        else:
+            sequence_chunks = [sequence]
+            logging.info("did not split sequence")
 
-            for j, s in enumerate(sequence_chunks):
-                t2 = time.perf_counter()
-                kmers = fast_hash_fix(s, k)
-                convolve_time += time.perf_counter()-t2
-                t3 = time.perf_counter()
-                counts += map_kmers_to_graph_index(kmer_index, n_nodes-1, kmers)
-
-            #log_memory_usage_now("Done mapping sequence %d" % i)
-    else:
-        kmer_index.reset()
-        for i, sequence in enumerate(sequences):
-            log_memory_usage_now("Before hashing")
+        for j, s in enumerate(sequence_chunks):
             t2 = time.perf_counter()
-            #kmers = np.convolve(sequence, power_vector, mode="valid")
-            kmers = fast_hash_fix(sequence.astype(np.uint8), k)
+            kmers = fast_hash_fix(s, k)
             convolve_time += time.perf_counter()-t2
-            log_memory_usage_now("After hashing")
+            t3 = time.perf_counter()
+            counts += map_kmers_to_graph_index(kmer_index, n_nodes-1, kmers)
 
-            # split and count to use less memory (Counter.count is very memory-demanding)
-            for kmer_chunk in np.array_split(kmers, 8):
-                if len(kmer_chunk) == 0:
-                    break
-                kmer_index.count_kmers(kmer_chunk)
+        #log_memory_usage_now("Done mapping sequence %d" % i)
 
-            log_memory_usage_now("After count")
-
-        counts = kmer_index.get_node_counts(n_nodes)
 
     logging.info("Took %.3f sec to map haplotype sequences for individual" % (time.perf_counter()-t))
     logging.info("Convolve time was %.3f" % convolve_time)
@@ -76,7 +56,6 @@ def _map_haplotype_sequences(sequences, kmer_index, k, n_nodes):
 
 
 def get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_count=30, n_threads=1, limit_to_n_individuals=None):
-
 
     n_nodes = len(graph.nodes)
 

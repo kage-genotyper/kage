@@ -7,11 +7,9 @@ logging.basicConfig(
 )
 
 from .util import log_memory_usage_now
-from .sampling_combo_model import RaggedFrequencySamplingComboModel
-from .models import ComboModelBothAlleles
-from .mapping_model import get_node_counts_from_haplotypes
 from .mapping_model import get_sampled_nodes_and_counts
 from .sampling_combo_model import LimitedFrequencySamplingComboModel
+from .combination_model_genotyper import CombinationModelGenotyper
 
 
 import itertools
@@ -20,8 +18,6 @@ import sys, argparse, time
 from shared_memory_wrapper.shared_memory import (
     from_shared_memory,
     to_shared_memory,
-    remove_shared_memory,
-    SingleSharedArray,
     remove_all_shared_memory,
     remove_shared_memory_in_session,
     get_shared_pool,
@@ -29,12 +25,8 @@ from shared_memory_wrapper.shared_memory import (
 )
 from obgraph import Graph as ObGraph
 from graph_kmer_index import KmerIndex, ReverseKmerIndex
-from graph_kmer_index import ReferenceKmerIndex
-from .analysis import GenotypeDebugger
-from obgraph.variants import VcfVariants, TruthRegions
-from obgraph.haplotype_nodes import HaplotypeToNodes, DiscBackedHaplotypeToNodes
-from .reads import read_chunks_from_fasta
-import platform
+from .analysis import analyse_variants
+from obgraph.haplotype_nodes import DiscBackedHaplotypeToNodes
 from pathos.multiprocessing import Pool
 import numpy as np
 
@@ -50,17 +42,11 @@ from .node_count_model import (
 from obgraph.genotype_matrix import (
     MostSimilarVariantLookup,
     GenotypeFrequencies,
-    GenotypeTransitionProbabilities,
 )
 from obgraph.variant_to_nodes import VariantToNodes
-from .genotyper import Genotyper
-from .numpy_genotyper import NumpyGenotyper
-from .combination_model_genotyper import CombinationModelGenotyper
-import SharedArray as sa
 from obgraph.haplotype_matrix import HaplotypeMatrix
 from obgraph.variant_to_nodes import NodeToVariants
 import random
-from obgraph.genotype_matrix import GenotypeMatrix
 from .helper_index import (
     make_helper_model_from_genotype_matrix,
     make_helper_model_from_genotype_matrix_and_node_counts,
@@ -82,66 +68,6 @@ np.seterr(all="ignore")
 
 def main():
     run_argument_parser(sys.argv[1:])
-
-
-def analyse_variants(args):
-    from .node_count_model import NodeCountModel
-    from obgraph.genotype_matrix import MostSimilarVariantLookup
-    from obgraph.variant_to_nodes import VariantToNodes
-    from .helper_index import CombinationMatrix
-
-    whitelist = None
-    # pangenie = VcfVariants.from_vcf(args.pangenie)
-
-    logging.info("Reading variant nodes")
-    variant_nodes = VariantToNodes.from_file(args.variant_nodes)
-    logging.info("Reading kmer index")
-    kmer_index = KmerIndex.from_file(args.kmer_index)
-    logging.info("Reading reverse index")
-    reverse_index = ReverseKmerIndex.from_file(args.reverse_index)
-    logging.info("Reading model")
-    #model = NodeCountModelAdvanced.from_file(args.model)
-    model = from_file(args.model)
-    logging.info(type(model))
-    #model.astype(float)
-    #model.fill_empty_data()
-
-    logging.info("REading helper variants")
-    helper_variants = np.load(args.helper_variants)
-    logging.info("Reading combination matrix")
-    combination_matrix = CombinationMatrix.from_file(args.combination_matrix)
-    logging.info("Reading probs")
-    probs = np.load(args.probs)
-    logging.info("Reading count probs")
-    count_probs = np.load(args.count_probs)
-
-    logging.info("REading predicted genotyppes")
-    predicted_genotypes = VcfVariants.from_vcf(args.predicted_vcf)
-
-    logging.info("Reading true genotypes")
-    true_genotypes = VcfVariants.from_vcf(args.truth_vcf)
-
-    logging.info("Reading all genotypes")
-    all_variants = VcfVariants.from_vcf(args.vcf)
-
-    analyser = GenotypeDebugger(
-        variant_nodes,
-        args.kmer_size,
-        all_variants,
-        kmer_index,
-        reverse_index,
-        predicted_genotypes,
-        true_genotypes,
-        TruthRegions(args.truth_regions_file),
-        NodeCounts.from_file(args.node_counts),
-        model,
-        helper_variants,
-        combination_matrix,
-        probs,
-        count_probs,
-        None,
-    )
-    analyser.analyse_unique_kmers_on_variants()
 
 
 def genotype(args):
@@ -303,7 +229,6 @@ def model_using_kmer_index(variant_id_interval, args):
         "Processing variants with id between %d and %d"
         % (variant_start_id, variant_end_id)
     )
-    from .node_count_model import NodeCountModel
 
     allele_frequency_index = None
     if args.allele_frequency_index is not None:
@@ -407,25 +332,6 @@ def model_using_kmer_index_multiprocess(args):
     model.to_file(args.out_file_name)
     logging.info("Wrote model to %s" % args.out_file_name)
 
-
-def model_for_read_mapping(args):
-    variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
-    ref_nodes = variant_to_nodes.ref_nodes
-    var_nodes = variant_to_nodes.var_nodes
-    max_node_id = max([np.max(ref_nodes), np.max(var_nodes)])
-
-    frequencies = np.zeros(max_node_id + 1, dtype=float)
-    frequencies_squared = np.zeros(max_node_id + 1, dtype=float)
-    certain = np.zeros(max_node_id + 1, dtype=float)
-    frequency_matrix = np.zeros((max_node_id + 1, 5), dtype=float)
-    has_too_many = np.zeros(max_node_id + 1, dtype=bool)
-
-    # simple naive model: No duplicate counts, all nodes have only 1 certain
-    model = NodeCountModelAdvanced(
-        frequencies, frequencies_squared, certain, frequency_matrix, has_too_many
-    )
-    model.to_file(args.out_file_name)
-    logging.info("Wrote model to %s" % args.out_file_name)
 
 
 def run_argument_parser(args):
@@ -820,126 +726,16 @@ def run_argument_parser(args):
     subparser.add_argument("-V", "--version", required=False, default="v3")
     subparser.set_defaults(func=model_using_kmer_index_multiprocess)
 
-    subparser = subparsers.add_parser("model_for_read_mapping")
-    subparser.add_argument("-g", "--variant-to-nodes", required=True)
-    subparser.add_argument("-o", "--out-file-name", required=True)
-    subparser.set_defaults(func=model_for_read_mapping)
-
-    def model_for_read_mapping_using_sampled_reads(args):
-        from numpy_alignments import NumpyAlignments
-
-        graph = args.graph
-        edge_mapping = pickle.load(open(args.edge_mapping, "rb"))
-        mappings = parse_gaf(args.gaf, edge_mapping)
-        true_read_positions = NumpyAlignments.from_file(args.true_read_positions)
-
-        n_skipped_low_score = 0
-        n_mapped_back_to_origin = 0
-        node_counts = np.zeros(len(graph.nodes) + 1, dtype=int)
-
-        for i, mapping in enumerate(parse_gaf(args.gaf)):
-            if i % 1000 == 0:
-                logging.info("%d mappings processed" % i)
-
-            if mapping.score < args.min_score:
-                n_skipped_low_score += 1
-                continue
-
-            read_id = int(mapping.read_id)
-
-            # check if mapping is at ca same location as sampled read
-            sampled_read_chr = true_read_positions.chromosomes[read_id]
-            sampled_read_start = true_read_positions.positions[read_id]
-            sampled_read_end = sampled_read_start + mapping.read_length
-            nodes_from_sampled_area = graph.get_linear_ref_nodes_between_offsets(
-                sampled_read_chr, sampled_read_start, sampled_read_end
-            )
-
-            # print("Mapping nodes: %s, nodes from area: %s" % (mapping.nodes, nodes_from_sampled_area))
-
-            if len(set(nodes_from_sampled_area).intersection(mapping.nodes)) > 0:
-                # is from same area
-                n_mapped_back_to_origin += 1
-                continue
-
-            node_counts[mapping.nodes] += 1
-
-        model = NodeCountModelAdvanced.create_empty(graph.max_node_id())
-        model.certain = np.round(node_counts / args.coverage)
-        model.to_file(args.out_file_name)
-        logging.info(
-            "N reads skipped because low score: %d ( < %d)"
-            % (n_skipped_low_score, args.min_score)
-        )
-        logging.info(
-            "N reads that mapped back to origin (should be approx. equal to n reads mapped): %d"
-            % n_mapped_back_to_origin
-        )
-        logging.info("Saved model to %s" % args.out_file_name)
-
-    subparser = subparsers.add_parser("model_for_read_mapping_using_sampled_reads")
-    subparser.add_argument("-g", "--graph", required=True, type=ObGraph.from_file)
-    subparser.add_argument("-r", "--gaf", required=True)
-    subparser.add_argument("-p", "--true-read-positions", required=True)
-    subparser.add_argument("-o", "--out-file-name", required=True)
-    subparser.add_argument("-e", "--edge-mapping", required=True)
-    subparser.add_argument("-m", "--min-score", required=True, type=int)
-    subparser.add_argument(
-        "-c",
-        "--coverage",
-        required=True,
-        type=int,
-        help="Average coverage of sampled reads",
-    )
-    subparser.set_defaults(func=model_for_read_mapping_using_sampled_reads)
-
-    def model_using_transition_probs(args):
-        from .node_count_model import GenotypeModelCreatorFromTransitionProbabilities
-        from obgraph.variant_to_nodes import NodeToVariants
-
-        graph = ObGraph.from_file(args.graph)
-        genotype_matrix = GenotypeMatrix.from_file(args.genotype_matrix)
-        variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
-        node_to_variants = NodeToVariants.from_file(args.node_to_variants)
-        mapping_index = KmerIndex.from_file(args.mapping_index)
-        population_kemrs = KmerIndex.from_file(args.population_kmers)
-
-        maker = GenotypeModelCreatorFromTransitionProbabilities(
-            graph,
-            genotype_matrix,
-            variant_to_nodes,
-            node_to_variants,
-            mapping_index,
-            population_kemrs,
-            args.max_node_id,
-        )
-
-        maker.get_node_counts()
-        genotype_model = GenotypeNodeCountModel(
-            maker.counts_homo_ref, maker.counts_homo_alt, maker.counts_hetero
-        )
-        genotype_model.to_file(args.out_file_name)
-
-    subparser = subparsers.add_parser("model_using_kmer_index2")
-    subparser.add_argument("-g", "--graph", required=True)
-    subparser.add_argument("-G", "--genotype_matrix", required=True)
-    subparser.add_argument("-v", "--variant-to-nodes", required=True)
-    subparser.add_argument("-V", "--node_to_variants", required=True)
-    subparser.add_argument("-i", "--mapping-index", required=True)
-    subparser.add_argument("-I", "--population-kmers", required=True)
-    subparser.add_argument("-o", "--out-file-name", required=True)
-    subparser.add_argument("-m", "--max-node-id", type=int, required=True)
-    subparser.add_argument("-t", "--n-threads", type=int, default=1, required=False)
-    subparser.set_defaults(func=model_using_transition_probs)
 
     def filter_vcf(args):
         from .variant_filtering import remove_overlapping_indels
-
         remove_overlapping_indels(args.vcf_file_name)
+
 
     subparser = subparsers.add_parser("remove_overlapping_indels")
     subparser.add_argument("-v", "--vcf-file-name", required=True)
     subparser.set_defaults(func=filter_vcf)
+
 
     def create_helper_model_single_thread(data):
         interval, args = data
@@ -973,6 +769,7 @@ def run_argument_parser(args):
         # variant ids in results are now from 0 to (to_variant-from_variant)
         subhelpers += from_variant
         return from_variant, to_variant, subhelpers, subcombo
+
 
     def create_helper_model(args):
         args.shared_memory_unique_id = str(random.randint(0, 1e15))
@@ -1105,6 +902,7 @@ def run_argument_parser(args):
     subparser.add_argument("-i", "--kmer-index", required=True)
     subparser.set_defaults(func=make_index_bundle)
 
+
     def sample_node_counts_from_population(args):
         if args.n_threads > 0:
             logging.info("Creating pool to run in parallel")
@@ -1122,12 +920,7 @@ def run_argument_parser(args):
 
         log_memory_usage_now("After reading kmer index")
 
-        from obgraph.haplotype_nodes import HaplotypeToNodesRagged
-        if "disc" in args.haplotype_to_nodes:
-            args.haplotype_to_nodes = DiscBackedHaplotypeToNodes.from_file(args.haplotype_to_nodes)
-        else:
-            args.haplotype_to_nodes = HaplotypeToNodesRagged.from_file(args.haplotype_to_nodes)
-
+        args.haplotype_to_nodes = DiscBackedHaplotypeToNodes.from_file(args.haplotype_to_nodes)
         log_memory_usage_now("After reading haplotype to nodes")
 
 
@@ -1147,6 +940,7 @@ def run_argument_parser(args):
         close_shared_pool()
         model = counts  # LimitedFrequencySamplingComboModel(counts)
         to_file(model, args.out_file_name)
+
 
     subparser = subparsers.add_parser("sample_node_counts_from_population")
     subparser.add_argument("-g", "--graph", required=True)
@@ -1185,29 +979,6 @@ def run_argument_parser(args):
     subparser.set_defaults(func=refine_sampling_model)
 
 
-    def node_counts_from_gaf_cmd(args):
-        edge_mapping = pickle.load(open(args.edge_mapping, "rb"))
-        node_counts = node_counts_from_gaf(
-            args.gaf, edge_mapping, args.min_mapq, args.min_score, args.max_node_id
-        )
-        np.save(args.out_file_name, node_counts)
-        logging.info("Node counts saved to %s" % args.out_file_name)
-
-    subparser = subparsers.add_parser("node_counts_from_gaf")
-    subparser.add_argument(
-        "-g", "--gaf", required=True, help="Mapped reads in gaf format"
-    )
-    subparser.add_argument(
-        "-m",
-        "--edge-mapping",
-        required=True,
-        help="Mapping from vg graph edges to dummy nodes. Created when adding dummy nodes with obgraph add_indel_nodes",
-    )
-    subparser.add_argument("-o", "--out-file-name", required=True)
-    subparser.add_argument("-q", "--min-mapq", required=False, type=int, default=0)
-    subparser.add_argument("-s", "--min-score", required=False, type=int, default=120)
-    subparser.add_argument("-n", "--max_node_id", required=True, type=int)
-    subparser.set_defaults(func=node_counts_from_gaf_cmd)
 
     if len(args) == 0:
         parser.print_help()

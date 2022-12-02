@@ -15,7 +15,7 @@ from shared_memory_wrapper.shared_memory import run_numpy_based_function_in_para
 def fast_poisson_logpmf(k, r):
     # should return the same as scipy.stats.logpmf(k, r), but is  ~4x faster
     #return k  * np.log(r) - r - np.log(scipy.special.factorial(k))
-    return k  * np.log(r) - r - scipy.special.gammaln(k+1)
+    return k * np.log(r) - r - scipy.special.gammaln(k+1)
 
 
 @dataclass
