@@ -1,8 +1,7 @@
 import pytest
 import numpy as np
-from npstructures import RaggedArray
 
-from kage.sampling_combo_model import SimpleSamplingComboModel, RaggedFrequencySamplingComboModel, LimitedFrequencySamplingComboModel
+from kage.models.sampling_combo_model import LimitedFrequencySamplingComboModel
 from scipy.stats import poisson
 
 n_haplotypes = 4

@@ -4,9 +4,8 @@ import numpy as np
 from kage.combination_model_genotyper import CombinationModelGenotyper
 from obgraph.variant_to_nodes import VariantToNodes
 from kage.node_counts import  NodeCounts
-from kage.node_count_model import NodeCountModelAdvanced
 from obgraph.variants import VcfVariants
-from kage.sampling_combo_model import LimitedFrequencySamplingComboModel
+from kage.models.sampling_combo_model import LimitedFrequencySamplingComboModel
 
 def test():
     variant_to_nodes = VariantToNodes(np.array([0, 2]), np.array([1, 3]))

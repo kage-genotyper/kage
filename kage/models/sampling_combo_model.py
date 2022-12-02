@@ -7,7 +7,7 @@ from scipy.special import logsumexp
 from npstructures import RaggedArray
 from dataclasses import dataclass
 from typing import List
-from .util import log_memory_usage_now
+from kage.util import log_memory_usage_now
 from kage.models.models import Model
 from shared_memory_wrapper.shared_memory import run_numpy_based_function_in_parallel
 

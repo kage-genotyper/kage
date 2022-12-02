@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-from .joint_distribution import create_combined_matrices
+from kage.models.joint_distribution import create_combined_matrices
 from .helper_index_using_duplicate_counts import (
     get_weighted_calc_func,
     get_prob_weights,

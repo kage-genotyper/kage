@@ -1,16 +1,13 @@
 import logging
 import time
 import numpy as np
-from graph_kmer_index.nplist import NpList
-from npstructures import RaggedArray
 from npstructures.hashtable import HashTable
 from obgraph.cython_traversing import traverse_graph_by_following_nodes
 from shared_memory_wrapper.util import interval_chunks
-from shared_memory_wrapper.util import parallel_map_reduce, parallel_map_reduce_with_adding
-from kage.sampling_combo_model import LimitedFrequencySamplingComboModel
+from shared_memory_wrapper.util import parallel_map_reduce_with_adding
+from .sampling_combo_model import LimitedFrequencySamplingComboModel
 from kage.util import log_memory_usage_now
 from itertools import chain
-from graph_kmer_index import KmerIndex
 import bionumpy as bnp
 import math
 from kmer_mapper.mapper import map_kmers_to_graph_index
@@ -51,8 +48,6 @@ def _map_haplotype_sequences(sequences, kmer_index, k, n_nodes):
     logging.info("Took %.3f sec to map haplotype sequences for individual" % (time.perf_counter()-t))
     logging.info("Convolve time was %.3f" % convolve_time)
     return counts
-
-
 
 
 def get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_count=30, n_threads=1, limit_to_n_individuals=None):
@@ -100,7 +95,6 @@ def get_sampled_nodes_and_counts2(graph, haplotype_to_nodes, k, kmer_index, max_
     end_individual = n_haplotypes // 2
     logging.info("%d individuals" % end_individual)
 
-    from kmer_mapper.mapping import ParalellMapper
     mapper = ParalellMapper(kmer_index, n_nodes, n_threads=n_threads)
 
     for individual_id in range(0, n_haplotypes//2):

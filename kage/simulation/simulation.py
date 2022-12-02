@@ -7,7 +7,7 @@ from obgraph import MostSimilarVariantLookup
 import numpy as np
 from obgraph.variants import VcfVariant, VcfVariants
 from collections import defaultdict
-from kage.helper_index import (
+from kage.models.helper_index import (
     make_helper_model_from_genotype_matrix,
 )
 from obgraph.genotype_matrix import GenotypeMatrix

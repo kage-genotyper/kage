@@ -8,7 +8,7 @@ logging.basicConfig(
 
 from .util import log_memory_usage_now
 from kage.models.mapping_model import get_sampled_nodes_and_counts
-from .sampling_combo_model import LimitedFrequencySamplingComboModel
+from kage.models.sampling_combo_model import LimitedFrequencySamplingComboModel
 
 import itertools
 from itertools import repeat
@@ -22,7 +22,7 @@ from shared_memory_wrapper.shared_memory import (
     close_shared_pool,
 )
 from graph_kmer_index import KmerIndex, ReverseKmerIndex
-from .analysis import analyse_variants
+from kage.analysis.analysis import analyse_variants
 from obgraph.haplotype_nodes import DiscBackedHaplotypeToNodes
 from pathos.multiprocessing import Pool
 import numpy as np
@@ -44,7 +44,7 @@ from obgraph.variant_to_nodes import VariantToNodes
 from obgraph.haplotype_matrix import HaplotypeMatrix
 from obgraph.variant_to_nodes import NodeToVariants
 import random
-from .helper_index import (
+from kage.models.helper_index import (
     make_helper_model_from_genotype_matrix,
     make_helper_model_from_genotype_matrix_and_node_counts,
     HelperVariants,

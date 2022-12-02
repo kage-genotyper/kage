@@ -1,15 +1,14 @@
 from obgraph.variant_to_nodes import VariantToNodes
-from obgraph import GenotypeFrequencies, MostSimilarVariantLookup
+from obgraph import MostSimilarVariantLookup
 from obgraph.genotype_matrix import GenotypeMatrix
 import numpy as np
 np.random.seed(1)
 from kage import NodeCounts
-from kage.node_count_model import NodeCountModel
 from obgraph.variants import VcfVariants, VcfVariant
 from kage.node_count_model import NodeCountModelAdvanced
 from kage.combination_model_genotyper import CombinationModelGenotyper
-from kage.helper_index import make_helper_model_from_genotype_matrix,make_helper_model_from_genotype_matrix_and_node_counts
-from kage.sampling_combo_model import LimitedFrequencySamplingComboModel
+from kage.models.helper_index import make_helper_model_from_genotype_matrix_and_node_counts
+from kage.models.sampling_combo_model import LimitedFrequencySamplingComboModel
 
 class Helper:
     def __init__(self):
