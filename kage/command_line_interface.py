@@ -46,34 +46,19 @@ def genotype(args):
     logging.info("Read coverage is set to %.3f" % args.average_coverage)
     get_shared_pool(args.n_threads)
 
-    genotype_frequencies = None
-
     logging.info("Reading all indexes from an index bundle")
     index = IndexBundle.from_file(args.index_bundle, skip=["KmerIndex"]).indexes
-    #models = index.count_model  # ["count_model"]
-    #variant_to_nodes = index.variant_to_nodes  # ["variant_to_nodes"]
-    #variants = index.numpy_variants  # ["numpy_variants"]
-    #helper_model = index.helper_variants.helper_variants  # ["helper_variants"].helper_variants
-    #helper_model_combo_matrix = index.combination_matrix.matrix  # ["combination_matrix"].matrix
-    #tricky_variants = index.tricky_variants.tricky_variants  # ["tricky_variants"].tricky_variants
-
-    assert models is not None, "Model does not exist in index"
+    config = GenotypingConfig.from_command_line_args(args)
 
     node_counts = NodeCounts.from_file(args.counts)
-    max_variant_id = len(variant_to_nodes.ref_nodes) - 1
+    max_variant_id = len(index.variant_to_nodes.ref_nodes) - 1
     logging.info("Max variant id is assumed to be %d" % max_variant_id)
-    config = GenotypingConfig.from_command_line_args(args)
 
     genotyper = CombinationModelGenotyper(
         0,
         max_variant_id,
         node_counts,
         index,
-        #models,
-        #variant_to_nodes,
-        #tricky_variants=tricky_variants,
-        #helper_model=helper_model,
-        #helper_model_combo=helper_model_combo_matrix,
         config=config
     )
     genotypes, probs, count_probs = genotyper.genotype()
@@ -89,7 +74,7 @@ def genotype(args):
 
     numeric_genotypes = ["0/0", "0/0", "1/1", "0/1"]
     numpy_genotypes = np.array([numeric_genotypes[g] for g in genotypes], dtype="|S3")
-    variants.to_vcf_with_genotypes(
+    index.numpy_variants.to_vcf_with_genotypes(
         args.out_file_name,
         config.sample_name_output,
         numpy_genotypes,
@@ -104,7 +89,7 @@ def genotype(args):
     close_shared_pool()
     logging.info("Genotyping took %d sec" % (time.perf_counter() - start_time))
 
-    _write_genotype_debug_data(genotypes, numpy_genotypes, args.out_file_name, variant_to_nodes, probs, count_probs)
+    _write_genotype_debug_data(genotypes, numpy_genotypes, args.out_file_name, index.variant_to_nodes, probs, count_probs)
 
 
 def _write_genotype_debug_data(genotypes, numpy_genotypes, out_name, variant_to_nodes, probs, count_probs):

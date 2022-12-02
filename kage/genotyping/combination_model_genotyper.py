@@ -32,12 +32,6 @@ class CombinationModelGenotyper:
         max_variant_id: int,
         node_counts,
         index,
-        #count_models,
-        #variant_to_nodes,
-        #genotype_frequencies=None,
-        #tricky_variants=None,
-        #helper_model=None,
-        #helper_model_combo=None,
         config=None
     ):
 
