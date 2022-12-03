@@ -93,7 +93,7 @@ class LimitedFrequencySamplingComboModel(Model):
 
     @staticmethod
     def _logpmf(observed_counts, counts, base_lambda, error_rate):
-        sums = np.sum(counts, axis=-1)[:,None]
+        sums = np.sum(counts, axis=-1)[:, None]
         frequencies = np.log(counts / sums)
         poisson_lambda = (np.arange(counts.shape[1])[None,:] + error_rate) * base_lambda
         prob = fast_poisson_logpmf(observed_counts[:,None], poisson_lambda)

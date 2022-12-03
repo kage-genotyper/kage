@@ -127,8 +127,9 @@ class NoHelperModel(Model):
 class HelperModel(Model):
     def __init__(
         self, model, helper_variants, genotype_combo_matrix, tricky_variants=None, base_lambda=1.0,
-            ignore_helper_variants=False,
+            ignore_helper_variants=False, n_threads=16
     ):
+        self._n_threads = n_threads
         self._model = model
         self._helper_variants = helper_variants
         t = time.perf_counter()
@@ -146,32 +147,27 @@ class HelperModel(Model):
         self._ignore_helper_variants = ignore_helper_variants
 
     def score(self, k1, k2):
+        t0 = time.perf_counter()
         count_probs = np.array([self._model.logpmf(k1, k2, g, self._base_lambda) for g in [0, 1, 2]]).T
+        logging.info("Getting count probs for all combinations of genotypes took %.5f sec" % (time.perf_counter()-t0))
         self.count_probs = count_probs
 
         if self._tricky_variants is not None:
-            logging.info(
-                "Using tricky variants in HelperModel.score. There are %d tricky variants"
-                % np.sum(self._tricky_variants)
-            )
-            count_probs = np.where(
-                self._tricky_variants.reshape(-1, 1), np.log(1 / 3), count_probs
-            )
+            logging.info("Using tricky variants in HelperModel.score. There are %d tricky variants" % np.sum(self._tricky_variants))
+            count_probs = np.where(self._tricky_variants.reshape(-1, 1), np.log(1 / 3), count_probs)
 
         time_start = time.perf_counter()
         if self._ignore_helper_variants:
             logging.info("Helper variants are ignored")
-            log_probs = (
-                    self._genotype_probs +
-                    count_probs.reshape(-1, 1, 3)
-            )
-
+            log_probs = self._genotype_probs + count_probs.reshape(-1, 1, 3)
         else:
+            t0 = time.perf_counter()
             log_probs = (
                 self._genotype_probs
                 + count_probs[self._helper_variants].reshape(-1, 3, 1)
                 + count_probs.reshape(-1, 1, 3)
             )
+            logging.info("Computing log_probs took %.5f sec" % (time.perf_counter()-t0))
 
         logging.info(
             "Time spent on log_probs in HelperModel.score: %.4f"
@@ -180,14 +176,19 @@ class HelperModel(Model):
         time_start = time.perf_counter()
         # result = logsumexp(log_probs, axis=H)
         # result = result - logsumexp(result, axis=-1, keepdims=True)
+        t0 = time.perf_counter()
         result = run_numpy_based_function_in_parallel(
-            lambda p: logsumexp(p, axis=H), 16, [log_probs]
+            lambda p: logsumexp(p, axis=H), self._n_threads, [log_probs]
         )
+        logging.info("Computinng logsumex across helper axis took %.5f sec" % (time.perf_counter() - t0))
+
+        t0 = time.perf_counter()
         result = run_numpy_based_function_in_parallel(
             lambda result: result - logsumexp(result, axis=-1, keepdims=True),
-            16,
+            self._n_threads,
             [result],
         )
+        logging.info("Computinng result-logsumexp(result) took %.5f sec" % (time.perf_counter() - t0))
         logging.info(
             "Time spent to compute probs using helper probs in HelperModel.score: %.4f"
             % (time.perf_counter() - time_start)

@@ -29,6 +29,8 @@ from obgraph.genotype_matrix import GenotypeMatrix
 from .indexing.tricky_variants import find_variants_with_nonunique_kmers, find_tricky_variants
 from .indexing.index_bundle import IndexBundle
 from .genotyping.combination_model_genotyper import CombinationModelGenotyper
+from kmer_mapper.command_line_interface import map_bnp
+from argparse import Namespace
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -37,6 +39,15 @@ np.set_printoptions(suppress=True)
 
 def main():
     run_argument_parser(sys.argv[1:])
+
+
+def get_kmer_counts(kmer_index, k, reads_file_name, n_threads, gpu=False):
+    logging.info("Will count kmers.")
+    # temp hack to call kmer_mapper by using the command line interface
+    return NodeCounts(map_bnp(Namespace(
+        kmer_size=k, kmer_index=kmer_index, reads=reads_file_name, n_threads=n_threads, gpu=gpu, debug=False,
+        chunk_size=5000000, map_reverse_complements=True if gpu else False, func=None, output_file=None
+    )))
 
 
 def genotype(args):
@@ -48,7 +59,13 @@ def genotype(args):
     index = IndexBundle.from_file(args.index_bundle, skip=["KmerIndex"]).indexes
     config = GenotypingConfig.from_command_line_args(args)
 
-    node_counts = NodeCounts.from_file(args.counts)
+    if args.counts is None:
+        # map with kmer_mapper to get node counts
+        assert args.reads is not None, "--reads must be specified if not node_counts is specified"
+        node_counts = get_kmer_counts(index.kmer_index, args.kmer_size, args.reads, config.n_threads, args.gpu)
+    else:
+        node_counts = NodeCounts.from_file(args.counts)
+
     max_variant_id = len(index.variant_to_nodes.ref_nodes) - 1
     logging.info("Max variant id is assumed to be %d" % max_variant_id)
 
@@ -72,14 +89,36 @@ def genotype(args):
 
 def run_argument_parser(args):
     parser = argparse.ArgumentParser(
-        description="Alignment free graph genotyper",
-        prog="alignment_free_graph_genotyper",
+        description="kage",
+        prog="kage",
         formatter_class=lambda prog: argparse.HelpFormatter(
             prog, max_help_position=50, width=100
         ),
     )
 
     subparsers = parser.add_subparsers()
+
+
+    subparser = subparsers.add_parser("genotype")
+    subparser.add_argument("-c", "--counts", required=False)
+    subparser.add_argument("-r", "--reads", required=False)
+    subparser.add_argument("-k", "--kmer_size", required=False, type=int, default=31)
+    subparser.add_argument("-g", "--gpu", required=False, type=bool, default=False)
+    subparser.add_argument("-i", "--index-bundle", required=True)
+    subparser.add_argument("-v", "--vcf", required=False, help="Vcf to genotype")
+    subparser.add_argument("-o", "--out-file-name", required=True, help="Will write genotyped variants to this file")
+    subparser.add_argument("-t", "--n-threads", type=int, required=False, default=8)
+    subparser.add_argument("-a", "--average-coverage", type=float, default=15, help="Expected average read coverage", )
+    subparser.add_argument("-q", "--min-genotype-quality", type=float, default=0.0,
+        help="Min prob of genotype being correct. Genotypes with prob less than this are set to homo ref.")
+    subparser.add_argument( "-s", "--sample-name-output", required=False, default="DONOR", help="Sample name that will be used in the output vcf")
+    subparser.add_argument( "-u", "--use-naive-priors", required=False, type=bool, default=False,
+        help="Set to True to use only population allele frequencies as priors.")
+    subparser.add_argument("-I", "--ignore-helper-model", required=False, type=bool, default=False)
+    subparser.add_argument("-V", "--ignore-helper-variants", required=False, type=bool, default=False)
+    subparser.add_argument("-b", "--ignore-homo-ref", required=False, type=bool, default=False, help="Set to True to not write homo ref variants to output vcf")
+    subparser.add_argument("-B", "--do-not-write-genotype-likelihoods", required=False, type=bool, default=False, help="Set to True to not write genotype likelihoods to output vcf")
+    subparser.set_defaults(func=genotype)
 
     subparser = subparsers.add_parser("analyse_variants")
     subparser.add_argument("-g", "--variant-nodes", required=True)
@@ -97,27 +136,6 @@ def run_argument_parser(args):
     subparser.add_argument("-p", "--probs", required=True)
     subparser.add_argument("-c", "--count_probs", required=True)
     subparser.set_defaults(func=analyse_variants)
-
-    subparser = subparsers.add_parser("genotype")
-    subparser.add_argument("-c", "--counts", required=True)
-    subparser.add_argument("-i", "--index-bundle", required=True)
-    subparser.add_argument("-v", "--vcf", required=False, help="Vcf to genotype")
-    subparser.add_argument("-m", "--model", required=False, help="Node count model")
-    subparser.add_argument("-o", "--out-file-name", required=True, help="Will write genotyped variants to this file")
-    subparser.add_argument("-t", "--n-threads", type=int, required=False, default=8)
-    subparser.add_argument("-a", "--average-coverage", type=float, default=15, help="Expected average read coverage", )
-    subparser.add_argument("-q", "--min-genotype-quality", type=float, default=0.0,
-        help="Min prob of genotype being correct. Genotypes with prob less than this are set to homo ref.")
-    subparser.add_argument( "-s", "--sample-name-output", required=False, default="DONOR", help="Sample name that will be used in the output vcf")
-    subparser.add_argument( "-u", "--use-naive-priors", required=False, type=bool, default=False,
-        help="Set to True to use only population allele frequencies as priors.",
-    )
-    subparser.add_argument("-I", "--ignore-helper-model", required=False, type=bool, default=False)
-    subparser.add_argument("-V", "--ignore-helper-variants", required=False, type=bool, default=False)
-    subparser.add_argument("-b", "--ignore-homo-ref", required=False, type=bool, default=False, help="Set to True to not write homo ref variants to output vcf")
-    subparser.add_argument("-B", "--do-not-write-genotype-likelihoods", required=False, type=bool, default=False, help="Set to True to not write genotype likelihoods to output vcf")
-
-    subparser.set_defaults(func=genotype)
 
     def run_tests(args):
         from kage.simulation.simulation import run_genotyper_on_simualated_data
