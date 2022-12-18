@@ -4,7 +4,7 @@ import sys
 from .util import vcf_pl_and_gl_header_lines, convert_string_genotypes_to_numeric_array, _write_genotype_debug_data
 
 logging.basicConfig(
-    stream=sys.stdout,
+    stream=sys.stderr,
     level=logging.INFO,
     format="%(asctime)s %(levelname)s: %(message)s",
 )

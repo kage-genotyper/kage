@@ -15,7 +15,7 @@ import math
 from kmer_mapper.mapper import map_kmers_to_graph_index
 from graph_kmer_index import KmerIndex
 from obgraph.haplotype_nodes import DiscBackedHaplotypeToNodes
-
+from obgraph.variant_to_nodes import VariantToNodes
 
 def bnp_get_kmers_wrapper(sequence, k):
     hashes = bnp.sequence.get_kmers(

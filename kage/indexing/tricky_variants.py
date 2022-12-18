@@ -3,6 +3,7 @@ import logging
 import numpy as np
 from graph_kmer_index import ReverseKmerIndex
 from shared_memory_wrapper import from_file
+from obgraph.variant_to_nodes import VariantToNodes
 
 
 class TrickyVariants:

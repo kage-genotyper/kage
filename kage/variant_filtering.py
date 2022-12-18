@@ -1,11 +1,12 @@
 import logging
-
 logging.basicConfig(level=logging.INFO)
+
 import sys
 import gzip
 
 
 def remove_overlapping_indels(vcf_file_name, skip_variants_with_n=True):
+    is_gzipped = False
     if vcf_file_name.endswith(".gz"):
         is_gzipped = True
         vcf = gzip.open(vcf_file_name)
