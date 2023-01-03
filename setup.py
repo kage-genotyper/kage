@@ -1,7 +1,7 @@
 from setuptools import setup, Extension
 
 setup(name='kage-genotyper',
-      version='0.1.6',
+      version='0.1.7',
       description='KAGE',
       long_description_content_type="text/markdown",
       url='http://github.com/ivargr/kage',
@@ -15,7 +15,7 @@ setup(name='kage-genotyper',
                         'graph_kmer_index>=0.0.22',
                         'kmer_mapper>=0.0.27',
                         'graph_read_simulator>=0.0.7',
-                        'shared_memory_wrapper>=0.0.18',
+                        'shared_memory_wrapper>=0.0.23',
                         'bionumpy>=0.2.7',
                         'npstructures>=0.2.2'
                         ],

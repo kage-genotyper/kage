@@ -7,7 +7,7 @@ from shared_memory_wrapper import (
     from_shared_memory,
     SingleSharedArray,
 )
-from shared_memory_wrapper.shared_memory import object_from_shared_memory
+from shared_memory_wrapper import object_from_shared_memory
 from kage.node_counts import NodeCounts
 from ..configuration import GenotypingConfig
 
@@ -36,8 +36,7 @@ class CombinationModelGenotyper:
         self._max_variant_id = max_variant_id
         self._node_counts = node_counts
 
-        self._tricky_variants = index.tricky_variants.tricky_variants if index.tricky_variants is not None else None
-
+        self._tricky_variants = index.tricky_variants.tricky_variants if hasattr(index, "tricky_variants") else None
         self._predicted_genotypes = np.zeros(max_variant_id - min_variant_id + 1, dtype=np.uint8)
         self._prob_correct = np.zeros(max_variant_id - min_variant_id + 1, dtype=float)
         self._haplotype_coverage = self.config.avg_coverage / 2

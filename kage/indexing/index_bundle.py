@@ -49,7 +49,11 @@ class IndexBundle:
         return self
 
     def __getattr__(self, item):
+        # hack to allow pickling
+        if item == "index":
+            raise AttributeError
+
         if item not in self.index:
-            assert item in ["variant_to_nodes", "numpy_variants", "count_model", "tricky_variants", "helper_variants", "combination_matrix", "kmer_index"], item
-            return None
+            raise AttributeError
+
         return self.index[item]

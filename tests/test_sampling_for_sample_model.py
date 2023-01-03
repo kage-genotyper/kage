@@ -62,6 +62,8 @@ def test_parallel(graph, kmer_index):
     )
 
     results1 = get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_count=8, n_threads=1)
+    #print("SHAPE")
+    #print(graph.edges._shape.starts)
     results10 = get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_count=8, n_threads=20)
 
     assert np.all(results1[0] == results10[0])
