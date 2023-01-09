@@ -12,6 +12,7 @@ class GenotypingConfig:
     sample_name_output: str = "DONOR"
     ignore_homo_ref: bool = False
     do_not_write_genotype_likelihoods: bool = False
+    use_gpu: bool = False
 
 
     @classmethod
@@ -25,5 +26,6 @@ class GenotypingConfig:
             args.min_genotype_quality,
             args.sample_name_output,
             args.ignore_homo_ref,
-            do_not_write_genotype_likelihoods=args.do_not_write_genotype_likelihoods
+            args.do_not_write_genotype_likelihoods,
+            args.gpu
         )

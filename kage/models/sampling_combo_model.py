@@ -100,48 +100,39 @@ class LimitedFrequencySamplingComboModel(Model):
         prob = logsumexp(frequencies + prob, axis=-1)
         return prob
 
+    @staticmethod
+    def _gpu_logpmf(observed_counts, counts, base_lambda, error_rate):
+        try:
+            import custats
+            import cupy as cp
+        except ImportError:
+            logging.error("Cucounter and cupy must be installed to run GPU genotyping")
+            raise
 
-    def logpmf(self, observed_counts, d, base_lambda=1.0, error_rate=0.01):
+        logging.info("Putting in cuda memory")
+        t0 = time.perf_counter()
+        observed_counts = cp.asanyarray(observed_counts.astype(np.int32))
+        counts = cp.asanyarray(counts.astype(np.float32))
+        logging.info("Moving to cuda memory took %.3f sec" % (time.perf_counter()-t0))
+        res = custats.functions.experimental_logpmf(observed_counts, counts, base_lambda, error_rate)
+        return cp.asnumpy(res)
+
+    def logpmf(self, observed_counts, d, base_lambda=1.0, error_rate=0.01, gpu=False):
         logging.debug("base lambda in LimitedFreq model is %.3f" % base_lambda)
         logging.debug("Error rate is %.3f" % error_rate)
+        logging.info("Will use GPU? %s" % gpu)
         t0 = time.perf_counter()
         counts = self.diplotype_counts[d]
         counts = counts.astype(np.float16)
-        prob = run_numpy_based_function_in_parallel(
-            LimitedFrequencySamplingComboModel._logpmf, 16, (observed_counts, counts, base_lambda, error_rate)
-        )
-        logging.debug("Logpmf took %.4f sec" % (time.perf_counter()-t0))
-
+        if gpu:
+            logging.info("USING GPU")
+            prob = LimitedFrequencySamplingComboModel._gpu_logpmf(observed_counts, counts, base_lambda, error_rate)
+        else:
+            prob = run_numpy_based_function_in_parallel(
+                LimitedFrequencySamplingComboModel._logpmf, 16, (observed_counts, counts, base_lambda, error_rate)
+            )
+        logging.info("Logpmf took %.4f sec" % (time.perf_counter()-t0))
         return prob
-        #return LimitedFrequencySamplingComboModel._logpmf(observed_counts, counts, base_lambda, error_rate)
-
-
-
-        t0 = time.perf_counter()
-        sums = np.sum(counts, axis=-1)[:,None]
-        logging.info("Sums took %.4f sec" % (time.perf_counter()-t0))
-
-        #frequencies = np.log(counts / sums)
-        t0 = time.perf_counter()
-        frequencies = run_numpy_based_function_in_parallel(np.log, 16, (counts/sums,))
-        logging.debug("Frequencies took %.4f sec" % (time.perf_counter()-t0))
-
-        poisson_lambda = (np.arange(counts.shape[1])[None,:] + error_rate) * base_lambda
-
-        #prob = poisson.logpmf(observed_counts[:,None], poisson_lambda)
-        t0 = time.perf_counter()
-        prob = run_numpy_based_function_in_parallel(fast_poisson_logpmf, 16, (observed_counts[:,None], poisson_lambda))
-        logging.debug("Prob took %.4f sec" % (time.perf_counter()-t0))
-
-
-        #prob = logsumexp(frequencies + prob, axis=-1)
-        t0 = time.perf_counter()
-        prob = run_numpy_based_function_in_parallel(lambda x: logsumexp(x, axis=-1), 16, (frequencies+prob,))
-        logging.debug("Prob2 took %.4f sec" % (time.perf_counter()-t0))
-
-        logging.debug("LimitedFreqModel logpmf took %.4f sec" % (time.perf_counter()-t))
-        return prob
-        # sum(diplo_counts[node]/n_diplotypes_for_having[diplotype, node]*np.exp(poisson.logpmf(observed_counts[node], kmer_counts[node]))))
 
     def describe_node(self, node):
         description = "\n"

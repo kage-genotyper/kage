@@ -17,6 +17,7 @@ from graph_kmer_index import KmerIndex
 from obgraph.haplotype_nodes import DiscBackedHaplotypeToNodes
 from obgraph.variant_to_nodes import VariantToNodes
 
+
 def bnp_get_kmers_wrapper(sequence, k):
     hashes = bnp.sequence.get_kmers(
         bnp.EncodedArray(sequence, bnp.DNAEncoding),
@@ -29,7 +30,7 @@ def _map_haplotype_sequences(sequences, kmer_index, k, n_nodes):
     t = time.perf_counter()
     convolve_time = 0
 
-    counts = np.zeros(n_nodes, dtype=np.uint32)
+    counts = np.zeros(n_nodes+1, dtype=np.uint32)
     for i, sequence in enumerate(sequences):
         # split into even smaller chunks to save memory if sequence is large
         if len(sequence) > 25000000:
@@ -42,7 +43,8 @@ def _map_haplotype_sequences(sequences, kmer_index, k, n_nodes):
             t2 = time.perf_counter()
             kmers = bnp_get_kmers_wrapper(s, k)
             convolve_time += time.perf_counter()-t2
-            counts += map_kmers_to_graph_index(kmer_index, n_nodes-1, kmers)
+            result = map_kmers_to_graph_index(kmer_index, n_nodes, kmers)
+            counts += result
 
     logging.info("Took %.3f sec to map haplotype sequences for individual" % (time.perf_counter()-t))
     logging.info("Convolve time was %.3f" % convolve_time)
@@ -70,6 +72,7 @@ def get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_c
                                             max_count, n_nodes, [start_individual, end_individual])
     else:
         chunks = interval_chunks(0, end_individual, n_threads)
+        #chunks = [(186, 187)]
         logging.info("Chunks: %s" % chunks)
         count_matrices = parallel_map_reduce_with_adding(_get_sampled_nodes_and_counts_for_range,
                             (graph, haplotype_to_nodes, k, kmer_index, max_count, n_nodes),
@@ -114,6 +117,8 @@ def _get_sampled_nodes_and_counts_for_range(graph, haplotype_to_nodes, k, kmer_i
         log_memory_usage_now("Got sequences")
 
         node_counts = _map_haplotype_sequences(sequences, kmer_index, k, n_nodes)
+        #logging.warning("SKIPPING MAPPING FOR TESTING")
+        #node_counts = np.zeros(n_nodes, dtype=np.uint32)
         log_memory_usage_now("After mapping")
 
         # split into nodes that the haplotype has and nodes not

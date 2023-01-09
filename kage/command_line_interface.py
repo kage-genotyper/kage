@@ -1,6 +1,6 @@
 import logging
 import sys
-
+import platform
 from .util import vcf_pl_and_gl_header_lines, convert_string_genotypes_to_numeric_array, _write_genotype_debug_data
 
 logging.basicConfig(
@@ -12,13 +12,12 @@ import argparse, time, random
 from kage.modles.helper_index import create_helper_model
 from .configuration import GenotypingConfig
 from kage.models.mapping_model import sample_node_counts_from_population_cli, refine_sampling_model
-from shared_memory_wrapper.shared_memory import (
-    from_shared_memory,
-    remove_all_shared_memory,
+from shared_memory_wrapper import (
     remove_shared_memory_in_session,
     get_shared_pool,
-    close_shared_pool,
+    close_shared_pool, from_file,
 )
+from shared_memory_wrapper.shared_memory import remove_all_shared_memory
 from graph_kmer_index import KmerIndex, ReverseKmerIndex
 from kage.analysis.analysis import analyse_variants
 import numpy as np
@@ -46,7 +45,7 @@ def get_kmer_counts(kmer_index, k, reads_file_name, n_threads, gpu=False):
     # temp hack to call kmer_mapper by using the command line interface
     return NodeCounts(map_bnp(Namespace(
         kmer_size=k, kmer_index=kmer_index, reads=reads_file_name, n_threads=n_threads, gpu=gpu, debug=False,
-        chunk_size=5000000, map_reverse_complements=True if gpu else False, func=None, output_file=None
+        chunk_size=10000000, map_reverse_complements=True if gpu else False, func=None, output_file=None
     )))
 
 
@@ -60,9 +59,13 @@ def genotype(args):
     config = GenotypingConfig.from_command_line_args(args)
 
     if args.counts is None:
+        kmer_index = index.kmer_index
+        if args.kmer_index is not None:
+            logging.info("Not using index from index bundle, but instead using %s" % args.kmer_index)
+            kmer_index = KmerIndex.from_file(args.kmer_index)
         # map with kmer_mapper to get node counts
         assert args.reads is not None, "--reads must be specified if not node_counts is specified"
-        node_counts = get_kmer_counts(index.kmer_index, args.kmer_size, args.reads, config.n_threads, args.gpu)
+        node_counts = get_kmer_counts(kmer_index, args.kmer_size, args.reads, config.n_threads, args.gpu)
     else:
         node_counts = NodeCounts.from_file(args.counts)
 
@@ -105,6 +108,7 @@ def run_argument_parser(args):
     subparser.add_argument("-k", "--kmer_size", required=False, type=int, default=31)
     subparser.add_argument("-g", "--gpu", required=False, type=bool, default=False)
     subparser.add_argument("-i", "--index-bundle", required=True)
+    subparser.add_argument("-m", "--kmer-index", required=False, help="Can be specified to override kmer index in index bundle for mapping.")
     subparser.add_argument("-v", "--vcf", required=False, help="Vcf to genotype")
     subparser.add_argument("-o", "--out-file-name", required=True, help="Will write genotyped variants to this file")
     subparser.add_argument("-t", "--n-threads", type=int, required=False, default=8)

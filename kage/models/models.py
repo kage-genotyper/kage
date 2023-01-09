@@ -44,14 +44,14 @@ class ComboModelBothAlleles(Model):
         self._model_ref = None
         self._model_alt = None
 
-    def logpmf(self, k1, k2, genotype, base_lambda=1.0):
+    def logpmf(self, k1, k2, genotype, base_lambda=1.0, gpu=False):
         if genotype in self._logpmf_cache:
             return self._logpmf_cache[genotype]
 
         logging.debug("Using base lambda %.3f in combo model both alleles" % base_lambda)
         logging.info("Model is %s" % type(self._model_ref))
-        ref_probs = self._model_ref.logpmf(k1, 2 - genotype, base_lambda=base_lambda)
-        alt_probs = self._model_alt.logpmf(k2, genotype, base_lambda=base_lambda)
+        ref_probs = self._model_ref.logpmf(k1, 2 - genotype, base_lambda=base_lambda, gpu=gpu)
+        alt_probs = self._model_alt.logpmf(k2, genotype, base_lambda=base_lambda, gpu=gpu)
         prob = ref_probs + alt_probs
 
         self._logpmf_cache[genotype] = prob
@@ -127,7 +127,7 @@ class NoHelperModel(Model):
 class HelperModel(Model):
     def __init__(
         self, model, helper_variants, genotype_combo_matrix, tricky_variants=None, base_lambda=1.0,
-            ignore_helper_variants=False, n_threads=16
+            ignore_helper_variants=False, n_threads=16, gpu=False
     ):
         self._n_threads = n_threads
         self._model = model
@@ -145,10 +145,11 @@ class HelperModel(Model):
         self.count_probs = None
         self._base_lambda = base_lambda
         self._ignore_helper_variants = ignore_helper_variants
+        self._gpu = gpu
 
     def score(self, k1, k2):
         t0 = time.perf_counter()
-        count_probs = np.array([self._model.logpmf(k1, k2, g, self._base_lambda) for g in [0, 1, 2]]).T
+        count_probs = np.array([self._model.logpmf(k1, k2, g, self._base_lambda, gpu=self._gpu) for g in [0, 1, 2]]).T
         logging.info("Getting count probs for all combinations of genotypes took %.5f sec" % (time.perf_counter()-t0))
         self.count_probs = count_probs
 
