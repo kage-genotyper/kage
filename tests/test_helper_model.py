@@ -6,7 +6,7 @@ class DummyBoth:
     def __init__(self, prob):
         self._prob = np.asanyarray(prob)
 
-    def logpmf(self, k1, k2, genotype, base_lambda=1):
+    def logpmf(self, k1, k2, genotype, base_lambda=1, gpu=False):
         return np.log(self._prob[:, genotype])
 
 pi = np.array([[0.4, 0.2, 0],
