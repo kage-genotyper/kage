@@ -1,7 +1,8 @@
 import logging
 import sys
 import platform
-from .util import vcf_pl_and_gl_header_lines, convert_string_genotypes_to_numeric_array, _write_genotype_debug_data
+from .util import vcf_pl_and_gl_header_lines, convert_string_genotypes_to_numeric_array, _write_genotype_debug_data, \
+    log_memory_usage_now
 
 logging.basicConfig(
     stream=sys.stderr,
@@ -23,8 +24,6 @@ from kage.analysis.analysis import analyse_variants
 import numpy as np
 from .node_counts import NodeCounts
 from obgraph.variant_to_nodes import VariantToNodes
-from .models.helper_model import make_helper_model_from_genotype_matrix
-from obgraph.genotype_matrix import GenotypeMatrix
 from .indexing.tricky_variants import find_variants_with_nonunique_kmers, find_tricky_variants
 from .indexing.index_bundle import IndexBundle
 from .genotyping.combination_model_genotyper import CombinationModelGenotyper
@@ -71,9 +70,12 @@ def genotype(args):
 
     max_variant_id = len(index.variant_to_nodes.ref_nodes) - 1
     logging.info("Max variant id is assumed to be %d" % max_variant_id)
+    log_memory_usage_now("After reading index and node counts")
 
     genotyper = CombinationModelGenotyper(0, max_variant_id, node_counts, index, config=config)
+    log_memory_usage_now("After creating Genotyper ")
     genotypes, probs, count_probs = genotyper.genotype()
+    log_memory_usage_now("After genotyping")
 
     numpy_genotypes = convert_string_genotypes_to_numeric_array(genotypes)
     index.numpy_variants.to_vcf_with_genotypes(

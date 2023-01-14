@@ -10,6 +10,7 @@ from shared_memory_wrapper import (
 from shared_memory_wrapper import object_from_shared_memory
 from kage.node_counts import NodeCounts
 from ..configuration import GenotypingConfig
+from ..util import log_memory_usage_now
 
 genotypes = ["0/0", "1/1", "0/1"]
 numeric_genotypes = [1, 2, 3]
@@ -45,12 +46,14 @@ class CombinationModelGenotyper:
 
     def predict(self):
         # find expected count ref, alt for the three different genotypes
+        log_memory_usage_now("Genotyping, before getting ref/var nodes")
         ref_nodes = self.index.variant_to_nodes.ref_nodes[
             self._min_variant_id : self._max_variant_id + 1
         ]
         alt_nodes = self.index.variant_to_nodes.var_nodes[
             self._min_variant_id : self._max_variant_id + 1
         ]
+        log_memory_usage_now("Genotyping, before getting observed counts")
 
         # Get observed counts
         observed_ref_nodes = self._node_counts.get_node_count_array()[ref_nodes]
@@ -59,7 +62,9 @@ class CombinationModelGenotyper:
         # One model for ref nodes and one for alt nodes
         logging.info("Creating combomodels")
 
+        log_memory_usage_now("Before model")
         combination_model_both = ComboModelBothAlleles(*self.index.count_model)
+        log_memory_usage_now("After model")
 
         if self.config.ignore_helper_model:
             logging.info("Ignoring helper model! Will not use helper variants to improve genotype accuracy")

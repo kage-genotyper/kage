@@ -132,6 +132,7 @@ class LimitedFrequencySamplingComboModel(Model):
                 LimitedFrequencySamplingComboModel._logpmf, 16, (observed_counts, counts, base_lambda, error_rate)
             )
         logging.info("Logpmf took %.4f sec" % (time.perf_counter()-t0))
+        log_memory_usage_now("Done logpmg")
         return prob
 
     def describe_node(self, node):
