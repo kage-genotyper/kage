@@ -43,6 +43,10 @@ class LimitedFrequencySamplingComboModel(Model):
     # stores only number of individuals having counts up to a given limit
     diplotype_counts: List[np.ndarray]  # list of matrices, each matrix is n_variants x max count supported
 
+    def limit_to_n_individuals(self, n):
+        for i, count in enumerate(self.diplotype_counts):
+            self.diplotype_counts[i] = count[:, 0:n].copy()
+
     def __post_init__(self):
         #self.diplotype_counts = [c.astype(float) for c in self.diplotype_counts]
         return
@@ -58,9 +62,7 @@ class LimitedFrequencySamplingComboModel(Model):
     @classmethod
     def create_empty(cls, n_variants, max_count=3):
         logging.info("Creating empty limited freq model with dimensions %d x %d "% (n_variants, max_count))
-        log_memory_usage_now("Before creating empty")
         ret = cls([np.zeros((n_variants, max_count), dtype=np.uint16) for i in range(3)])
-        log_memory_usage_now("After creating empty")
         return ret
 
     def __add__(self, other):
@@ -93,11 +95,24 @@ class LimitedFrequencySamplingComboModel(Model):
 
     @staticmethod
     def _logpmf(observed_counts, counts, base_lambda, error_rate):
+        #counts = counts.astype(np.float16)
         sums = np.sum(counts, axis=-1)[:, None]
         frequencies = np.log(counts / sums)
         poisson_lambda = (np.arange(counts.shape[1])[None,:] + error_rate) * base_lambda
-        prob = fast_poisson_logpmf(observed_counts[:,None], poisson_lambda)
+        poisson_lambda = poisson_lambda.astype(np.float16)
+        prob = fast_poisson_logpmf(observed_counts[:,None].astype(np.float16), poisson_lambda)
         prob = logsumexp(frequencies + prob, axis=-1)
+        return prob
+
+    @staticmethod
+    def _logpmf2(observed_counts, counts, base_lambda, error_rate):
+        # Identical to _logpmf2, some lower memory usage by combining stuff
+        poisson_lambda = (np.arange(counts.shape[1])[None, :] + error_rate) * base_lambda
+        poisson_lambda = poisson_lambda.astype(np.float16)
+
+        prob = logsumexp(np.log(counts / np.sum(counts, axis=-1)[:, None]) +
+                         fast_poisson_logpmf(observed_counts[:, None].astype(np.float16), poisson_lambda)
+                         , axis=-1)
         return prob
 
     @staticmethod
@@ -117,22 +132,22 @@ class LimitedFrequencySamplingComboModel(Model):
         res = custats.functions.experimental_logpmf(observed_counts, counts, base_lambda, error_rate)
         return cp.asnumpy(res)
 
-    def logpmf(self, observed_counts, d, base_lambda=1.0, error_rate=0.01, gpu=False):
+    def logpmf(self, observed_counts, d, base_lambda=1.0, error_rate=0.01, gpu=False, n_threads=16):
+        logging.info("Will use %d threads" % n_threads)
         logging.debug("base lambda in LimitedFreq model is %.3f" % base_lambda)
         logging.debug("Error rate is %.3f" % error_rate)
         logging.info("Will use GPU? %s" % gpu)
         t0 = time.perf_counter()
-        counts = self.diplotype_counts[d]
+        counts = self.diplotype_counts[d]  # [:, 0:5]
         counts = counts.astype(np.float16)
         if gpu:
             logging.info("USING GPU")
             prob = LimitedFrequencySamplingComboModel._gpu_logpmf(observed_counts, counts, base_lambda, error_rate)
         else:
             prob = run_numpy_based_function_in_parallel(
-                LimitedFrequencySamplingComboModel._logpmf, 16, (observed_counts, counts, base_lambda, error_rate)
+                LimitedFrequencySamplingComboModel._logpmf2, n_threads, (observed_counts, counts, base_lambda, error_rate)
             )
         logging.info("Logpmf took %.4f sec" % (time.perf_counter()-t0))
-        log_memory_usage_now("Done logpmg")
         return prob
 
     def describe_node(self, node):

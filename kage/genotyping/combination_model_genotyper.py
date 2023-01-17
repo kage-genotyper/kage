@@ -85,7 +85,8 @@ class CombinationModelGenotyper:
                 self._tricky_variants,
                 self._estimated_mapped_haplotype_coverage,
                 ignore_helper_variants=self.config.ignore_helper_variants,
-                gpu=self.config.use_gpu
+                gpu=self.config.use_gpu,
+                n_threads=self.config.n_threads
             )
 
         genotypes, probabilities = final_model.predict(

@@ -1,8 +1,12 @@
+import logging
+logging.basicConfig(level=logging.INFO)
 import time
 from kage.models.sampling_combo_model import LimitedFrequencySamplingComboModel
 import numpy as np
 import scipy
 from scipy.special import logsumexp
+
+from kage.util import log_memory_usage_now
 
 
 def fast_poisson_logpmf(k, r):
@@ -12,11 +16,17 @@ def fast_poisson_logpmf(k, r):
 
 
 def func(observed_counts, counts, base_lambda, error_rate):
+    log_memory_usage_now("Start")
     sums = np.sum(counts, axis=-1)[:, None]
+    log_memory_usage_now("After sums")
     frequencies = np.log(counts / sums)
+    log_memory_usage_now("After frequencies")
     poisson_lambda = (np.arange(counts.shape[1])[None, :] + error_rate) * base_lambda
+    log_memory_usage_now("After poisson lambda")
     prob = fast_poisson_logpmf(observed_counts[:, None], poisson_lambda)
+    log_memory_usage_now("After prob")
     prob = logsumexp(frequencies + prob, axis=-1)
+    log_memory_usage_now("End")
     return prob
 
 

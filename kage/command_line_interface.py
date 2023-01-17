@@ -29,6 +29,8 @@ from .indexing.index_bundle import IndexBundle
 from .genotyping.combination_model_genotyper import CombinationModelGenotyper
 from kmer_mapper.command_line_interface import map_bnp
 from argparse import Namespace
+from obgraph.numpy_variants import NumpyVariants
+import gc
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -57,6 +59,7 @@ def genotype(args):
     index = IndexBundle.from_file(args.index_bundle, skip=["KmerIndex"]).indexes
     config = GenotypingConfig.from_command_line_args(args)
 
+
     if args.counts is None:
         kmer_index = index.kmer_index
         if args.kmer_index is not None:
@@ -70,15 +73,27 @@ def genotype(args):
 
     max_variant_id = len(index.variant_to_nodes.ref_nodes) - 1
     logging.info("Max variant id is assumed to be %d" % max_variant_id)
-    log_memory_usage_now("After reading index and node counts")
+    if args.limit_model_counts > 0:
+        logging.info("Making model smaller (ignoring counts > %d)" % args.limit_model_counts)
+        for i, count_model in enumerate(index.count_model):
+            index.count_model[i].limit_to_n_individuals(args.limit_model_counts)
+
 
     genotyper = CombinationModelGenotyper(0, max_variant_id, node_counts, index, config=config)
-    log_memory_usage_now("After creating Genotyper ")
     genotypes, probs, count_probs = genotyper.genotype()
-    log_memory_usage_now("After genotyping")
 
     numpy_genotypes = convert_string_genotypes_to_numeric_array(genotypes)
-    index.numpy_variants.to_vcf_with_genotypes(
+
+    if args.debug:
+        _write_genotype_debug_data(genotypes, numpy_genotypes, args.out_file_name, index.variant_to_nodes, probs, count_probs)
+
+    if args.variants is not None:
+        delattr(index, "index")  # release some memory
+        numpy_variants = NumpyVariants.from_file(args.variants)
+    else:
+        numpy_variants = index.numpy_variants
+
+    numpy_variants.to_vcf_with_genotypes(
         args.out_file_name,
         config.sample_name_output,
         numpy_genotypes,
@@ -89,7 +104,6 @@ def genotype(args):
 
     close_shared_pool()
     logging.info("Genotyping took %d sec" % (time.perf_counter() - start_time))
-    _write_genotype_debug_data(genotypes, numpy_genotypes, args.out_file_name, index.variant_to_nodes, probs, count_probs)
 
 
 def run_argument_parser(args):
@@ -111,7 +125,7 @@ def run_argument_parser(args):
     subparser.add_argument("-g", "--gpu", required=False, type=bool, default=False)
     subparser.add_argument("-i", "--index-bundle", required=True)
     subparser.add_argument("-m", "--kmer-index", required=False, help="Can be specified to override kmer index in index bundle for mapping.")
-    subparser.add_argument("-v", "--vcf", required=False, help="Vcf to genotype")
+    subparser.add_argument("-v", "--variants", required=False, help="Can be used to specify variants as NumPy file if not part of index bundle")
     subparser.add_argument("-o", "--out-file-name", required=True, help="Will write genotyped variants to this file")
     subparser.add_argument("-t", "--n-threads", type=int, required=False, default=8)
     subparser.add_argument("-a", "--average-coverage", type=float, default=15, help="Expected average read coverage", )
@@ -120,10 +134,12 @@ def run_argument_parser(args):
     subparser.add_argument( "-s", "--sample-name-output", required=False, default="DONOR", help="Sample name that will be used in the output vcf")
     subparser.add_argument( "-u", "--use-naive-priors", required=False, type=bool, default=False,
         help="Set to True to use only population allele frequencies as priors.")
+    subparser.add_argument("-l", "--limit-model-counts", default=0, type=int, help="If larger than 0, model will ignore counts larger than this. Can be used to use lower memory, but will make model less accurate.")
     subparser.add_argument("-I", "--ignore-helper-model", required=False, type=bool, default=False)
     subparser.add_argument("-V", "--ignore-helper-variants", required=False, type=bool, default=False)
     subparser.add_argument("-b", "--ignore-homo-ref", required=False, type=bool, default=False, help="Set to True to not write homo ref variants to output vcf")
     subparser.add_argument("-B", "--do-not-write-genotype-likelihoods", required=False, type=bool, default=False, help="Set to True to not write genotype likelihoods to output vcf")
+    subparser.add_argument("-d", "--debug", type=bool, default=False)
     subparser.set_defaults(func=genotype)
 
     subparser = subparsers.add_parser("analyse_variants")
