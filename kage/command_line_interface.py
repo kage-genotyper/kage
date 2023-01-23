@@ -10,7 +10,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s: %(message)s",
 )
 import argparse, time, random
-from kage.modles.helper_index import create_helper_model
+from kage.models.helper_index import create_helper_model
 from .configuration import GenotypingConfig
 from kage.models.mapping_model import sample_node_counts_from_population_cli, refine_sampling_model
 from shared_memory_wrapper import (
