@@ -51,12 +51,18 @@ def get_kmer_counts(kmer_index, k, reads_file_name, n_threads, gpu=False):
 
 
 def genotype(args):
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logging.debug("Will show debug")
+
     start_time = time.perf_counter()
     logging.info("Read coverage is set to %.3f" % args.average_coverage)
     get_shared_pool(args.n_threads)
 
     logging.info("Reading all indexes from an index bundle")
-    index = IndexBundle.from_file(args.index_bundle, skip=["KmerIndex"]).indexes
+    t = time.perf_counter()
+    index = IndexBundle.from_file(args.index_bundle).indexes
+    logging.debug("Reading indexes took %.3f sec" % (time.perf_counter()-t))
     config = GenotypingConfig.from_command_line_args(args)
 
 
@@ -82,17 +88,22 @@ def genotype(args):
     genotyper = CombinationModelGenotyper(0, max_variant_id, node_counts, index, config=config)
     genotypes, probs, count_probs = genotyper.genotype()
 
+    t = time.perf_counter()
     numpy_genotypes = convert_string_genotypes_to_numeric_array(genotypes)
+    logging.debug("Converting string genotypes to numeric took %.4f sec" % (time.perf_counter()-t))
 
     if args.debug:
         _write_genotype_debug_data(genotypes, numpy_genotypes, args.out_file_name, index.variant_to_nodes, probs, count_probs)
 
     if args.variants is not None:
         delattr(index, "index")  # release some memory
+        t = time.perf_counter()
         numpy_variants = NumpyVariants.from_file(args.variants)
+        logging.info("Reading numpy variants took %.3f sec" % (time.perf_counter()-t))
     else:
         numpy_variants = index.numpy_variants
 
+    t = time.perf_counter()
     numpy_variants.to_vcf_with_genotypes(
         args.out_file_name,
         config.sample_name_output,
@@ -101,6 +112,7 @@ def genotype(args):
         ignore_homo_ref=config.ignore_homo_ref,
         add_genotype_likelyhoods=probs if not config.do_not_write_genotype_likelihoods else None,
     )
+    logging.info("Writing to vcf took %.3f sec" % (time.perf_counter() - t))
 
     close_shared_pool()
     logging.info("Genotyping took %d sec" % (time.perf_counter() - start_time))
