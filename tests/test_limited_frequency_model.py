@@ -1,14 +1,18 @@
+import npstructures
 from numpy.testing import assert_equal
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 import time
-from kage.models.sampling_combo_model import LimitedFrequencySamplingComboModel
+from kage.models.sampling_combo_model import LimitedFrequencySamplingComboModel, SparseObservedCounts
 import numpy as np
+#import cupy as np
 import scipy
 from scipy.special import logsumexp
-
+from shared_memory_wrapper.shared_memory import run_numpy_based_function_in_parallel
 from kage.util import log_memory_usage_now
 from npstructures import RaggedArray
+#npstructures.set_backend(np)
+
 
 def logsumexp2(array, axis=-1):
     assert axis == -1
@@ -25,19 +29,12 @@ def fast_poisson_logpmf(k, r):
     #return k  * np.log(r) - r - np.log(scipy.special.factorial(k))
     return k * np.log(r) - r - scipy.special.gammaln(k+1)
 
-
 def func(observed_counts, counts, base_lambda, error_rate):
-    log_memory_usage_now("Start")
     sums = np.sum(counts, axis=-1)[:, None]
-    log_memory_usage_now("After sums")
     frequencies = np.log(counts / sums)
-    log_memory_usage_now("After frequencies")
     poisson_lambda = (np.arange(counts.shape[1])[None, :] + error_rate) * base_lambda
-    log_memory_usage_now("After poisson lambda")
     prob = fast_poisson_logpmf(observed_counts[:, None], poisson_lambda)
-    log_memory_usage_now("After prob")
     prob = logsumexp(frequencies + prob, axis=-1)
-    log_memory_usage_now("End")
     return prob
 
 
@@ -45,6 +42,15 @@ def func_2(observed_counts, frequencies_indexes, probs, base_lambda, error_rate,
     row_lens = np.bincount(frequencies_indexes[0], minlength=len(observed_counts))
     p_lambda = (np.arange(row_len) + error_rate) * base_lambda
     probs += fast_poisson_logpmf(observed_counts[frequencies_indexes[0]], p_lambda[frequencies_indexes[1]])
+    ra = RaggedArray(probs, row_lens)
+    return logsumexp2(ra, axis=-1)
+
+
+def func_3(observed_counts, model: SparseObservedCounts, base_lambda, error_rate):
+    row_lens = np.bincount(model.indexes[0], minlength=len(observed_counts))
+    p_lambda = (np.arange(model.max_counts) + error_rate) * base_lambda
+    probs = model.frequencies
+    probs += fast_poisson_logpmf(observed_counts[model.indexes[0]], p_lambda[model.indexes[1]])
     ra = RaggedArray(probs, row_lens)
     return logsumexp2(ra, axis=-1)
 
@@ -71,16 +77,25 @@ def profile_logpmf(n_counts=50000, row_len=15):
     table = fast_poisson_logpmf(np.arange(2500)[:, np.newaxis], (np.arange(row_len)[None, :] + error_rate) * base_lambda)
     frequencies = np.log(model_counts/model_counts.sum(axis=-1, keepdims=True))
     frequencies = frequencies[indexes]
-    t = time.perf_counter()    
+    t = time.perf_counter()
     result = func_2(observed_counts, indexes, frequencies, base_lambda, error_rate, row_len, table)
     print('t1', time.perf_counter()-t)
+
+    model = SparseObservedCounts.from_nonsparse(model_counts)
+    t = time.perf_counter()
+    #result2 = func_3(observed_counts, model, base_lambda, error_rate)
+    result2 = model.logpmf(observed_counts, base_lambda, error_rate)
+    print('t3', time.perf_counter()-t)
+    assert_equal(result, result2)
+
     t = time.perf_counter()    
-    # r2 = func(observed_counts, model_counts, base_lambda, error_rate)
-    # print('t2', time.perf_counter()-t)
-    # assert_equal(result, r2)
+    #r2 = func(observed_counts, model_counts, base_lambda, error_rate)
+    r2 = run_numpy_based_function_in_parallel(func, 8, [observed_counts, model_counts, base_lambda, error_rate])
+    print('t2', time.perf_counter()-t)
+    #assert_equal(result[0:100], r2[0:100])
 
 
 
 if __name__ == "__main__":
-    test_logsumexp2()
-    profile_logpmf(28000000//3)
+    #test_logsumexp2()
+    profile_logpmf(2800000)

@@ -10,6 +10,7 @@ from typing import List
 from kage.util import log_memory_usage_now
 from kage.models.models import Model
 from shared_memory_wrapper.shared_memory import run_numpy_based_function_in_parallel
+from typing import Tuple
 
 
 def fast_poisson_logpmf(k, r):
@@ -42,6 +43,9 @@ class SimpleSamplingComboModel:
 class LimitedFrequencySamplingComboModel(Model):
     # stores only number of individuals having counts up to a given limit
     diplotype_counts: List[np.ndarray]  # list of matrices, each matrix is n_variants x max count supported
+
+    def as_sparse(self):
+        return SparseLimitedFrequencySamplingComboModel.from_non_sparse(self)
 
     def limit_to_n_individuals(self, n):
         for i, count in enumerate(self.diplotype_counts):
@@ -220,6 +224,52 @@ class LimitedFrequencySamplingComboModel(Model):
                 return True
 
         return False
+
+
+# logsumexp for RaggedArray
+def ragged_array_logsumexp(array, axis=-1):
+    assert axis == -1
+    max_elem = array.max(axis=axis, keepdims=True)
+    return max_elem.ravel() + np.log(np.sum(np.exp(array-max_elem), axis=axis))
+
+
+@dataclass
+class SparseObservedCounts:
+    indexes: Tuple[np.ndarray]  # position of nonzero elements
+    frequencies: np.ndarray  # the values in the matrix at indexes
+    #row_lens: np.ndarray  # how many nonzero elements on each row
+    max_counts: int
+
+    @classmethod
+    def from_nonsparse(cls, model_counts: np.ndarray):
+        indexes = np.nonzero(model_counts)
+        frequencies = np.log(model_counts / model_counts.sum(axis=-1, keepdims=True))
+        frequencies = frequencies[indexes]
+        max_counts = model_counts.shape[1]
+        #row_lens = np.bincount(indexes[0], minlength=model_counts.shape[0])
+        return cls(indexes, frequencies, max_counts)
+
+    def logpmf(self, observed_counts, base_lambda, error_rate):
+        probs = self.frequencies
+        row_lens = np.bincount(self.indexes[0], minlength=len(observed_counts))
+        p_lambda = (np.arange(self.max_counts) + error_rate) * base_lambda
+        probs += fast_poisson_logpmf(observed_counts[self.indexes[0]], p_lambda[self.indexes[1]])
+        ra = RaggedArray(probs, row_lens)
+        return ragged_array_logsumexp(ra, axis=-1)
+
+
+class SparseLimitedFrequencySamplingComboModel(Model):
+    def __init__(self, counts: List[SparseObservedCounts]):
+        self._counts = counts
+
+    def logpmf(self, observed_counts, genotype, base_lambda=1.0, error_rate=0.01, gpu=False, n_threads=16):
+        return self._counts[genotype].logpmf(observed_counts, base_lambda, error_rate)
+
+    @classmethod
+    def from_non_sparse(cls, model):
+        return cls([
+            SparseObservedCounts.from_nonsparse(c) for c in model.diplotype_counts
+        ])
 
 
 @dataclass

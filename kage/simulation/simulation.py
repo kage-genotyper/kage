@@ -266,8 +266,8 @@ class GenotypingDataSimulator:
 
         # make model
         self._model = [
-            LimitedFrequencySamplingComboModel.create_naive(self._n_variants),
-            LimitedFrequencySamplingComboModel.create_naive(self._n_variants)
+            LimitedFrequencySamplingComboModel.create_naive(self._n_variants).as_sparse(),
+            LimitedFrequencySamplingComboModel.create_naive(self._n_variants).as_sparse()
             ]
             #from .node_count_model import NodeCountModelAdvanced
 
