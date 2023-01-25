@@ -125,10 +125,23 @@ class LimitedFrequencySamplingComboModel(Model):
             raise
 
         logging.info("Putting in cuda memory")
+
         t0 = time.perf_counter()
-        observed_counts = cp.asanyarray(observed_counts.astype(np.int32))
-        counts = cp.asanyarray(counts.astype(np.float32))
-        logging.info("Moving to cuda memory took %.3f sec" % (time.perf_counter()-t0))
+        observed_counts = observed_counts.astype(np.int32)
+        logging.info("As type took %.3f sec" % (time.perf_counter()-t0))
+        t0 = time.perf_counter()
+        observed_counts = cp.asanyarray(observed_counts)
+        logging.info("Moving observed counts to cuda memory took %.3f sec" % (time.perf_counter()-t0))
+
+        t0 = time.perf_counter()
+        counts = counts.astype(np.float32)
+        logging.info("changing counts dtype took %.3f sec" % (time.perf_counter()-t0))
+
+        t0 = time.perf_counter()
+        counts = cp.asanyarray(counts)
+        logging.info("SHAPE/DTYPE counts: %s/%s" % (counts.shape, counts.dtype))
+        logging.info("Moving counts to cuda memory took %.3f sec" % (time.perf_counter()-t0))
+
         res = custats.functions.experimental_logpmf(observed_counts, counts, base_lambda, error_rate)
         return cp.asnumpy(res)
 
