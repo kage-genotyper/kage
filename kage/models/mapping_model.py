@@ -180,6 +180,15 @@ def sample_node_counts_from_population_cli(args):
     to_file(model, args.out_file_name)
 
 
+def make_sparse_count_model(args):
+    model = from_file(args.count_model)
+    for i in range(2):
+        model[i] = model[i].as_sparse()
+
+    to_file(model, args.out_file_name)
+    logging.info("Wrote to " + args.out_file_name)
+
+
 def refine_sampling_model(args):
     model = from_file(args.sampling_model)
     variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)

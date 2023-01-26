@@ -12,6 +12,8 @@ from shared_memory_wrapper.shared_memory import run_numpy_based_function_in_para
 from kage.util import log_memory_usage_now
 from npstructures import RaggedArray
 #npstructures.set_backend(np)
+import warnings
+warnings.filterwarnings('ignore')
 
 
 def logsumexp2(array, axis=-1):
@@ -55,7 +57,7 @@ def func_3(observed_counts, model: SparseObservedCounts, base_lambda, error_rate
     return logsumexp2(ra, axis=-1)
 
 
-def profile_logpmf(n_counts=50000, row_len=15):
+def test_and_profile_logpmf(n_counts=50000, row_len=15):
     # observed_counts are counts on a node, typically 0-20
     # these we have in GPU-memory from counting
     observed_counts = np.random.randint(0, 20, n_counts, dtype=np.uint32)
@@ -66,7 +68,7 @@ def profile_logpmf(n_counts=50000, row_len=15):
     # with that amount of counts in our model
     # can be float16 or float32, rows should not sum to 0
     model_counts = np.zeros((n_counts, row_len), dtype=np.float16)
-    model_counts[:, 2] = np.random.randint(0, 100, n_counts) / 10
+    model_counts[:, 2] = np.random.randint(1, 100, n_counts) / 10
     # model_counts = (np.random.randint(0, 100, (n_counts, 5)) / 10).astype(np.float16) + 0.1
     
     base_lambda = 7.5  # float
@@ -82,15 +84,27 @@ def profile_logpmf(n_counts=50000, row_len=15):
     print('t1', time.perf_counter()-t)
 
     model = SparseObservedCounts.from_nonsparse(model_counts)
+    model_copy = SparseObservedCounts.from_nonsparse(model_counts)
+    # paralell
+    t = time.perf_counter()
+    result_parallel = model.parallel_logpmf(observed_counts, base_lambda, error_rate, n_threads=4)
+    print("Time parallel:", time.perf_counter()-t)
+    print(result_parallel, result)
+    print(len(result_parallel), len(result))
+    #assert False
+    assert_equal(result_parallel, result)
+
     t = time.perf_counter()
     #result2 = func_3(observed_counts, model, base_lambda, error_rate)
-    result2 = model.logpmf(observed_counts, base_lambda, error_rate)
+    result2 = model_copy.logpmf(observed_counts, base_lambda, error_rate)
+    print(result, result2)
     print('t3', time.perf_counter()-t)
     assert_equal(result, result2)
 
+
     t = time.perf_counter()    
     #r2 = func(observed_counts, model_counts, base_lambda, error_rate)
-    r2 = run_numpy_based_function_in_parallel(func, 8, [observed_counts, model_counts, base_lambda, error_rate])
+    r2 = run_numpy_based_function_in_parallel(func, 16, [observed_counts, model_counts, base_lambda, error_rate])
     print('t2', time.perf_counter()-t)
     #assert_equal(result[0:100], r2[0:100])
 
@@ -98,4 +112,4 @@ def profile_logpmf(n_counts=50000, row_len=15):
 
 if __name__ == "__main__":
     #test_logsumexp2()
-    profile_logpmf(2800000)
+    test_and_profile_logpmf(28000000)

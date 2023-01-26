@@ -12,7 +12,7 @@ logging.basicConfig(
 import argparse, time, random
 from kage.models.helper_index import create_helper_model
 from .configuration import GenotypingConfig
-from kage.models.mapping_model import sample_node_counts_from_population_cli, refine_sampling_model
+from kage.models.mapping_model import sample_node_counts_from_population_cli, refine_sampling_model, make_sparse_count_model
 from shared_memory_wrapper import (
     remove_shared_memory_in_session,
     get_shared_pool,
@@ -374,6 +374,12 @@ def run_argument_parser(args):
     subparser.add_argument("-v", "--variant-to-nodes", required=True)
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.set_defaults(func=refine_sampling_model)
+
+    subparser = subparsers.add_parser("make_sparse_count_model")
+    subparser.add_argument("-s", "--count_model", required=True)
+    subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.set_defaults(func=make_sparse_count_model)
+
 
     if len(args) == 0:
         parser.print_help()

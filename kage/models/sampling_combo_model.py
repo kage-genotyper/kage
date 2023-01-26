@@ -2,6 +2,7 @@ import logging
 import time
 import scipy
 import numpy as np
+import shared_memory_wrapper.util
 from scipy.stats import poisson
 from scipy.special import logsumexp
 from npstructures import RaggedArray
@@ -9,7 +10,7 @@ from dataclasses import dataclass
 from typing import List
 from kage.util import log_memory_usage_now
 from kage.models.models import Model
-from shared_memory_wrapper.shared_memory import run_numpy_based_function_in_parallel
+from shared_memory_wrapper.shared_memory import run_numpy_based_function_in_parallel, object_to_shared_memory, object_from_shared_memory, remove_shared_memory
 from typing import Tuple
 
 
@@ -242,20 +243,55 @@ class SparseObservedCounts:
 
     @classmethod
     def from_nonsparse(cls, model_counts: np.ndarray):
+        logging.info("Making sparse from nonsparse")
         indexes = np.nonzero(model_counts)
         frequencies = np.log(model_counts / model_counts.sum(axis=-1, keepdims=True))
+        log_memory_usage_now("Got frequencies")
         frequencies = frequencies[indexes]
+        indexes = (indexes[0].astype(np.uint32), indexes[1].astype(np.uint16))
         max_counts = model_counts.shape[1]
         #row_lens = np.bincount(indexes[0], minlength=model_counts.shape[0])
         return cls(indexes, frequencies, max_counts)
 
-    def logpmf(self, observed_counts, base_lambda, error_rate):
-        probs = self.frequencies
-        row_lens = np.bincount(self.indexes[0], minlength=len(observed_counts))
-        p_lambda = (np.arange(self.max_counts) + error_rate) * base_lambda
-        probs += fast_poisson_logpmf(observed_counts[self.indexes[0]], p_lambda[self.indexes[1]])
+    @staticmethod
+    def _logpmf(observed_counts, indexes_0, indexes_1, base_lambda, error_rate, max_counts, probs):
+        if isinstance(observed_counts, str):
+            observed_counts = object_from_shared_memory(observed_counts)
+
+        row_lens = np.bincount(indexes_0 - indexes_0[0], minlength=indexes_0[-1]-indexes_0[0])
+        p_lambda = (np.arange(max_counts) + error_rate) * base_lambda
+        probs += fast_poisson_logpmf(observed_counts[indexes_0], p_lambda[indexes_1])
         ra = RaggedArray(probs, row_lens)
         return ragged_array_logsumexp(ra, axis=-1)
+
+    def logpmf(self, observed_counts, base_lambda, error_rate):
+        probs = self.frequencies
+        indexes_0 = self.indexes[0]
+        indexes_1 = self.indexes[1]
+        assert indexes_0[0] == 0
+        assert indexes_0[-1] == len(observed_counts)-1, indexes_0[-1]
+        return SparseObservedCounts._logpmf(observed_counts, indexes_0, indexes_1, base_lambda, error_rate, self.max_counts, probs)
+
+    def parallel_logpmf(self, observed_counts, base_lambda, error_rate, n_threads=4):
+        observed_counts_name = object_to_shared_memory(observed_counts)
+        chunks = shared_memory_wrapper.util.interval_chunks(0, len(observed_counts), n_threads)
+        results = run_numpy_based_function_in_parallel(SparseObservedCounts._logpmf, n_threads,
+                                                       [observed_counts_name, self.indexes[0], self.indexes[1], base_lambda, error_rate, self.max_counts, self.frequencies])
+        remove_shared_memory(observed_counts_name, limit_to_session=True)
+        return results
+
+        """
+        for start, end in chunks:
+            print(start, end)
+            indexes_0 = self.indexes[0][start:end]
+            indexes_1 = self.indexes[1][start:end]
+            probs = self.frequencies[start:end]
+            res = SparseObservedCounts._logpmf(observed_counts_name, indexes_0, indexes_1, base_lambda, error_rate, self.max_counts, probs)
+            assert len(res) == end-start, "%d != %d" % (len(res), end-start)
+            results.append(res)
+
+        return np.concatenate(results)
+        """
 
 
 class SparseLimitedFrequencySamplingComboModel(Model):
