@@ -258,17 +258,16 @@ class SparseObservedCounts:
         if isinstance(observed_counts, str):
             observed_counts = object_from_shared_memory(observed_counts)
 
+        assert len(indexes_0) > 0
         row_lens = np.bincount(indexes_0 - indexes_0[0], minlength=indexes_0[-1]-indexes_0[0]+1)
         assert len(row_lens) == indexes_0[-1]-indexes_0[0]+1
         assert np.all(row_lens > 0)
-        logging.info("N rows: % d" % len(row_lens))
         p_lambda = (np.arange(max_counts) + error_rate) * base_lambda
         probs += fast_poisson_logpmf(observed_counts[indexes_0], p_lambda[indexes_1])
         ra = RaggedArray(probs, row_lens)
         return ragged_array_logsumexp(ra, axis=-1)
 
     def logpmf(self, observed_counts, base_lambda, error_rate, n_threads=1):
-        logging.info("N observed counts: %d, last index: %d" % (len(observed_counts), self.indexes[0][-1]))
         if n_threads > 1:
             return self.parallel_logpmf(observed_counts, base_lambda, error_rate, n_threads)
 
@@ -283,10 +282,11 @@ class SparseObservedCounts:
         observed_counts_name = object_to_shared_memory(observed_counts)
         assert len(observed_counts) == self.indexes[0][-1]+1  # last index should be last row
 
-        splits = [int(i) for i in np.linspace(0, len(self.frequencies), n_threads)]
+        splits = [int(i) for i in np.linspace(0, self.indexes[0][-1], n_threads+1)]
+        splits[-1] += 1  # last index must be at end
         splits = np.searchsorted(self.indexes[0], splits, side='left')
+        logging.info("Splits: %s" % splits)
         chunks = [(a, b) for a, b in zip(splits[0:-1], splits[1:])]
-        logging.info("Using chunks %s" % chunks)
 
         results = run_numpy_based_function_in_parallel(SparseObservedCounts._logpmf, n_threads,
                                                        [observed_counts_name, self.indexes[0], self.indexes[1], base_lambda, error_rate, self.max_counts, self.frequencies],
@@ -316,7 +316,6 @@ class SparseLimitedFrequencySamplingComboModel(Model):
         self._counts = counts
 
     def logpmf(self, observed_counts, genotype, base_lambda=1.0, error_rate=0.01, gpu=False, n_threads=16):
-        logging.info("N observed counts: %d" % len(observed_counts))
         res = self._counts[genotype].logpmf(observed_counts, base_lambda, error_rate, n_threads)
         assert len(res) == len(observed_counts), len(res)
         return res
@@ -371,7 +370,6 @@ class RaggedFrequencySamplingComboModel:
         return description
 
     def fill_empty_data(self):
-        logging.info("Filling empty data")
         # fill in estimates where there is missing data
         # assuming all entries are only missing at most one of the three
         # if missing at 2:
