@@ -258,13 +258,20 @@ class SparseObservedCounts:
         if isinstance(observed_counts, str):
             observed_counts = object_from_shared_memory(observed_counts)
 
-        row_lens = np.bincount(indexes_0 - indexes_0[0], minlength=indexes_0[-1]-indexes_0[0])
+        row_lens = np.bincount(indexes_0 - indexes_0[0], minlength=indexes_0[-1]-indexes_0[0]+1)
+        assert len(row_lens) == indexes_0[-1]-indexes_0[0]+1
+        assert np.all(row_lens > 0)
+        logging.info("N rows: % d" % len(row_lens))
         p_lambda = (np.arange(max_counts) + error_rate) * base_lambda
         probs += fast_poisson_logpmf(observed_counts[indexes_0], p_lambda[indexes_1])
         ra = RaggedArray(probs, row_lens)
         return ragged_array_logsumexp(ra, axis=-1)
 
-    def logpmf(self, observed_counts, base_lambda, error_rate):
+    def logpmf(self, observed_counts, base_lambda, error_rate, n_threads=1):
+        logging.info("N observed counts: %d, last index: %d" % (len(observed_counts), self.indexes[0][-1]))
+        if n_threads > 1:
+            return self.parallel_logpmf(observed_counts, base_lambda, error_rate, n_threads)
+
         probs = self.frequencies
         indexes_0 = self.indexes[0]
         indexes_1 = self.indexes[1]
@@ -274,13 +281,24 @@ class SparseObservedCounts:
 
     def parallel_logpmf(self, observed_counts, base_lambda, error_rate, n_threads=4):
         observed_counts_name = object_to_shared_memory(observed_counts)
-        chunks = shared_memory_wrapper.util.interval_chunks(0, len(observed_counts), n_threads)
+        assert len(observed_counts) == self.indexes[0][-1]+1  # last index should be last row
+
+        splits = [int(i) for i in np.linspace(0, len(self.frequencies), n_threads)]
+        splits = np.searchsorted(self.indexes[0], splits, side='left')
+        chunks = [(a, b) for a, b in zip(splits[0:-1], splits[1:])]
+        logging.info("Using chunks %s" % chunks)
+
         results = run_numpy_based_function_in_parallel(SparseObservedCounts._logpmf, n_threads,
-                                                       [observed_counts_name, self.indexes[0], self.indexes[1], base_lambda, error_rate, self.max_counts, self.frequencies])
+                                                       [observed_counts_name, self.indexes[0], self.indexes[1], base_lambda, error_rate, self.max_counts, self.frequencies],
+                                                       chunks=chunks)
         remove_shared_memory(observed_counts_name, limit_to_session=True)
+        assert len(results) == len(observed_counts), len(results)
         return results
 
-        """
+        #chunks = shared_memory_wrapper.util.interval_chunks(0, len(self.frequencies), 16)
+        # Make chunks that are splitted where new unique indexes start
+
+        results = []
         for start, end in chunks:
             print(start, end)
             indexes_0 = self.indexes[0][start:end]
@@ -291,7 +309,6 @@ class SparseObservedCounts:
             results.append(res)
 
         return np.concatenate(results)
-        """
 
 
 class SparseLimitedFrequencySamplingComboModel(Model):
@@ -299,7 +316,10 @@ class SparseLimitedFrequencySamplingComboModel(Model):
         self._counts = counts
 
     def logpmf(self, observed_counts, genotype, base_lambda=1.0, error_rate=0.01, gpu=False, n_threads=16):
-        return self._counts[genotype].logpmf(observed_counts, base_lambda, error_rate)
+        logging.info("N observed counts: %d" % len(observed_counts))
+        res = self._counts[genotype].logpmf(observed_counts, base_lambda, error_rate, n_threads)
+        assert len(res) == len(observed_counts), len(res)
+        return res
 
     @classmethod
     def from_non_sparse(cls, model):

@@ -87,7 +87,7 @@ def test_and_profile_logpmf(n_counts=50000, row_len=15):
     model_copy = SparseObservedCounts.from_nonsparse(model_counts)
     # paralell
     t = time.perf_counter()
-    result_parallel = model.parallel_logpmf(observed_counts, base_lambda, error_rate, n_threads=4)
+    result_parallel = model.parallel_logpmf(observed_counts, base_lambda, error_rate, n_threads=16)
     print("Time parallel:", time.perf_counter()-t)
     print(result_parallel, result)
     print(len(result_parallel), len(result))
@@ -112,4 +112,4 @@ def test_and_profile_logpmf(n_counts=50000, row_len=15):
 
 if __name__ == "__main__":
     #test_logsumexp2()
-    test_and_profile_logpmf(28000000)
+    test_and_profile_logpmf(2800000)
