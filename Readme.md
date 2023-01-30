@@ -6,6 +6,8 @@
 ## KAGE: *K*mer-based *A*lignment-free *G*raph G*e*notyper
 KAGE is a tool for efficiently genotyping short SNPs and indels from short genomic reads.
 
+As of version 0.0.30, KAGE also supports **GPU-acceleration** (referred to as **GKAGE**) and is able to genotype a human sample in a minutes with a GPU having as little as 4 GB of RAM. See guide for running with GPU-acceleration further down.
+
 A manuscript describing the method [can be found here](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-022-02771-2).
 
 ## Installation
@@ -53,14 +55,24 @@ Note:
 KAGE puts data and arrays in shared memory to speed up computation. It automatically frees this memory when finished, but KAGE gets accidentally killed or stops before finishing, you might end up with allocated memory not being freed. You can free this memory by calling `kage free_memory`.
 
 
+## Using KAGE with GPU-support (GKAGE)
+
+As of version 0.0.30, KAGE supports GPU-acceleration for GPUs supporting the CUDA-interface. You will need to have CUDA installed on your system along with CuPy (not automatically installed as part of KAGE). Follow these steps to run KAGE with GPU-support:
+
+1) Make sure you have [CUDA installed](https://developer.nvidia.com/cuda-downloads) and working.
+2) Install a [CuPy](https://docs.cupy.dev/en/stable/install.html) version that matches your CUDA installation.
+3) Install [Cucounter](https://github.com/jorgenwh/cucounter)
+4) Run kmer_mapper with `--gpu True` to tell kmer_mapper to use the GPU. If you want to save memory, you can also use a kmer index that does not have reverse complements. Kmer mapper will then compute the reverse complements from your reads. To this by specifying `-i kmer_index_only_variants_without_revcomp.npz`. For humans you can [use this index](https://zenodo.org/record/7582195/files/kmer_index_only_variants_without_revcomp.npz?download=1).
+5) Run `kage genotype` as normal (kage genotype is already very fast in CPU-mode and does not use GPU-acceleration now).
+
+Note: GKAGE has been tested to work with GPUs with 4 GBs of RAM.
+
+
 ## Recent changes and future plans
 Recent changes:
-* June 2022: Release of version for manuscript in Genome Biology
+* Janyary 30 2023: Release of GPU support (version 0.0.30).
 * October 7 2022: Minor update. Now using [BioNumPy](https://gitub.com/uio-bmi/bionumpy) do parse input files and hash kmers.
-
-Future plans:
-* Ultra-fast genotyping using GPU (a master student at Sandve lab is currently working on this)
-* Support for structural variation
+* June 2022: Release of version for manuscript in Genome Biology
 
 
 ## Support
