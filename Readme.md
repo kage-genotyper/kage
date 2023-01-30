@@ -6,7 +6,7 @@
 ## KAGE: *K*mer-based *A*lignment-free *G*raph G*e*notyper
 KAGE is a tool for efficiently genotyping short SNPs and indels from short genomic reads.
 
-As of version 0.0.30, KAGE also supports **GPU-acceleration** (referred to as **GKAGE**) and is able to genotype a human sample in a minutes with a GPU having as little as 4 GB of RAM. See guide for running with GPU-acceleration further down.
+As of version 0.1.11, KAGE also supports **GPU-acceleration** (referred to as **GKAGE**) and is able to genotype a human sample in a minutes with a GPU having as little as 4 GB of RAM. See guide for running with GPU-acceleration further down.
 
 A manuscript describing the method [can be found here](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-022-02771-2).
 
@@ -57,7 +57,7 @@ KAGE puts data and arrays in shared memory to speed up computation. It automatic
 
 ## Using KAGE with GPU-support (GKAGE)
 
-As of version 0.0.30, KAGE supports GPU-acceleration for GPUs supporting the CUDA-interface. You will need to have CUDA installed on your system along with CuPy (not automatically installed as part of KAGE). Follow these steps to run KAGE with GPU-support:
+As of version 0.1.11, KAGE supports GPU-acceleration for GPUs supporting the CUDA-interface. You will need to have CUDA installed on your system along with CuPy (not automatically installed as part of KAGE). Follow these steps to run KAGE with GPU-support:
 
 1) Make sure you have [CUDA installed](https://developer.nvidia.com/cuda-downloads) and working.
 2) Install a [CuPy](https://docs.cupy.dev/en/stable/install.html) version that matches your CUDA installation.
