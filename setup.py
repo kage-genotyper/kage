@@ -1,22 +1,22 @@
-from setuptools import setup, Extension
+from setuptools import setup, Extension, find_packages
 
 setup(name='kage-genotyper',
-      version='0.1.11',
+      version='0.1.14',
       description='KAGE',
       long_description_content_type="text/markdown",
       url='http://github.com/ivargr/kage',
       author='Ivar Grytten',
       author_email='',
       license='MIT',
-      packages=["kage"],
+      packages=find_packages(include=['kage', 'kage.*']),
       zip_safe=False,
       install_requires=['numpy', 'tqdm', 'pyfaidx', 'pathos', 'cython', 'scipy',
-                        'obgraph>=0.0.32',
-                        'graph_kmer_index>=0.0.22',
+                        'obgraph>=0.0.35',
+                        'graph_kmer_index>=0.0.24',
                         'kmer_mapper>=0.0.30',
                         'graph_read_simulator>=0.0.7',
                         'shared_memory_wrapper>=0.0.27',
-                        'bionumpy>=0.2.15',
+                        'bionumpy>=0.2.21',
                         'npstructures>=0.2.9'
                         ],
       include_dirs=["."],

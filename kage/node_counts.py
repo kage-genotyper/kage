@@ -1,4 +1,5 @@
 import numpy as np
+import logging
 
 
 class NodeCounts:
@@ -10,7 +11,12 @@ class NodeCounts:
     def to_file(self, file_name):
         np.save(file_name, self.node_counts)
 
-    def get_node_count_array(self):
+    def get_node_count_array(self, min_nodes=None):
+        if min_nodes is not None and min_nodes >= len(self.node_counts):
+            # pad with zero counts
+            logging.info("Padding node counts to %d" % min_nodes)
+            return np.pad(self.node_counts, (0, min_nodes-len(self.node_counts)+1))
+
         return self.node_counts
 
     def __getitem__(self, item):

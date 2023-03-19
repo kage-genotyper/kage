@@ -46,6 +46,7 @@ class CombinationModelGenotyper:
 
     def predict(self):
         # find expected count ref, alt for the three different genotypes
+        n_node_counts = len(self._node_counts.get_node_count_array())
         log_memory_usage_now("Genotyping, before getting ref/var nodes")
         ref_nodes = self.index.variant_to_nodes.ref_nodes[
             self._min_variant_id : self._max_variant_id + 1
@@ -56,8 +57,8 @@ class CombinationModelGenotyper:
         log_memory_usage_now("Genotyping, before getting observed counts")
 
         # Get observed counts
-        observed_ref_nodes = self._node_counts.get_node_count_array()[ref_nodes]
-        observed_alt_nodes = self._node_counts.get_node_count_array()[alt_nodes]
+        observed_ref_nodes = self._node_counts.get_node_count_array(min_nodes=ref_nodes[-1])[ref_nodes]
+        observed_alt_nodes = self._node_counts.get_node_count_array(min_nodes=alt_nodes[-1])[alt_nodes]
 
         # One model for ref nodes and one for alt nodes
         logging.info("Creating combomodels")

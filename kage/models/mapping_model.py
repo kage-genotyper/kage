@@ -105,7 +105,11 @@ def _get_sampled_nodes_and_counts_for_range(graph, haplotype_to_nodes, k, kmer_i
         for haplotype_id in [individual_id * 2, individual_id * 2 + 1]:
             nodes = haplotype_to_nodes.get_nodes(haplotype_id)
             nodes_index = np.zeros(n_nodes, dtype=np.uint8)
-            nodes_index[nodes] = 1
+            try:
+                nodes_index[nodes] = 1
+            except IndexError:
+                logging.error(f"Haplotype is {haplotype_id}. N nodes is {n_nodes}. Max nodes: {np.max(nodes)}")
+                raise
             nodes = traverse_graph_by_following_nodes(graph, nodes_index)
             haplotype_nodes.append(nodes)
 
