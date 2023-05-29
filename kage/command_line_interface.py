@@ -30,6 +30,7 @@ from .genotyping.combination_model_genotyper import CombinationModelGenotyper
 from kmer_mapper.command_line_interface import map_bnp
 from argparse import Namespace
 from obgraph.numpy_variants import NumpyVariants
+from .indexing.sparse_haplotype_matrix import make_sparse_haplotype_matrix_cli
 import gc
 
 np.random.seed(1)
@@ -380,6 +381,10 @@ def run_argument_parser(args):
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.set_defaults(func=make_sparse_count_model)
 
+    subparser = subparsers.add_parser("make_sparse_haplotype_matrix")
+    subparser.add_argument("-v", "--vcf-file-name", required=True)
+    subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.set_defaults(func=make_sparse_haplotype_matrix_cli)
 
     if len(args) == 0:
         parser.print_help()

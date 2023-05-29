@@ -8,6 +8,10 @@ import bionumpy as bnp
 from bionumpy.bnpdataclass import bnpdataclass
 import graph_kmer_index
 from obgraph.variant_to_nodes import VariantToNodes
+from kmer_mapper.mapper import map_kmers_to_graph_index
+from graph_kmer_index import KmerIndex, FlatKmers
+from .sparse_haplotype_matrix import SparseHaplotypeMatrix
+from ..models.mapping_model import LimitedFrequencySamplingComboModel
 
 """
 Module for simple variant signature finding by using static predetermined paths through the "graph".
@@ -74,6 +78,9 @@ class Graph:
 
     def n_variants(self):
         return self.variants.n_variants
+
+    def n_nodes(self):
+        return self.n_variants()*2
 
     def sequence(self, haplotypes: np.ndarray) -> bnp.EncodedArray:
         """
@@ -199,7 +206,7 @@ class SignatureFinder:
     """
     For each variant chooses a signature (a set of kmers) based one a Scores
     """
-    def __init__(self, paths: Paths, scorer: Scorer, k=3):
+    def __init__(self, paths: Paths, scorer: Scorer = None, k=3):
         self._paths = paths
         self._scorer = scorer
         self._k = k
@@ -219,7 +226,16 @@ class SignatureFinder:
             all_node_ids.append(np.full(len(variant_kmers), node_id_alt, dtype=np.uint32))
 
         from graph_kmer_index import FlatKmers
-        return FlatKmers(np.array(all_kmers), np.array(all_node_ids))
+        return FlatKmers(np.concatenate(all_kmers), np.concatenate(all_node_ids))
+
+    def get_as_kmer_index(self, include_reverse_complements=True):
+        flat = self.get_as_flat_kmers()
+        if include_reverse_complements:
+            rev_comp_flat = flat.get_reverse_complement_flat_kmers(self._k)
+            flat = FlatKmers.from_multiple_flat_kmers([flat, rev_comp_flat])
+        index = KmerIndex.from_flat_kmers(flat)
+        index.convert_to_int32()
+        return index
 
     def run(self) -> Signatures:
         """
@@ -239,11 +255,13 @@ class SignatureFinder:
             assert np.all(all_ref_kmers.shape[1] == all_alt_kmers.shape[1])
 
             for window in range(len(all_ref_kmers[0])):
-                ref_kmers = np.unique(all_ref_kmers[:, window].raw())
-                alt_kmers = np.unique(all_alt_kmers[:, window].raw())
+                ref_kmers = np.unique(all_ref_kmers[:, window].raw().ravel())
+                alt_kmers = np.unique(all_alt_kmers[:, window].raw().ravel())
+
+                print(ref_kmers, alt_kmers)
 
                 all_kmers = np.concatenate([ref_kmers, alt_kmers])
-                window_score = self._scorer.score_kmers(all_kmers)
+                window_score = self._scorer.score_kmers(all_kmers) if self._scorer is not None else 0
 
                 # if overlap between ref and alt, lower score
                 if len(set(ref_kmers).intersection(alt_kmers)) > 0:
@@ -304,10 +322,58 @@ class SimpleKmerIndex:
         return nps.HashTable(np.concatenate(all_kemrs), np.concatenate(all_node_ids), modulo=modulo)
 
 
+class MappingModelCreator:
+    def __init__(self, graph: Graph, kmer_index: KmerIndex,
+                 haplotype_matrix: SparseHaplotypeMatrix, max_count=10, k=31):
+        self._graph = graph
+        self._kmer_index = kmer_index
+        self._haplotype_matrix = haplotype_matrix
+        self._n_nodes = graph.n_nodes()
+        self._counts = LimitedFrequencySamplingComboModel.create_empty(self._n_nodes, max_count)
+        self._k = k
+        self._max_count = max_count
 
+    def _process_individual(self, i):
+        # extract kmers from both haplotypes and map these using the kmer index
+        haplotype1 = self._haplotype_matrix.get_haplotype(i*2)
+        haplotype2 = self._haplotype_matrix.get_haplotype(i*2+1)
 
-def index(graph: Graph):
+        sequence1 = self._graph.sequence(haplotype1).ravel()
+        sequence2 = self._graph.sequence(haplotype2).ravel()
+
+        kmers1 = bnp.get_kmers(sequence1, self._k).ravel().raw().astype(np.uint64)
+        kmers2 = bnp.get_kmers(sequence2, self._k).ravel().raw().astype(np.uint64)
+
+        node_counts = self._kmer_index.map_kmers(kmers1, self._n_nodes)
+        node_counts += self._kmer_index.map_kmers(kmers2, self._n_nodes)
+
+        # split into nodes that the haplotype has and nodes not
+        # mask represents the number of haplotypes this individual has per node (0, 1 or 2 for diploid individuals)
+        mask = np.zeros(self._n_nodes, dtype=np.int8)
+        mask[haplotype1] += 1
+        mask[haplotype2] += 1
+
+        for genotype in [0, 1, 2]:
+            nodes_with_genotype = np.where(mask == genotype)[0]
+            counts_on_nodes = node_counts[nodes_with_genotype].astype(int)
+            below_max_count = np.where(counts_on_nodes < self._max_count)[0]  # ignoring counts larger than supported by matrix
+            self._counts.diplotype_counts[genotype][
+                nodes_with_genotype[below_max_count], counts_on_nodes[below_max_count]
+            ] += 1
+
+    def run(self) -> LimitedFrequencySamplingComboModel:
+        n_variants, n_haplotypes = self._haplotype_matrix.shape
+        n_nodes = n_variants * 2
+        for individual in range(n_haplotypes // 2):
+            self._process_individual(individual)
+
+        return self._counts
+
+def index(vcf_file_name):
+    graph = Graph.from_vcf(vcf_file_name)
     paths = Paths(graph, window=3)
     variant_signatures = SignatureFinder(paths).get_as_flat_kmers()
     kmer_index = graph_kmer_index.KmerIndex.from_flat_kmers(variant_signatures)
     variant_to_nodes = VariantToNodes(np.arange(graph.n_variants())*2, np.arange(graph.n_variants())*2+1)
+
+    haplotype_matrix = SparseHaplotypeMatrrix.from_vcf(vcf_file_name)

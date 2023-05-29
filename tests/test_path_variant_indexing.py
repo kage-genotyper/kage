@@ -1,5 +1,6 @@
 import pytest
-from kage.indexing.path_variant_indexing import Paths, Variants, PathCreator, GenomeBetweenVariants, SignatureFinder, zip_sequences, Graph
+from kage.indexing.path_variant_indexing import Paths, Variants, PathCreator, GenomeBetweenVariants, SignatureFinder, zip_sequences, Graph, MappingModelCreator
+from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 import bionumpy as bnp
 import numpy as np
 
@@ -23,6 +24,12 @@ def genome():
 @pytest.fixture
 def graph(genome, variants):
     return Graph(genome, variants)
+
+
+@pytest.fixture
+def haplotype_matrix(graph):
+    return SparseHaplotypeMatrix.from_variants_and_haplotypes(
+        np.array([0, 0, 1, 2, 2]), np.array([0, 1, 2, 2, 1]), graph.n_variants(), 4)
 
 
 def tests_variants(variants):
@@ -83,3 +90,13 @@ def test_zip_sequences():
 
     correct = "AATCCGGTTTAAAC"
     assert zip_sequences(a, b).ravel().to_string() == correct
+
+
+
+def test_mapping_model_creator(graph, haplotype_matrix):
+    paths = PathCreator(graph, window=3).run()
+    kmer_index = SignatureFinder(paths).get_as_kmer_index()
+    model_creator = MappingModelCreator(graph, kmer_index, haplotype_matrix, k=3)
+    model = model_creator.run()
+
+    print(model)
