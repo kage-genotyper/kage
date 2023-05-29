@@ -108,3 +108,4 @@ def find_tricky_variants(args):
     TrickyVariants(tricky_variants).to_file(args.out_file_name)
     # np.save(args.out_file_name, tricky_variants)
     logging.info("Wrote tricky variants to file %s" % args.out_file_name)
+
