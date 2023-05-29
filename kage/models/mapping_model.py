@@ -193,10 +193,7 @@ def make_sparse_count_model(args):
     logging.info("Wrote to " + args.out_file_name)
 
 
-def refine_sampling_model(args):
-    model = from_file(args.sampling_model)
-    variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
-
+def refine_sampling_model_noncli(model, variant_to_nodes):
     models = [
         model.subset_on_nodes(variant_to_nodes.ref_nodes),
         model.subset_on_nodes(variant_to_nodes.var_nodes)
@@ -205,6 +202,11 @@ def refine_sampling_model(args):
     for m in models:
         m.astype(np.float16)
         m.fill_empty_data()
+    return models
 
+def refine_sampling_model(args):
+    model = from_file(args.sampling_model)
+    variant_to_nodes = VariantToNodes.from_file(args.variant_to_nodes)
+    models = refine_sampling_model_noncli(model, variant_to_nodes)
     to_file(models, args.out_file_name)
     logging.info("Wrote refined model to %s" % args.out_file_name)

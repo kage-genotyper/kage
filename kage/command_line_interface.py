@@ -31,6 +31,7 @@ from kmer_mapper.command_line_interface import map_bnp
 from argparse import Namespace
 from obgraph.numpy_variants import NumpyVariants
 from .indexing.sparse_haplotype_matrix import make_sparse_haplotype_matrix_cli
+from .indexing.path_variant_indexing import make_index_cli
 import gc
 
 np.random.seed(1)
@@ -63,6 +64,8 @@ def genotype(args):
     logging.info("Reading all indexes from an index bundle")
     t = time.perf_counter()
     index = IndexBundle.from_file(args.index_bundle).indexes
+    print("Count model")
+    print(index.count_model)
     logging.debug("Reading indexes took %.3f sec" % (time.perf_counter()-t))
     config = GenotypingConfig.from_command_line_args(args)
 
@@ -385,6 +388,15 @@ def run_argument_parser(args):
     subparser.add_argument("-v", "--vcf-file-name", required=True)
     subparser.add_argument("-o", "--out-file-name", required=True)
     subparser.set_defaults(func=make_sparse_haplotype_matrix_cli)
+
+    subparser = subparsers.add_parser("index")
+    subparser.add_argument("-r", "--reference", required=True)
+    subparser.add_argument("-v", "--vcf", required=True)
+    subparser.add_argument("-V", "--vcf-no-genotypes", required=True)
+    subparser.add_argument("-o", "--out-base-name", required=True)
+    subparser.add_argument("-k", "--kmer-size", required=False, type=int, default=31)
+    subparser.set_defaults(func=make_index_cli)
+
 
     if len(args) == 0:
         parser.print_help()

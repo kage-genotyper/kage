@@ -61,8 +61,8 @@ def test_create_path(graph):
 def test_get_kmers(graph):
     creator = PathCreator(graph)
     paths = creator.run()
-    kmers = paths.get_kmers(0, 0)
-
+    kmers = paths.get_kmers(0, 0, kmer_size=4)
+    print(kmers)
 
 class DummyScorer:
     def __init__(self):
@@ -117,3 +117,4 @@ def test_graph_from_vcf():
 
     # following alt at all variants
     assert graph.sequence(np.array([1, 1, 1])).ravel().to_string() == "AAATCCTTTCCGTTTT"
+
