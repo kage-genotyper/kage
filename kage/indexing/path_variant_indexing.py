@@ -93,6 +93,57 @@ class Graph:
         # stitch these together
         return zip_sequences(ref_sequence, variant_sequences)
 
+    @classmethod
+    def from_vcf(cls, vcf_file_name, reference_file_name):
+        reference = bnp.open(reference_file_name, bnp.DNAEncoding).read()
+        assert len(reference) == 1, "Only one chromosome supported now"
+
+        reference = reference.sequence[0]
+
+        sequences_between_variants = []
+        variant_sequences = []
+
+        vcf = bnp.open(vcf_file_name, bnp.DNAEncoding)
+        prev_ref_pos = 0
+        for chunk in vcf:
+            for variant in chunk:
+                pos = variant.position
+                ref = variant.ref_seq
+                alt = variant.alt_seq
+
+                if len(ref) > len(alt) or len(alt) > len(ref):
+                    # indel
+                    pos_before = pos
+                    if len(ref) == 1:
+                        # insertion
+                        pos_after = pos_before + 1
+                        ref = ref[0:0]
+                        alt = alt[1:]
+                    else:
+                        # deletion
+                        assert len(alt) == 1
+                        pos_after = pos_before + len(ref)
+                        alt = alt[0:0]
+                        ref = ref[1:]
+
+                else:
+                    # snp
+                    assert len(ref) == len(alt) == 1
+                    pos_before = pos - 1
+                    pos_after = pos_before + 2
+
+
+                sequences_between_variants.append(reference[prev_ref_pos:pos_before+1].to_string())
+                prev_ref_pos = pos_after
+                variant_sequences.append([ref.to_string(), alt.to_string()])
+
+        # add last bit of reference
+        sequences_between_variants.append(reference[prev_ref_pos:].to_string())
+
+        return cls(GenomeBetweenVariants(bnp.as_encoded_array(sequences_between_variants, bnp.DNAEncoding)),
+                     Variants.from_list(variant_sequences))
+
+
 @dataclass
 class Paths:
     paths: List[bnp.EncodedRaggedArray]
@@ -369,11 +420,15 @@ class MappingModelCreator:
 
         return self._counts
 
-def index(vcf_file_name):
-    graph = Graph.from_vcf(vcf_file_name)
-    paths = Paths(graph, window=3)
-    variant_signatures = SignatureFinder(paths).get_as_flat_kmers()
-    kmer_index = graph_kmer_index.KmerIndex.from_flat_kmers(variant_signatures)
+
+def index(reference_file_name, vcf_file_name, out_base_name, k=31, variant_window=3):
+    graph = Graph.from_vcf(vcf_file_name, reference_file_name)
+    haplotype_matrix = SparseHaplotypeMatrix.from_vcf(vcf_file_name)
+
+    paths = PathCreator(graph, window=variant_window).run()
+    kmer_index = SignatureFinder(paths, scorer=None).get_as_kmer_index()
+    model_creator = MappingModelCreator(graph, kmer_index, haplotype_matrix, k=k)
+    count_model = model_creator.run()
+
     variant_to_nodes = VariantToNodes(np.arange(graph.n_variants())*2, np.arange(graph.n_variants())*2+1)
 
-    haplotype_matrix = SparseHaplotypeMatrrix.from_vcf(vcf_file_name)

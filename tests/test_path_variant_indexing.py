@@ -58,8 +58,8 @@ def test_create_path(graph):
     assert len(paths.paths) == 8
 
 
-def test_get_kmers(genome, variants):
-    creator = PathCreator(variants, genome)
+def test_get_kmers(graph):
+    creator = PathCreator(graph)
     paths = creator.run()
     kmers = paths.get_kmers(0, 0)
 
@@ -80,9 +80,6 @@ def test_signatures(graph):
     print(signatures)
 
 
-def test_simple_kmer_index():
-    index = nps.HashTable()
-
 
 def test_zip_sequences():
     a = bnp.as_encoded_array(["AA", "CC", "GG", "TT", "C"], bnp.DNAEncoding)
@@ -100,3 +97,23 @@ def test_mapping_model_creator(graph, haplotype_matrix):
     model = model_creator.run()
 
     print(model)
+
+
+def test_graph_from_vcf():
+    graph = Graph.from_vcf("../example_data/few_variants.vcf", "../example_data/small_reference.fa")
+    assert graph.n_variants() == 3
+    assert [s for s in graph.genome.sequence.tolist()] == \
+        ["AAA", "CC", "CCG", "TTTT"]
+
+    assert graph.variants.get_allele_sequence(0, 0) == "A"
+    assert graph.variants.get_allele_sequence(0, 1) == "T"
+    assert graph.variants.get_allele_sequence(1, 0) == ""
+    assert graph.variants.get_allele_sequence(1, 1) == "TTT"
+    assert graph.variants.get_allele_sequence(2, 0) == "GGG"
+    assert graph.variants.get_allele_sequence(2, 1) == ""
+
+    # following ref at all variants should give ref sequence
+    assert graph.sequence(np.array([0, 0, 0])).ravel().to_string() == "AAAACCCCGGGGTTTT"
+
+    # following alt at all variants
+    assert graph.sequence(np.array([1, 1, 1])).ravel().to_string() == "AAATCCTTTCCGTTTT"
