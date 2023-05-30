@@ -85,7 +85,7 @@ def test_signatures(graph):
 def test_signature_finder3(graph):
     creator = PathCreator(graph)
     paths = creator.run()
-    scorer = FastApproxCounter.from_keys_and_values([1, 2, 3], [1, 2, 3], 21)
+    scorer = FastApproxCounter.from_keys_and_values(np.array([1, 2, 100]), np.array([1, 2, 3]), 21)
     signature_finder = SignatureFinder3(paths, scorer)
     signatures = signature_finder.run()
     print(signatures)
