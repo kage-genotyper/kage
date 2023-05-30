@@ -24,6 +24,12 @@ class SparseHaplotypeMatrix:
     def get_haplotype(self, haplotype_id):
         return self.data.getcol(haplotype_id).toarray().flatten()
 
+    def get_haplotype_nodes(self, haplotype_id):
+        # assuming implicit node conversion
+        haplotypes = self.get_haplotype(haplotype_id)
+        nodes = np.arange(len(haplotypes)) * 2 + haplotypes
+        return nodes
+
     @property
     def shape(self):
         return self.data.shape

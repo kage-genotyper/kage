@@ -17,6 +17,8 @@ import tqdm
 from .index_bundle import IndexBundle
 from .sparse_haplotype_matrix import SparseHaplotypeMatrix
 from ..models.mapping_model import LimitedFrequencySamplingComboModel
+from shared_memory_wrapper import to_file, from_file
+from npstructures import ragged_slice
 
 """
 Module for simple variant signature finding by using static predetermined paths through the "graph".
@@ -91,7 +93,7 @@ class Graph:
         """
         Returns the sequence through the graph given haplotypes for all variants
         """
-        assert len(haplotypes) == self.n_variants()
+        assert len(haplotypes) == self.n_variants(), (len(haplotypes), self.n_variants())
         ref_sequence = self.genome.sequence
         variant_sequences = self.variants.get_haplotype_sequence(haplotypes)
 
@@ -99,7 +101,7 @@ class Graph:
         return zip_sequences(ref_sequence, variant_sequences)
 
     @classmethod
-    def from_vcf(cls, vcf_file_name, reference_file_name):
+    def from_vcf(cls, vcf_file_name, reference_file_name, k=31):
         reference = bnp.open(reference_file_name, bnp.encodings.ACGTnEncoding).read()
         assert len(reference) == 1, "Only one chromosome supported now"
 
@@ -115,6 +117,11 @@ class Graph:
                 pos = variant.position
                 ref = variant.ref_seq
                 alt = variant.alt_seq
+
+                #if pos > len(reference) - k:
+                #logging.info("Skipping variant too close to end of chromosome")
+                #continue
+
 
                 if len(ref) > len(alt) or len(alt) > len(ref):
                     # indel
@@ -151,10 +158,96 @@ class Graph:
 
 
 @dataclass
+class VariantWindowKmers:
+    """
+    Kmers for variants.
+    """
+    kmers: List[bnp.EncodedRaggedArray]  # each element is a path, rows in ragged array are variants
+    variant_alleles: np.ndarray  # the allele present at each variant in each path
+
+    def get_kmers(self, variant, allele):
+        relevant_paths = np.where(self.variant_alleles[:, variant] == allele)[0]
+        n_kmers_per_window = len(self.kmers[relevant_paths[0]][variant])
+        out = np.zeros((len(relevant_paths), n_kmers_per_window), dtype=np.uint64)
+        for i, path in enumerate(relevant_paths):
+            out[i, :] = self.kmers[path][variant].raw()
+        return out
+
+
+@dataclass
+class MatrixVariantWindowKmers:
+    """
+    Represents kmers around kmers in a 3-dimensional matrix, possible when n kmers per variant allele is fixed
+    """
+    kmers: np.ndarray  # n_paths, n variants x n_windows
+    variant_alleles: np.ndarray
+
+    @classmethod
+    def from_paths(cls, paths, k):
+        n_variants = paths.n_variants()
+        print(f"n_variants: {n_variants}")
+        n_paths = len(paths.paths)
+        n_windows = k - k//2
+        print(f"n_paths: {n_paths}, n_windows: {n_windows}")
+        matrix = np.zeros((n_paths, n_variants, n_windows), dtype=np.uint64)
+
+
+        for i, path in enumerate(paths.paths):
+            starts = path._shape.starts[1::2]
+            window_starts = starts - k + 1 + k//2
+            #window_ends = np.minimum(starts + k, path.size)
+            window_ends = starts + k
+            windows = bnp.ragged_slice(path.ravel(), window_starts, window_ends)
+            kmers = bnp.get_kmers(windows, k=k).ravel().raw().astype(np.uint64)
+            kmers = kmers.reshape((n_variants, n_windows))
+            matrix[i, :, :] = kmers
+
+        return cls(matrix, paths.variant_alleles)
+
+    def get_kmers(self, variant, allele):
+        relevant_paths = np.where(self.variant_alleles[:, variant] == allele)[0]
+        return self.kmers[relevant_paths, variant, :]
+
+    def get_best_kmers(self, scorer):
+        # score all kmers
+        # returns a matrix of shape n_paths x n_variants containing the kmers chosen for each variant
+        # pick one window per variant
+        logging.info("Scoring all candidate kmers")
+        scores = scorer.score_kmers(self.kmers.ravel()).reshape(self.kmers.shape)
+        # window scores are the lowest score among all paths in windows
+        #scores = np.min(scores, axis=0)
+        scores = np.sum(scores, axis=0)
+        # best window has the highest score
+        logging.info("Finding best windows based on scores")
+        best_windows = np.argmax(scores, axis=1)
+        best_kmers = self.kmers[:, np.arange(self.kmers.shape[1]), best_windows]
+        assert best_kmers.shape[0] == self.kmers.shape[0]
+        return best_kmers
+
+
+class FastApproxCounter:
+    """ Fast counter that uses modulo and allows collisions"""
+    def __init__(self, array, modulo):
+        self._array = array
+        self._modulo = modulo
+
+    @classmethod
+    def from_keys_and_values(cls, keys, values, modulo):
+        array = np.zeros(modulo, dtype=np.uint16)
+        array[keys % modulo] = values
+        return cls(array, modulo)
+
+    def __getitem__(self, keys):
+        return self._array[keys % self._modulo]
+
+    def score_kmers(self, kmers):
+        return -self[kmers]
+
+@dataclass
 class Paths:
     paths: List[bnp.EncodedRaggedArray]
     # the allele present at each variant in each path
-    variant_alleles: np.ndarray
+    variant_alleles: np.ndarray  # n_paths x n_variants
     #path_kmers: List[bnp.EncodedRaggedArray] = None
 
     def n_variants(self):
@@ -164,6 +257,25 @@ class Paths:
         relevant_paths = np.where(self.variant_alleles[:, variant] == allele)[0]
         return [self.paths[p] for p in relevant_paths]
 
+    def get_windows_around_variants(self, k):
+        logging.info("Computing kmers around variants")
+        windowed_paths = []
+        for i, path in enumerate(self.paths):
+            starts = path._shape.starts[1::2]
+            window_starts = starts - k + 1
+            window_ends = np.minimum(starts + k, path.size)
+            windows = bnp.ragged_slice(path.ravel(), window_starts, window_ends)
+            windowed_paths.append(
+                bnp.get_kmers(windows, k=k)
+            )
+
+        return VariantWindowKmers(windowed_paths, self.variant_alleles)
+
+    def __str__(self):
+        return "\n".join(f"Path {i}: {path}" for i, path in enumerate(self.paths))
+
+    def __repr__(self):
+        return str(self)
 
     def get_kmers(self, variant, allele, kmer_size=3):
         # gets all kmers of size kmer_size around the variant allele (on all paths relevant for the allele)
@@ -188,6 +300,19 @@ class Paths:
         #return kmers
         return out
         #return nps.RaggedArray(window_kmers)
+    
+
+@dataclass
+class PathsAroundVariants:
+    """
+    Path-like, but only contains sequences around variants, precomputed with kmer
+    """
+    kmers: List[bnp.EncodedRaggedArray]  # one encoded ragged array for each path. Each row in each ragged array represents a variant
+    variant_alleles: np.ndarray
+
+    def get_kmers(self, alleles):
+        """ Returns kmers for all variants"""
+        pass
 
 
 class PathCreator:
@@ -313,7 +438,7 @@ class SignatureFinder:
 
         for variant in tqdm.tqdm(range(self._paths.n_variants()), desc="Finding signatures", unit="variants", total=self._paths.n_variants()):
             best_kmers = None
-            best_score = -1000000000
+            best_score = -10000000000000000000
             all_ref_kmers = self._paths.get_kmers(variant, 0, self._k)
             all_alt_kmers = self._paths.get_kmers(variant, 1, self._k)
 
@@ -334,8 +459,68 @@ class SignatureFinder:
                     best_kmers = [ref_kmers, alt_kmers]
                     best_score = window_score
 
+
             chosen_ref_kmers.append(best_kmers[0])
             chosen_alt_kmers.append(best_kmers[1])
+
+        return Signatures(nps.RaggedArray(chosen_ref_kmers), nps.RaggedArray(chosen_alt_kmers))
+
+
+class SignatureFinder2(SignatureFinder):
+    def run(self) -> Signatures:
+        # for each path, first creates a RaggedArray with windows for each variant
+        paths = MatrixVariantWindowKmers.from_paths(self._paths, self._k)  # ._paths.get_windows_around_variants(self._k)
+        chosen_ref_kmers = []
+        chosen_alt_kmers = []
+
+        for variant in tqdm.tqdm(range(self._paths.n_variants()), desc="Finding signatures", unit="variants",
+                                 total=self._paths.n_variants()):
+            best_kmers = None
+            best_score = -10000000000000000000
+            all_ref_kmers = paths.get_kmers(variant, 0)
+            all_alt_kmers = paths.get_kmers(variant, 1)
+            #assert np.all(all_ref_kmers.shape[1] == all_alt_kmers.shape[1])
+
+            for window in range(len(all_ref_kmers[0])):
+                ref_kmers = np.unique(all_ref_kmers[:, window])  # .raw().ravel())
+                alt_kmers = np.unique(all_alt_kmers[:, window])  # .raw().ravel())
+
+                all_kmers = np.concatenate([ref_kmers, alt_kmers])
+                window_score = self._scorer.score_kmers(all_kmers) if self._scorer is not None else 0
+
+                # if overlap between ref and alt, lower score
+                if len(set(ref_kmers).intersection(alt_kmers)) > 0:
+                    window_score -= 1000
+
+                if window_score > best_score:
+                    best_kmers = [ref_kmers, alt_kmers]
+                    best_score = window_score
+
+            chosen_ref_kmers.append(best_kmers[0])
+            chosen_alt_kmers.append(best_kmers[1])
+
+        return Signatures(nps.RaggedArray(chosen_ref_kmers), nps.RaggedArray(chosen_alt_kmers))
+
+
+class SignatureFinder3(SignatureFinder):
+    def run(self) -> Signatures:
+        kmers = MatrixVariantWindowKmers.from_paths(self._paths, self._k)
+        best_kmers = kmers.get_best_kmers(self._scorer)
+
+        # hack to split matrix into ref and alt kmers
+        n_variants = self._paths.n_variants()
+        n_paths = len(self._paths.paths)
+        all_ref_kmers = best_kmers.T[kmers.variant_alleles.T == 0].reshape((n_variants, n_paths//2))
+        all_alt_kmers = best_kmers.T[kmers.variant_alleles.T == 1].reshape((n_variants, n_paths//2))
+
+        chosen_ref_kmers = []
+        chosen_alt_kmers = []
+
+        for variant_id, (ref_kmers, alt_kmers) in enumerate(zip(all_ref_kmers, all_alt_kmers)):
+            ref_kmers = np.unique(ref_kmers)
+            alt_kmers = np.unique(alt_kmers)
+            chosen_ref_kmers.append(ref_kmers)
+            chosen_alt_kmers.append(alt_kmers)
 
         return Signatures(nps.RaggedArray(chosen_ref_kmers), nps.RaggedArray(chosen_alt_kmers))
 
@@ -366,6 +551,10 @@ class MappingModelCreator:
         haplotype1 = self._haplotype_matrix.get_haplotype(i*2)
         haplotype2 = self._haplotype_matrix.get_haplotype(i*2+1)
 
+        haplotype1_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2)
+        haplotype2_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2+1)
+
+
         sequence1 = self._graph.sequence(haplotype1).ravel()
         sequence2 = self._graph.sequence(haplotype2).ravel()
 
@@ -378,8 +567,8 @@ class MappingModelCreator:
         # split into nodes that the haplotype has and nodes not
         # mask represents the number of haplotypes this individual has per node (0, 1 or 2 for diploid individuals)
         mask = np.zeros(self._n_nodes, dtype=np.int8)
-        mask[haplotype1] += 1
-        mask[haplotype2] += 1
+        mask[haplotype1_nodes] += 1
+        mask[haplotype2_nodes] += 1
 
         for genotype in [0, 1, 2]:
             nodes_with_genotype = np.where(mask == genotype)[0]
@@ -398,13 +587,41 @@ class MappingModelCreator:
         return self._counts
 
 
-def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, out_base_name, k=31, variant_window=2):
+def make_linear_reference_kmer_counter(reference_file_name, k=31, modulo=20000033):
+    """
+    Gets all kmers from a linear reference.
+    """
+    from graph_kmer_index.kmer_counter import KmerCounter
+    logging.info("Getting kmers from linear ref")
+    reference = bnp.open(reference_file_name).read()
+    reference.sequence[reference.sequence == "N"] = "A"  # tmp hack to allow kmer encoding
+
+    kmers = bnp.get_kmers(reference.sequence, k)
+    kmers = kmers.raw().ravel().astype(np.uint64)
+    
+    from graph_kmer_index.kmer_hashing import kmer_hashes_to_reverse_complement_hash
+    logging.info("Getting reverse complements")
+    revcomp = kmer_hashes_to_reverse_complement_hash(kmers, k)
+    kmers = np.concatenate([kmers, revcomp])
+
+    counter = KmerCounter.from_kmers(kmers, modulo)
+    return counter
+
+
+def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, out_base_name, k=31, modulo=20000033, variant_window=2):
+    """
+    Makes all indexes and writes to an index bundle.
+    """
+    linear_kmer_counter = make_linear_reference_kmer_counter(reference_file_name, k=k, modulo=modulo)
+    c = linear_kmer_counter.counter
+    scorer = FastApproxCounter.from_keys_and_values(c._keys.ravel(), c[c._keys.ravel()], modulo=modulo)
+
     logging.info("Making graph")
     graph = Graph.from_vcf(vcf_no_genotypes_file_name, reference_file_name)
 
     logging.info("Making paths")
     paths = PathCreator(graph, window=variant_window).run()
-    kmer_index = SignatureFinder(paths, scorer=None, k=k).get_as_kmer_index()
+    kmer_index = SignatureFinder3(paths, scorer=scorer, k=k).get_as_kmer_index()
 
     logging.info("Making haplotype matrix")
     haplotype_matrix = SparseHaplotypeMatrix.from_vcf(vcf_file_name)

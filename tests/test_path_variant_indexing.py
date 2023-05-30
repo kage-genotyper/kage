@@ -1,5 +1,7 @@
 import pytest
-from kage.indexing.path_variant_indexing import Paths, Variants, PathCreator, GenomeBetweenVariants, SignatureFinder, zip_sequences, Graph, MappingModelCreator
+from kage.indexing.path_variant_indexing import Paths, Variants, PathCreator, GenomeBetweenVariants, \
+    SignatureFinder, SignatureFinder2, zip_sequences, Graph, MappingModelCreator, \
+    MatrixVariantWindowKmers, FastApproxCounter, SignatureFinder3
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 import bionumpy as bnp
 import numpy as np
@@ -75,10 +77,18 @@ class DummyScorer:
 def test_signatures(graph):
     creator = PathCreator(graph)
     paths = creator.run()
-    signature_finder = SignatureFinder(paths, DummyScorer())
+    signature_finder = SignatureFinder2(paths, DummyScorer())
     signatures = signature_finder.run()
     print(signatures)
 
+
+def test_signature_finder3(graph):
+    creator = PathCreator(graph)
+    paths = creator.run()
+    scorer = FastApproxCounter.from_keys_and_values([1, 2, 3], [1, 2, 3], 21)
+    signature_finder = SignatureFinder3(paths, scorer)
+    signatures = signature_finder.run()
+    print(signatures)
 
 
 def test_zip_sequences():
@@ -118,3 +128,20 @@ def test_graph_from_vcf():
     # following alt at all variants
     assert graph.sequence(np.array([1, 1, 1])).ravel().to_string() == "AAATCCTTTCCGTTTT"
 
+
+
+def test_path_windows(graph):
+    creator = PathCreator(graph)
+    paths = creator.run()
+    windows = paths.get_windows_around_variants(3)
+    print("WINDOWS")
+    print(windows)
+
+
+
+def test_matrix_variant_window_kmers(graph):
+    creator = PathCreator(graph)
+    paths = creator.run()
+    kmers = MatrixVariantWindowKmers.from_paths(paths, k=3)
+    print("kmers")
+    print(kmers)
