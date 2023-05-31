@@ -187,7 +187,7 @@ class MatrixVariantWindowKmers:
         n_variants = paths.n_variants()
         print(f"n_variants: {n_variants}")
         n_paths = len(paths.paths)
-        n_windows = k - k//2
+        n_windows = k - k//2 - 1
         print(f"n_paths: {n_paths}, n_windows: {n_windows}")
         matrix = np.zeros((n_paths, n_variants, n_windows), dtype=np.uint64)
 
@@ -196,7 +196,7 @@ class MatrixVariantWindowKmers:
             starts = path._shape.starts[1::2]
             window_starts = starts - k + 1 + k//2
             #window_ends = np.minimum(starts + k, path.size)
-            window_ends = starts + k
+            window_ends = starts + k - 1
             windows = bnp.ragged_slice(path.ravel(), window_starts, window_ends)
             kmers = bnp.get_kmers(windows, k=k).ravel().raw().astype(np.uint64)
             kmers = kmers.reshape((n_variants, n_windows))
@@ -217,6 +217,8 @@ class MatrixVariantWindowKmers:
         # window scores are the lowest score among all paths in windows
         #scores = np.min(scores, axis=0)
         scores = np.sum(scores, axis=0)
+        # score rightmost window a bit more to prefer this on a tie
+        scores[:, -1] += 1
         # best window has the highest score
         logging.info("Finding best windows based on scores")
         best_windows = np.argmax(scores, axis=1)
@@ -332,7 +334,7 @@ class PathCreator:
 
         # each path will have sequences between each variant and the allele sequences specified in combinations
         ref_between = self._genome.sequence
-        for i, alleles in enumerate(combinations):
+        for i, alleles in tqdm.tqdm(enumerate(combinations), total=n_paths, desc="Creating paths through graph", unit="path"):
             # make a new EncodedRaggedArray where every other row is ref/variant
             """"
             n_rows = len(ref_between) + n_variants
@@ -425,7 +427,7 @@ class SignatureFinder:
         if include_reverse_complements:
             rev_comp_flat = flat.get_reverse_complement_flat_kmers(self._k)
             flat = FlatKmers.from_multiple_flat_kmers([flat, rev_comp_flat])
-        index = KmerIndex.from_flat_kmers(flat)
+        index = KmerIndex.from_flat_kmers(flat, skip_frequencies=True)
         index.convert_to_int32()
         return index
 
@@ -516,9 +518,13 @@ class SignatureFinder3(SignatureFinder):
         chosen_ref_kmers = []
         chosen_alt_kmers = []
 
-        for variant_id, (ref_kmers, alt_kmers) in enumerate(zip(all_ref_kmers, all_alt_kmers)):
+        for variant_id, (ref_kmers, alt_kmers) in tqdm.tqdm(enumerate(zip(all_ref_kmers, all_alt_kmers)), desc="Iterating signatures", unit="variants", total=n_variants):
             ref_kmers = np.unique(ref_kmers)
             alt_kmers = np.unique(alt_kmers)
+            if set(ref_kmers).intersection(alt_kmers):
+                ref_kmers = np.array([])
+                alt_kmers = np.array([])
+
             chosen_ref_kmers.append(ref_kmers)
             chosen_alt_kmers.append(alt_kmers)
 
@@ -608,20 +614,43 @@ def make_linear_reference_kmer_counter(reference_file_name, k=31, modulo=2000003
     return counter
 
 
-def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, out_base_name, k=31, modulo=20000033, variant_window=2):
+
+def make_scorer_from_paths(paths: Paths, k, modulo):
+    kmers = []
+    for path in tqdm.tqdm(paths.paths, desc="Getting kmers from paths", unit="paths"):
+        kmers.append(bnp.get_kmers(path.ravel(), k=k).raw().ravel().astype(np.uint64))
+        kmers.append(bnp.get_kmers(bnp.sequence.get_reverse_complement(path).ravel(), k=k).raw().ravel().astype(np.uint64))
+
+    kmers = np.concatenate(kmers).astype(np.int64)
+
+    # using fastapproccounter, we only need to bincount
+    counter = np.bincount(kmers % modulo, minlength=modulo)
+    return FastApproxCounter(counter, modulo=modulo)
+
+    #logging.info("Getting unique kmers and counts")
+    #unique, counts = np.unique(kmers, return_counts=True)
+    #return FastApproxCounter.from_keys_and_values(unique, counts, modulo=modulo)
+
+
+def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, out_base_name, k=31, modulo=20000033, variant_window=4):
     """
     Makes all indexes and writes to an index bundle.
     """
-    linear_kmer_counter = make_linear_reference_kmer_counter(reference_file_name, k=k, modulo=modulo)
-    c = linear_kmer_counter.counter
-    scorer = FastApproxCounter.from_keys_and_values(c._keys.ravel(), c[c._keys.ravel()], modulo=modulo)
+    #linear_kmer_counter = make_linear_reference_kmer_counter(reference_file_name, k=k, modulo=modulo)
+    #c = linear_kmer_counter.counter
+    #scorer = FastApproxCounter.from_keys_and_values(c._keys.ravel(), c[c._keys.ravel()], modulo=modulo)
 
     logging.info("Making graph")
     graph = Graph.from_vcf(vcf_no_genotypes_file_name, reference_file_name)
 
     logging.info("Making paths")
     paths = PathCreator(graph, window=variant_window).run()
+    scorer = make_scorer_from_paths(paths, k, modulo)
     kmer_index = SignatureFinder3(paths, scorer=scorer, k=k).get_as_kmer_index()
+
+    # debugging, get signature kmers flat
+    #signature_kmers = SignatureFinder3(paths, scorer=scorer, k=k).run()
+    #to_file(signature_kmers, out_base_name + ".signature_kmers")
 
     logging.info("Making haplotype matrix")
     haplotype_matrix = SparseHaplotypeMatrix.from_vcf(vcf_file_name)
