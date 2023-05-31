@@ -15,10 +15,11 @@ from graph_kmer_index import KmerIndex, FlatKmers
 import tqdm
 
 from .index_bundle import IndexBundle
-from .sparse_haplotype_matrix import SparseHaplotypeMatrix
+from .sparse_haplotype_matrix import SparseHaplotypeMatrix, GenotypeMatrix
 from ..models.mapping_model import LimitedFrequencySamplingComboModel
 from shared_memory_wrapper import to_file, from_file
 from npstructures import ragged_slice
+from ..models.helper_model import HelperVariants, CombinationMatrix
 
 """
 Module for simple variant signature finding by using static predetermined paths through the "graph".
@@ -632,14 +633,11 @@ def make_scorer_from_paths(paths: Paths, k, modulo):
     #return FastApproxCounter.from_keys_and_values(unique, counts, modulo=modulo)
 
 
-def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, out_base_name, k=31, modulo=20000033, variant_window=4):
+def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, out_base_name, k=31,
+               modulo=20000033, variant_window=4, make_helper_model=False):
     """
     Makes all indexes and writes to an index bundle.
     """
-    #linear_kmer_counter = make_linear_reference_kmer_counter(reference_file_name, k=k, modulo=modulo)
-    #c = linear_kmer_counter.counter
-    #scorer = FastApproxCounter.from_keys_and_values(c._keys.ravel(), c[c._keys.ravel()], modulo=modulo)
-
     logging.info("Making graph")
     graph = Graph.from_vcf(vcf_no_genotypes_file_name, reference_file_name)
 
@@ -648,33 +646,43 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     scorer = make_scorer_from_paths(paths, k, modulo)
     kmer_index = SignatureFinder3(paths, scorer=scorer, k=k).get_as_kmer_index()
 
-    # debugging, get signature kmers flat
-    #signature_kmers = SignatureFinder3(paths, scorer=scorer, k=k).run()
-    #to_file(signature_kmers, out_base_name + ".signature_kmers")
-
     logging.info("Making haplotype matrix")
     haplotype_matrix = SparseHaplotypeMatrix.from_vcf(vcf_file_name)
-
     variant_to_nodes = VariantToNodes(np.arange(graph.n_variants())*2, np.arange(graph.n_variants())*2+1)
 
     logging.info("Creating count model")
     model_creator = MappingModelCreator(graph, kmer_index, haplotype_matrix, k=k)
     count_model = model_creator.run()
+
     from ..models.mapping_model import refine_sampling_model_noncli
     count_model = refine_sampling_model_noncli(count_model, variant_to_nodes)
 
     numpy_variants = NumpyVariants.from_vcf(vcf_no_genotypes_file_name)
-    index = IndexBundle(
-        {
+    indexes = {
             "variant_to_nodes": variant_to_nodes,
             "count_model": count_model,
             "kmer_index": kmer_index,
             "numpy_variants": numpy_variants,
         }
+    # helper model
+    if make_helper_model:
+        from kage.models.helper_model import make_helper_model_from_genotype_matrix
+        genotype_matrix = GenotypeMatrix.from_haplotype_matrix(haplotype_matrix)
+        logging.info("Making helper model")
+        helper_model, combo_matrix = make_helper_model_from_genotype_matrix(
+            genotype_matrix.matrix, None, dummy_count=1.0, window_size=100)
+        indexes["helper_variants"] = HelperVariants(helper_model)
+        indexes["combination_matrix"] = CombinationMatrix(combo_matrix)
+    else:
+        logging.info("Not making helper model")
+
+
+    index = IndexBundle(
+        indexes
     )
     index.to_file(out_base_name, compress=False)
 
 
 def make_index_cli(args):
-    return make_index(args.reference, args.vcf, args.vcf_no_genotypes, args.out_base_name, args.kmer_size)
+    return make_index(args.reference, args.vcf, args.vcf_no_genotypes, args.out_base_name, args.kmer_size, make_helper_model=args.make_helper_model)
 

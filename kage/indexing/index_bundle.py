@@ -16,6 +16,9 @@ class IndexBundle:
 
         self.index = index
 
+    def __contains__(self, item):
+        return item in self.index
+
     def __getitem__(self, e):
         return self.index[e]
 

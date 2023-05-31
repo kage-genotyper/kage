@@ -151,6 +151,7 @@ def make_helper_model_from_genotype_matrix(
     score_func=calc_likelihood,
     window_size=1000,
 ):
+    # rows in genotype matrix are variants?
     # genotype_matrix = convert_genotype_matrix(genotype_matrix)
     logging.info("Finding best helper")
 

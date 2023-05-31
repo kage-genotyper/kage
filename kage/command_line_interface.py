@@ -64,10 +64,15 @@ def genotype(args):
     logging.info("Reading all indexes from an index bundle")
     t = time.perf_counter()
     index = IndexBundle.from_file(args.index_bundle).indexes
-    print("Count model")
-    print(index.count_model)
+
+
+
     logging.debug("Reading indexes took %.3f sec" % (time.perf_counter()-t))
     config = GenotypingConfig.from_command_line_args(args)
+    if not "helper_variants" in index:
+        config.ignore_helper_model = True
+        config.ignore_helper_variants = True
+        logging.info("Did not find helper variants in index. Will not use helper variants/model")
 
 
     if args.counts is None:
@@ -395,6 +400,7 @@ def run_argument_parser(args):
     subparser.add_argument("-V", "--vcf-no-genotypes", required=True)
     subparser.add_argument("-o", "--out-base-name", required=True)
     subparser.add_argument("-k", "--kmer-size", required=False, type=int, default=31)
+    subparser.add_argument("-m", "--make-helper-model", required=False, type=bool, default=False)
     subparser.set_defaults(func=make_index_cli)
 
 

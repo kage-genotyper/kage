@@ -3,11 +3,15 @@ from dataclasses import dataclass
 import bionumpy as bnp
 import numpy as np
 import scipy
+import tqdm
 
 @dataclass
 class SparseHaplotypeMatrix:
     data: scipy.sparse.csc_matrix
 
+    @classmethod
+    def from_nonsparse_matrix(cls, matrix):
+        return cls(scipy.sparse.csc_matrix(matrix))
 
     @classmethod
     def from_variants_and_haplotypes(cls, variant_ids, haplotype_ids, n_variants, n_haplotypes):
@@ -15,8 +19,6 @@ class SparseHaplotypeMatrix:
         variant_ids: np.array of variant ids
         haplotype_ids: np.array of haplotype ids (which haplotypes have the variant allele)
         """
-        print(variant_ids)
-        print(haplotype_ids)
         data = scipy.sparse.csc_matrix((np.ones(len(variant_ids), dtype=np.uint8), (variant_ids, haplotype_ids)),
                                        shape=(n_variants, n_haplotypes))
         return cls(data)
@@ -78,6 +80,25 @@ class SparseHaplotypeMatrix:
                                                 np.concatenate(all_haplotype_ids),
                                                 n_variants=offset,
                                                 n_haplotypes=n_haplotypes)
+
+
+
+@dataclass
+class GenotypeMatrix:
+    # rows are variants, columns are haplotypes
+    # 0  = 0/0, 1=0/1 or 1/0, 2=1/1, 4=missing
+    matrix: np.ndarray
+
+    @classmethod
+    def from_haplotype_matrix(cls, haplotype_matrix):
+        n_variants, n_haplotypes = haplotype_matrix.shape
+        n_individuals = n_haplotypes // 2
+        matrix = np.zeros((n_variants, n_individuals), dtype=np.uint8)
+        for i in tqdm.tqdm(range(n_individuals), desc="Making genotype matrix", total=n_individuals, unit="individuals"):
+            matrix[:, i] = haplotype_matrix.get_haplotype(i * 2) + haplotype_matrix.get_haplotype(i * 2 + 1)
+
+        return cls(matrix)
+
 
 def make_sparse_haplotype_matrix_cli(args):
     matrix = SparseHaplotypeMatrix.from_vcf(args.vcf_file_name)
