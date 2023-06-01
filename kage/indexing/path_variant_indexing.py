@@ -104,17 +104,19 @@ class Graph:
     @classmethod
     def from_vcf(cls, vcf_file_name, reference_file_name, k=31):
         reference = bnp.open(reference_file_name, bnp.encodings.ACGTnEncoding).read()
-        assert len(reference) == 1, "Only one chromosome supported now"
+        reference = {s.name.to_string(): s.sequence for s in reference}
+        #assert len(reference) == 1, "Only one chromosome supported now"
 
-        reference = reference.sequence[0]
 
         sequences_between_variants = []
         variant_sequences = []
 
         vcf = bnp.open(vcf_file_name, bnp.DNAEncoding)
         prev_ref_pos = 0
+        prev_chromosome = None
         for chunk in vcf:
             for variant in chunk:
+                chromosome = variant.chromosome.to_string()
                 pos = variant.position
                 ref = variant.ref_seq
                 alt = variant.alt_seq
@@ -145,14 +147,23 @@ class Graph:
                     pos_before = pos - 1
                     pos_after = pos_before + 2
 
+                if prev_chromosome is not None and chromosome != prev_chromosome:
+                    # add last bit of last chromosome
+                    new_sequence = reference[prev_chromosome][prev_ref_pos:].to_string().upper().replace("N", "A") \
+                        + reference[chromosome][0:pos_before + 1].to_string().upper().replace("N", "A")
+                    sequences_between_variants.append(new_sequence)
+                else:
+                    new_sequence = reference[chromosome][prev_ref_pos:pos_before + 1].to_string().upper().replace("N",
+                                                                                                                  "A")
+                    sequences_between_variants.append(new_sequence)
 
-                # tmp hack, replace N with A
-                sequences_between_variants.append(reference[prev_ref_pos:pos_before+1].to_string().upper().replace("N", "A"))
                 prev_ref_pos = pos_after
                 variant_sequences.append([ref.to_string(), alt.to_string()])
 
+                prev_chromosome = chromosome
+
         # add last bit of reference
-        sequences_between_variants.append(reference[prev_ref_pos:].to_string().upper().replace("N", "A"))
+        sequences_between_variants.append(reference[chromosome][prev_ref_pos:].to_string().upper().replace("N", "A"))
 
         return cls(GenomeBetweenVariants(bnp.as_encoded_array(sequences_between_variants, bnp.DNAEncoding)),
                      Variants.from_list(variant_sequences))

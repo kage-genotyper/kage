@@ -129,6 +129,15 @@ def test_graph_from_vcf():
     assert graph.sequence(np.array([1, 1, 1])).ravel().to_string() == "AAATCCTTTCCGTTTT"
 
 
+def test_graph_from_vcf_two_chromosomes():
+    graph = Graph.from_vcf("example_data/few_variants_two_chromosomes.vcf", "example_data/small_reference_two_chromosomes.fa")
+    assert graph.n_variants() == 4
+    print(graph.genome.sequence)
+    assert len(graph.genome.sequence) == 5
+    assert graph.genome.sequence[3].to_string() == "TTTTAAA"
+
+
+
 
 def test_path_windows(graph):
     creator = PathCreator(graph)
