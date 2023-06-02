@@ -82,7 +82,6 @@ class SparseHaplotypeMatrix:
                                                 n_haplotypes=n_haplotypes)
 
 
-
 @dataclass
 class GenotypeMatrix:
     # rows are variants, columns are haplotypes

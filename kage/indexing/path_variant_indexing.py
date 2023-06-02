@@ -33,6 +33,10 @@ class GenomeBetweenVariants:
     """ Represents the linear reference genome between variants, not including variant alleles"""
     sequence: bnp.EncodedRaggedArray
 
+    def split(self, k):
+        # splits into two GenomeBetweenVariants. The first contains all bases ..
+        pass
+
 
 class Variants:
     def __init__(self, data: bnp.EncodedRaggedArray, n_alleles: int = 2):
@@ -43,7 +47,9 @@ class Variants:
     @classmethod
     def from_list(cls, variant_sequences: List[List]):
         zipped = list(itertools.chain(*zip(*variant_sequences)))
-        return cls(bnp.as_encoded_array(zipped, bnp.DNAEncoding))
+        encoded = bnp.as_encoded_array(zipped, bnp.encodings.ACGTnEncoding)
+        encoded[encoded == "N"] = "A"
+        return cls(bnp.change_encoding(encoded, bnp.DNAEncoding))
 
     @property
     def allele_sequences(self):
@@ -348,7 +354,7 @@ class PathCreator:
         ref_between = self._genome.sequence
         for i, alleles in tqdm.tqdm(enumerate(combinations), total=n_paths, desc="Creating paths through graph", unit="path"):
             # make a new EncodedRaggedArray where every other row is ref/variant
-            """"
+            """
             n_rows = len(ref_between) + n_variants
             row_lengths = np.zeros(n_rows)
             row_lengths[0::2] = ref_between.shape[1]

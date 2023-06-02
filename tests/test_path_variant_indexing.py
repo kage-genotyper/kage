@@ -9,11 +9,6 @@ import numpy as np
 
 @pytest.fixture
 def variants():
-    #allele_sequences = [
-    #    bnp.as_encoded_array(["A", "A", "", "A", "A"], bnp.DNAEncoding),  # ref
-    #    bnp.as_encoded_array(["C", "C", "C", "C", "C"], bnp.DNAEncoding),  # alt
-    #]
-    #return Variants(allele_sequences)
     return Variants.from_list(
         [["A", "C"], ["A", "C"], ["", "C"], ["A", "C"], ["A", "C"]]
     )
