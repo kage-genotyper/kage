@@ -75,3 +75,19 @@ def test_get_kmers_for_haplotype2(graph, paths):
     kmers = path_kmers.get_for_haplotype(haplotype_as_paths)
     kmers = [k.to_string() for k in kmers]
     assert sorted(kmers) == sorted(correct)
+
+
+class DummyKmerIndex():
+    def has_kmers(self, kmers):
+        filter_out = [0, 10]
+        out = np.array([
+            kmer not in filter_out for kmer in kmers
+        ])
+        return out
+
+def test_prune_path_kmers(graph, paths):
+    path_kmers = PathKmers.from_graph_and_paths(graph, paths, k=2)
+    print(path_kmers)
+    path_kmers.prune(DummyKmerIndex())
+    print(path_kmers)
+

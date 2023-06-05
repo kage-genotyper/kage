@@ -1,4 +1,5 @@
 import logging
+import time
 from dataclasses import dataclass
 import numpy as np
 from scipy.signal import convolve2d
@@ -8,7 +9,7 @@ from .path_variant_indexing import Graph, MappingModelCreator, Paths
 from graph_kmer_index import KmerIndex
 from .sparse_haplotype_matrix import SparseHaplotypeMatrix
 from ..models.mapping_model import LimitedFrequencySamplingComboModel
-
+import npstructures as nps
 
 @dataclass
 class HaplotypeAsPaths:
@@ -80,6 +81,18 @@ class PathKmers:
         return bnp.EncodedArray(np.concatenate(kmers_found), encoding)
 
 
+    def prune(self, kmer_index):
+        """
+        Prunes away kmers that are not in kmer index.
+        Prunes inplace.
+        """
+        for i in range(len(self.kmers)):
+            encoding = self.kmers[i].encoding
+            raw_kmers = self.kmers[i].raw().ravel().astype(np.uint64)
+            is_in = kmer_index.has_kmers(raw_kmers)
+            mask = nps.RaggedArray(is_in, self.kmers[i].shape, dtype=bool)
+            logging.info(f"Pruned away {np.sum(mask==False)}/{len(self.kmers[i])} kmers for path {i}")
+            self.kmers[i] = bnp.EncodedRaggedArray(bnp.EncodedArray(self.kmers[i][mask], encoding), np.sum(mask, axis=1))
 
 class PathBasedMappingModelCreator(MappingModelCreator):
     def __init__(self, graph: Graph, kmer_index: KmerIndex,
@@ -95,20 +108,35 @@ class PathBasedMappingModelCreator(MappingModelCreator):
         self._max_count = max_count
         self._paths = paths
         self._path_kmers = PathKmers.from_graph_and_paths(graph, paths.variant_alleles, k=k)
+        self._path_kmers.prune(kmer_index)
 
     def _process_individual(self, i):
+        t0 = time.perf_counter()
+        logging.info("Staring individual %d", i)
         haplotype1 = self._haplotype_matrix.get_haplotype(i * 2)
         haplotype2 = self._haplotype_matrix.get_haplotype(i * 2 + 1)
+
+        logging.info("Getting haplotypes took %.3f sec", time.perf_counter() - t0)
+        t0 = time.perf_counter()
 
         all_kmers = []
         for haplotype in [haplotype1, haplotype2]:
             as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles(haplotype, self._paths.variant_alleles, window=3)
             all_kmers.append(self._path_kmers.get_for_haplotype(as_paths).raw().ravel().astype(np.uint64))
 
+        logging.info("Getting all kmers took %.3f sec", time.perf_counter() - t0)
+        t0 = time.perf_counter()
+
         haplotype1_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2)
         haplotype2_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2+1)
+        logging.info("Getting nodes took %.3f sec", time.perf_counter() - t0)
+        t0 = time.perf_counter()
 
         node_counts = self._kmer_index.map_kmers(np.concatenate(all_kmers), self._n_nodes)
+        logging.info("Mapping kmers took %.3f sec", time.perf_counter() - t0)
+        t0 = time.perf_counter()
+
         self._add_node_counts(haplotype1_nodes, haplotype2_nodes, node_counts)
+        logging.info("Adding node counts took %.3f sec", time.perf_counter() - t0)
 
 
