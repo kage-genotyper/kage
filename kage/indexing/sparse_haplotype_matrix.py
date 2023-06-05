@@ -36,6 +36,18 @@ class SparseHaplotypeMatrix:
     def shape(self):
         return self.data.shape
 
+    @property
+    def n_individuals(self):
+        return self.shape[1] // 2
+
+    @property
+    def n_haplotypes(self):
+        return self.shape[1]
+
+    @property
+    def n_variants(self):
+        return self.shape[0]
+
     def to_file(self, file_name):
         scipy.sparse.save_npz(file_name, self.data)
 

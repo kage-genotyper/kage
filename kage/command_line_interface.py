@@ -400,7 +400,8 @@ def run_argument_parser(args):
     subparser.add_argument("-V", "--vcf-no-genotypes", required=True)
     subparser.add_argument("-o", "--out-base-name", required=True)
     subparser.add_argument("-k", "--kmer-size", required=False, type=int, default=31)
-    subparser.add_argument("-m", "--make-helper-model", required=False, type=bool, default=False)
+    subparser.add_argument("-M", "--make-helper-model", required=False, type=bool, default=False)
+    subparser.add_argument("-m", "--modulo", required=False, type=int, default=200000033)
     subparser.set_defaults(func=make_index_cli)
 
 

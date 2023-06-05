@@ -1,5 +1,6 @@
 import itertools
 import logging
+import time
 from dataclasses import dataclass
 from typing import List
 import npstructures as nps
@@ -20,6 +21,7 @@ from ..models.mapping_model import LimitedFrequencySamplingComboModel
 from shared_memory_wrapper import to_file, from_file
 from npstructures import ragged_slice
 from ..models.helper_model import HelperVariants, CombinationMatrix
+from .tricky_variants import TrickyVariants
 
 """
 Module for simple variant signature finding by using static predetermined paths through the "graph".
@@ -106,6 +108,36 @@ class Graph:
 
         # stitch these together
         return zip_sequences(ref_sequence, variant_sequences)
+
+    def sequence_of_pairs_of_ref_and_variants_as_ragged_array(self, haplotypes: np.ndarray) -> bnp.EncodedRaggedArray:
+        """
+        Every row in the returned RaggedArray is the sequence for a variant and the next reference segment.
+        The first row is the first reference segment.
+        """
+        sequence = self.sequence(haplotypes)
+        # merge pairs of rows
+        old_lengths = sequence.shape[1]
+        new_lengths = np.zeros(1+len(sequence)//2, dtype=int)
+        new_lengths[0] = old_lengths[0]
+        new_lengths[1:] = old_lengths[1::2] + old_lengths[2::2]
+        return bnp.EncodedRaggedArray(sequence.ravel(), new_lengths)
+
+    def kmers_for_pairs_of_ref_and_variants(self, haplotypes: np.ndarray, k: int) -> bnp.EncodedRaggedArray:
+        """
+        Returns a ragged array where each row is the kmers for a variant allele (given by the haplotypes)
+        and the next ref sequence. The first element is only the first sequence in the graph.
+        """
+        sequences = self.sequence_of_pairs_of_ref_and_variants_as_ragged_array(haplotypes)
+        all_kmers = bnp.get_kmers(sequences.ravel(), k)
+        sequence_lengths = sequences.shape[1].copy()
+        assert sequence_lengths[-1] >= k, "Last sequence in graph must be larger than k"
+        # on last node, there will be fewer kmers
+        sequence_lengths[-1] -= k-1
+        return bnp.EncodedRaggedArray(all_kmers.ravel(), sequence_lengths)
+
+    def get_haplotype_kmers(self, haplotype: np.array, k) -> np.ndarray:
+        sequence = self.sequence(haplotype).ravel()
+        return bnp.get_kmers(sequence, k).ravel().raw().astype(np.uint64)
 
     @classmethod
     def from_vcf(cls, vcf_file_name, reference_file_name, k=31):
@@ -252,6 +284,13 @@ class FastApproxCounter:
         self._modulo = modulo
 
     @classmethod
+    def empty(cls, modulo):
+        return cls(np.zeros(modulo, dtype=np.uint16), modulo)
+
+    def add(self, values):
+        self._array[values % self._modulo] += 1
+
+    @classmethod
     def from_keys_and_values(cls, keys, values, modulo):
         array = np.zeros(modulo, dtype=np.uint16)
         array[keys % modulo] = values
@@ -262,6 +301,27 @@ class FastApproxCounter:
 
     def score_kmers(self, kmers):
         return -self[kmers]
+
+
+def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: SparseHaplotypeMatrix,
+                                            k: int,
+                                            n_haplotypes: int = 4,
+                                            modulo: int = 20000033):
+    """
+    Estimates counts from random individuals
+    """
+    counter = FastApproxCounter.empty(modulo)
+    chosen_haplotypes = np.random.choice(np.arange(haplotype_matrix.n_haplotypes), n_haplotypes, replace=False)
+    logging.info("Picked random haplotypes to make kmer scorer: %s" % chosen_haplotypes)
+    for haplotype in tqdm.tqdm(chosen_haplotypes, desc="Estimating global kmer counts", unit="haplotype"):
+        counter.add(graph.get_haplotype_kmers(haplotype_matrix.get_haplotype(haplotype), k=k))
+
+    # also add the reference and a haplotype with all variants
+    counter.add(graph.get_haplotype_kmers(np.zeros(haplotype_matrix.n_variants, dtype=np.uint8), k=k))
+    counter.add(graph.get_haplotype_kmers(np.ones(haplotype_matrix.n_variants, dtype=np.uint8), k=k))
+
+
+    return counter
 
 @dataclass
 class Paths:
@@ -346,7 +406,7 @@ class PathCreator:
         alleles = [0, 1]  # possible alleles, assuming biallelic variants
         n_paths = len(alleles)**self._window
         n_variants = self._variants.n_variants
-        combinations = self._make_combination_matrix(alleles, n_paths, n_variants)
+        combinations = PathCreator.make_combination_matrix(alleles, n_variants, self._window)
 
         paths = []
 
@@ -375,13 +435,15 @@ class PathCreator:
 
         return Paths(paths, combinations)
 
-    def _make_combination_matrix(self, alleles, n_paths, n_variants):
+    @staticmethod
+    def make_combination_matrix(alleles, n_variants, window):
+        n_paths = len(alleles)**window
         # make all possible combinations of variant alleles through the path
         # where all combinations of alleles are present within a window of size self._window
-        combinations = itertools.product(*[alleles for _ in range(self._window)])
+        combinations = itertools.product(*[alleles for _ in range(window)])
         # expand combinations to whole genome
         combinations = (itertools.chain(
-            *itertools.repeat(c, n_variants // self._window + 1))
+            *itertools.repeat(c, n_variants // window + 1))
             for c in combinations)
         combinations = (itertools.islice(c, n_variants) for c in combinations)
         combination_matrix = np.zeros((n_paths, n_variants), dtype=np.int8)
@@ -413,18 +475,12 @@ class Signatures:
     ref: nps.RaggedArray
     alt: nps.RaggedArray
 
-
-class SignatureFinder:
-    """
-    For each variant chooses a signature (a set of kmers) based one a Scores
-    """
-    def __init__(self, paths: Paths, scorer: Scorer = None, k=3):
-        self._paths = paths
-        self._scorer = scorer
-        self._k = k
+    def get_overlap(self):
+        return np.sum(np.in1d(self.ref.ravel(), self.alt.ravel())) / len(self.ref.ravel())
 
     def get_as_flat_kmers(self):
-        signatures = self.run()
+        signatures = self
+        logging.info("Signature overlap: %.5f percent" % (signatures.get_overlap() * 100))
 
         all_kmers = []
         all_node_ids = []
@@ -440,14 +496,26 @@ class SignatureFinder:
         from graph_kmer_index import FlatKmers
         return FlatKmers(np.concatenate(all_kmers), np.concatenate(all_node_ids))
 
-    def get_as_kmer_index(self, include_reverse_complements=True):
+    def get_as_kmer_index(self, k, modulo=103, include_reverse_complements=True):
         flat = self.get_as_flat_kmers()
         if include_reverse_complements:
-            rev_comp_flat = flat.get_reverse_complement_flat_kmers(self._k)
+            rev_comp_flat = flat.get_reverse_complement_flat_kmers(k)
             flat = FlatKmers.from_multiple_flat_kmers([flat, rev_comp_flat])
-        index = KmerIndex.from_flat_kmers(flat, skip_frequencies=True)
+
+        assert modulo > len(flat._hashes), "Modulo is too small for number of kmers. Increase"
+        index = KmerIndex.from_flat_kmers(flat, skip_frequencies=True, modulo=modulo)
         index.convert_to_int32()
         return index
+
+
+class SignatureFinder:
+    """
+    For each variant chooses a signature (a set of kmers) based one a Scores
+    """
+    def __init__(self, paths: Paths, scorer: Scorer = None, k=3):
+        self._paths = paths
+        self._scorer = scorer
+        self._k = k
 
     def run(self) -> Signatures:
         """
@@ -571,9 +639,12 @@ class MappingModelCreator:
         self._max_count = max_count
 
     def _process_individual(self, i):
+        logging.info("Processing individual %d" % i)
+        t0 = time.perf_counter()
         # extract kmers from both haplotypes and map these using the kmer index
         haplotype1 = self._haplotype_matrix.get_haplotype(i*2)
         haplotype2 = self._haplotype_matrix.get_haplotype(i*2+1)
+        logging.info("Got haplotypes, took %.2f seconds" % (time.perf_counter() - t0))
 
         haplotype1_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2)
         haplotype2_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2+1)
@@ -581,12 +652,16 @@ class MappingModelCreator:
 
         sequence1 = self._graph.sequence(haplotype1).ravel()
         sequence2 = self._graph.sequence(haplotype2).ravel()
+        logging.info("Got haplotypes, total now: %.2f seconds" % (time.perf_counter() - t0))
 
         kmers1 = bnp.get_kmers(sequence1, self._k).ravel().raw().astype(np.uint64)
         kmers2 = bnp.get_kmers(sequence2, self._k).ravel().raw().astype(np.uint64)
+        logging.info("Got kmers, total now: %.2f seconds" % (time.perf_counter() - t0))
 
+        t0_mapping_kmers = time.perf_counter()
         node_counts = self._kmer_index.map_kmers(kmers1, self._n_nodes)
         node_counts += self._kmer_index.map_kmers(kmers2, self._n_nodes)
+        logging.info("Mapped kmers, took: %.2f seconds" % (time.perf_counter() - t0_mapping_kmers))
 
         # split into nodes that the haplotype has and nodes not
         # mask represents the number of haplotypes this individual has per node (0, 1 or 2 for diploid individuals)
@@ -601,6 +676,7 @@ class MappingModelCreator:
             self._counts.diplotype_counts[genotype][
                 nodes_with_genotype[below_max_count], counts_on_nodes[below_max_count]
             ] += 1
+        logging.info("Done, total now: %.2f seconds" % (time.perf_counter() - t0))
 
     def run(self) -> LimitedFrequencySamplingComboModel:
         n_variants, n_haplotypes = self._haplotype_matrix.shape
@@ -650,6 +726,28 @@ def make_scorer_from_paths(paths: Paths, k, modulo):
     #return FastApproxCounter.from_keys_and_values(unique, counts, modulo=modulo)
 
 
+def find_tricky_variants_from_signatures(signatures: Signatures):
+    """
+    Finds variants with bad signatures.
+    """
+    nonunique_ref = np.in1d(signatures.ref.ravel(), signatures.alt.ravel())
+    nonunique_alt = np.in1d(signatures.alt.ravel(), signatures.ref.ravel())
+    #mask_ref = np.zeros_like(signatures.ref, dtype=bool)
+    #mask_ref[nonunique_ref] = True
+    mask_ref = nps.RaggedArray(nonunique_ref, signatures.ref.shape)
+    mask_alt = nps.RaggedArray(nonunique_alt, signatures.alt.shape)
+    print(nonunique_ref, nonunique_alt)
+    #mask_alt = np.zeros_like(signatures.alt, dtype=bool)
+    #mask_alt[nonunique_alt] = True
+
+    tricky_variants_ref = np.any(mask_ref, axis=1)
+    tricky_variants_alt = np.any(mask_alt, axis=1)
+    tricky_variants = np.logical_or(tricky_variants_ref, tricky_variants_alt)
+
+    logging.info(f"{np.sum(tricky_variants)} tricky variants")
+    return TrickyVariants(tricky_variants)
+
+
 def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, out_base_name, k=31,
                modulo=20000033, variant_window=4, make_helper_model=False):
     """
@@ -660,12 +758,19 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
 
     logging.info("Making paths")
     paths = PathCreator(graph, window=variant_window).run()
-    scorer = make_scorer_from_paths(paths, k, modulo)
-    kmer_index = SignatureFinder3(paths, scorer=scorer, k=k).get_as_kmer_index()
+    #scorer = make_scorer_from_paths(paths, k, modulo)
 
     logging.info("Making haplotype matrix")
     haplotype_matrix = SparseHaplotypeMatrix.from_vcf(vcf_file_name)
     variant_to_nodes = VariantToNodes(np.arange(graph.n_variants())*2, np.arange(graph.n_variants())*2+1)
+
+    scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=8, modulo=modulo)
+
+
+    signatures = SignatureFinder3(paths, scorer=scorer, k=k).run()
+    tricky_variants = find_tricky_variants_from_signatures(signatures)
+    kmer_index = signatures.get_as_kmer_index(modulo=modulo, k=k)
+
 
     logging.info("Creating count model")
     model_creator = MappingModelCreator(graph, kmer_index, haplotype_matrix, k=k)
@@ -680,6 +785,7 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
             "count_model": count_model,
             "kmer_index": kmer_index,
             "numpy_variants": numpy_variants,
+            "tricky_variants": tricky_variants,
         }
     # helper model
     if make_helper_model:
@@ -701,5 +807,5 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
 
 
 def make_index_cli(args):
-    return make_index(args.reference, args.vcf, args.vcf_no_genotypes, args.out_base_name, args.kmer_size, make_helper_model=args.make_helper_model)
+    return make_index(args.reference, args.vcf, args.vcf_no_genotypes, args.out_base_name, args.kmer_size, make_helper_model=args.make_helper_model, modulo=args.modulo)
 

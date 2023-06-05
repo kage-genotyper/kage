@@ -1,11 +1,12 @@
 import pytest
 from kage.indexing.path_variant_indexing import Paths, Variants, PathCreator, GenomeBetweenVariants, \
     SignatureFinder, SignatureFinder2, zip_sequences, Graph, MappingModelCreator, \
-    MatrixVariantWindowKmers, FastApproxCounter, SignatureFinder3
+    MatrixVariantWindowKmers, FastApproxCounter, SignatureFinder3, find_tricky_variants_from_signatures, \
+    Signatures
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 import bionumpy as bnp
 import numpy as np
-
+import npstructures as nps
 
 @pytest.fixture
 def variants():
@@ -33,6 +34,43 @@ def tests_variants(variants):
     assert variants.get_allele_sequence(0, 0) == "A"
     assert variants.get_allele_sequence(0, 1) == "C"
     assert variants.get_allele_sequence(2, 0) == ""
+
+
+def test_sequence_ragged_array(graph):
+    seq = graph.sequence_of_pairs_of_ref_and_variants_as_ragged_array(
+        np.array([0, 0, 0, 0, 0])
+    )
+    assert seq.tolist() == ["GGG", "AGG", "AGG", "GG", "A", "AGGG"]
+    seq = graph.sequence_of_pairs_of_ref_and_variants_as_ragged_array(
+        np.array([1, 1, 1, 1, 1])
+    )
+    assert seq.tolist() == ["GGG", "CGG", "CGG", "CGG", "C", "CGGG"]
+
+
+def test_kmers_from_graph_paths(graph):
+    haplotypes = np.array([0, 0, 0, 0, 0])
+    kmers = graph.kmers_for_pairs_of_ref_and_variants(haplotypes, k=3)
+    kmers = [[k.to_string() for k in node] for node in kmers]
+    assert kmers == [
+        ["GGG", "GGA", "GAG"],
+        ["AGG", "GGA", "GAG"],
+        ["AGG", "GGG", "GGG"],
+        ["GGA", "GAA"],
+        ["AAG"],
+        ["AGG", "GGG"]
+    ]
+
+    haplotypes = np.array([1, 1, 1, 1, 1])
+    kmers = graph.kmers_for_pairs_of_ref_and_variants(haplotypes, k=2)
+    kmers = [[k.to_string() for k in node] for node in kmers]
+    assert kmers == [
+        ["GG", "GG", "GC"],
+        ["CG", "GG", "GC"],
+        ["CG", "GG", "GC"],
+        ["CG", "GG", "GC"],
+        ["CC"],
+        ["CG", "GG", "GG"]
+    ]
 
 
 def test_get_haplotype_sequence(variants):
@@ -97,7 +135,8 @@ def test_zip_sequences():
 
 def test_mapping_model_creator(graph, haplotype_matrix):
     paths = PathCreator(graph, window=3).run()
-    kmer_index = SignatureFinder(paths).get_as_kmer_index()
+    signatures = SignatureFinder(paths).run()
+    kmer_index = signatures.get_as_kmer_index(k=3)
     model_creator = MappingModelCreator(graph, kmer_index, haplotype_matrix, k=3)
     model = model_creator.run()
 
@@ -122,6 +161,10 @@ def test_graph_from_vcf():
 
     # following alt at all variants
     assert graph.sequence(np.array([1, 1, 1])).ravel().to_string() == "AAATCCTTTCCGTTTT"
+
+
+
+
 
 
 def test_graph_from_vcf_two_chromosomes():
@@ -149,3 +192,14 @@ def test_matrix_variant_window_kmers(graph):
     kmers = MatrixVariantWindowKmers.from_paths(paths, k=3)
     print("kmers")
     print(kmers)
+
+
+
+def test_tricky_variants_from_signatures():
+    signatures = Signatures(
+        nps.RaggedArray([[1, 2, 3], [4, 5], [50], [123, 1000]]),
+        nps.RaggedArray([[1, 2], [100, 200, 1], [51], [4]])
+    )
+    tricky_variants = find_tricky_variants_from_signatures(signatures)
+    assert np.all(tricky_variants.tricky_variants == [True, True, False, True])
+    print(tricky_variants)
