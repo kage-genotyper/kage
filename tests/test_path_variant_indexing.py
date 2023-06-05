@@ -7,6 +7,7 @@ from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 import bionumpy as bnp
 import numpy as np
 import npstructures as nps
+from kage.indexing.path_based_count_model import PathBasedMappingModelCreator
 
 @pytest.fixture
 def variants():
@@ -139,8 +140,10 @@ def test_mapping_model_creator(graph, haplotype_matrix):
     kmer_index = signatures.get_as_kmer_index(k=3)
     model_creator = MappingModelCreator(graph, kmer_index, haplotype_matrix, k=3)
     model = model_creator.run()
-
     print(model)
+    path_based_model = PathBasedMappingModelCreator(graph, kmer_index, haplotype_matrix, window=3, k=3, paths=paths).run()
+    print(path_based_model)
+    assert model == path_based_model
 
 
 def test_graph_from_vcf():

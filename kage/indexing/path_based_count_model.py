@@ -1,9 +1,13 @@
+import logging
 from dataclasses import dataclass
 import numpy as np
 from scipy.signal import convolve2d
 import bionumpy as bnp
 from typing import List
-from .path_variant_indexing import Graph
+from .path_variant_indexing import Graph, MappingModelCreator, Paths
+from graph_kmer_index import KmerIndex
+from .sparse_haplotype_matrix import SparseHaplotypeMatrix
+from ..models.mapping_model import LimitedFrequencySamplingComboModel
 
 
 @dataclass
@@ -51,6 +55,7 @@ class PathKmers:
         # kmers for a variant should include the kmers for the variant and
         # the kmers for the following ref sequence before next variant
         n_paths = path_allele_matrix.shape[0]
+        logging.info("Maping pathkmers for %d paths", n_paths)
         return cls([graph.kmers_for_pairs_of_ref_and_variants(path_allele_matrix[i, :], k) for i in range(n_paths)])
 
 
@@ -64,16 +69,46 @@ class PathKmers:
         kmers_found = []
         # add kmers on first ref node
         start_kmers = self.kmers[int(haplotype.paths[0])][0].ravel()
-        print("Staring by adding ", start_kmers)
         encoding = start_kmers.encoding
         kmers_found.append(start_kmers.raw())
 
         for path in range(len(self.kmers)):
             variants_with_path = np.where(haplotype.paths == path)[0] + 1  # +1 because first element in kmers is the first ref
             kmers = self.kmers[path][variants_with_path].raw().ravel()
-            print(path, variants_with_path, bnp.EncodedArray(kmers, encoding))
             kmers_found.append(kmers)
 
         return bnp.EncodedArray(np.concatenate(kmers_found), encoding)
+
+
+
+class PathBasedMappingModelCreator(MappingModelCreator):
+    def __init__(self, graph: Graph, kmer_index: KmerIndex,
+                 haplotype_matrix: SparseHaplotypeMatrix, window, paths: Paths = None,
+                 max_count=10, k=31):
+        self._graph = graph
+        self._kmer_index = kmer_index
+        self._haplotype_matrix = haplotype_matrix
+        self._n_nodes = graph.n_nodes()
+        self._counts = LimitedFrequencySamplingComboModel.create_empty(self._n_nodes, max_count)
+        logging.info("Inited empty model")
+        self._k = k
+        self._max_count = max_count
+        self._paths = paths
+        self._path_kmers = PathKmers.from_graph_and_paths(graph, paths.variant_alleles, k=k)
+
+    def _process_individual(self, i):
+        haplotype1 = self._haplotype_matrix.get_haplotype(i * 2)
+        haplotype2 = self._haplotype_matrix.get_haplotype(i * 2 + 1)
+
+        all_kmers = []
+        for haplotype in [haplotype1, haplotype2]:
+            as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles(haplotype, self._paths.variant_alleles, window=3)
+            all_kmers.append(self._path_kmers.get_for_haplotype(as_paths).raw().ravel().astype(np.uint64))
+
+        haplotype1_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2)
+        haplotype2_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2+1)
+
+        node_counts = self._kmer_index.map_kmers(np.concatenate(all_kmers), self._n_nodes)
+        self._add_node_counts(haplotype1_nodes, haplotype2_nodes, node_counts)
 
 

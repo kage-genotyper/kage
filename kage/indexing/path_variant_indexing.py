@@ -5,23 +5,14 @@ from dataclasses import dataclass
 from typing import List
 import npstructures as nps
 import numpy as np
-import numpy.typing as npt
 import bionumpy as bnp
-from bionumpy.bnpdataclass import bnpdataclass
-import graph_kmer_index
-from obgraph.variant_to_nodes import VariantToNodes
-from obgraph.numpy_variants import NumpyVariants
-from kmer_mapper.mapper import map_kmers_to_graph_index
 from graph_kmer_index import KmerIndex, FlatKmers
 import tqdm
 
-from .index_bundle import IndexBundle
-from .sparse_haplotype_matrix import SparseHaplotypeMatrix, GenotypeMatrix
+from .sparse_haplotype_matrix import SparseHaplotypeMatrix
 from ..models.mapping_model import LimitedFrequencySamplingComboModel
-from shared_memory_wrapper import to_file, from_file
-from npstructures import ragged_slice
-from ..models.helper_model import HelperVariants, CombinationMatrix
 from .tricky_variants import TrickyVariants
+
 
 """
 Module for simple variant signature finding by using static predetermined paths through the "graph".
@@ -628,7 +619,8 @@ class SignaturesWithNodes:
 
 class MappingModelCreator:
     def __init__(self, graph: Graph, kmer_index: KmerIndex,
-                 haplotype_matrix: SparseHaplotypeMatrix, max_count=10, k=31):
+                 haplotype_matrix: SparseHaplotypeMatrix,
+                 max_count=10, k=31):
         self._graph = graph
         self._kmer_index = kmer_index
         self._haplotype_matrix = haplotype_matrix
@@ -663,20 +655,23 @@ class MappingModelCreator:
         node_counts += self._kmer_index.map_kmers(kmers2, self._n_nodes)
         logging.info("Mapped kmers, took: %.2f seconds" % (time.perf_counter() - t0_mapping_kmers))
 
+        self._add_node_counts(haplotype1_nodes, haplotype2_nodes, node_counts)
+        logging.info("Done, total now: %.2f seconds" % (time.perf_counter() - t0))
+
+    def _add_node_counts(self, haplotype1_nodes, haplotype2_nodes, node_counts):
         # split into nodes that the haplotype has and nodes not
         # mask represents the number of haplotypes this individual has per node (0, 1 or 2 for diploid individuals)
         mask = np.zeros(self._n_nodes, dtype=np.int8)
         mask[haplotype1_nodes] += 1
         mask[haplotype2_nodes] += 1
-
         for genotype in [0, 1, 2]:
             nodes_with_genotype = np.where(mask == genotype)[0]
             counts_on_nodes = node_counts[nodes_with_genotype].astype(int)
-            below_max_count = np.where(counts_on_nodes < self._max_count)[0]  # ignoring counts larger than supported by matrix
+            below_max_count = np.where(counts_on_nodes < self._max_count)[
+                0]  # ignoring counts larger than supported by matrix
             self._counts.diplotype_counts[genotype][
                 nodes_with_genotype[below_max_count], counts_on_nodes[below_max_count]
             ] += 1
-        logging.info("Done, total now: %.2f seconds" % (time.perf_counter() - t0))
 
     def run(self) -> LimitedFrequencySamplingComboModel:
         n_variants, n_haplotypes = self._haplotype_matrix.shape
@@ -685,6 +680,8 @@ class MappingModelCreator:
             self._process_individual(individual)
 
         return self._counts
+
+
 
 
 def make_linear_reference_kmer_counter(reference_file_name, k=31, modulo=20000033):
@@ -747,65 +744,4 @@ def find_tricky_variants_from_signatures(signatures: Signatures):
     logging.info(f"{np.sum(tricky_variants)} tricky variants")
     return TrickyVariants(tricky_variants)
 
-
-def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, out_base_name, k=31,
-               modulo=20000033, variant_window=4, make_helper_model=False):
-    """
-    Makes all indexes and writes to an index bundle.
-    """
-    logging.info("Making graph")
-    graph = Graph.from_vcf(vcf_no_genotypes_file_name, reference_file_name)
-
-    logging.info("Making paths")
-    paths = PathCreator(graph, window=variant_window).run()
-    #scorer = make_scorer_from_paths(paths, k, modulo)
-
-    logging.info("Making haplotype matrix")
-    haplotype_matrix = SparseHaplotypeMatrix.from_vcf(vcf_file_name)
-    variant_to_nodes = VariantToNodes(np.arange(graph.n_variants())*2, np.arange(graph.n_variants())*2+1)
-
-    scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=8, modulo=modulo)
-
-
-    signatures = SignatureFinder3(paths, scorer=scorer, k=k).run()
-    tricky_variants = find_tricky_variants_from_signatures(signatures)
-    kmer_index = signatures.get_as_kmer_index(modulo=modulo, k=k)
-
-
-    logging.info("Creating count model")
-    model_creator = MappingModelCreator(graph, kmer_index, haplotype_matrix, k=k)
-    count_model = model_creator.run()
-
-    from ..models.mapping_model import refine_sampling_model_noncli
-    count_model = refine_sampling_model_noncli(count_model, variant_to_nodes)
-
-    numpy_variants = NumpyVariants.from_vcf(vcf_no_genotypes_file_name)
-    indexes = {
-            "variant_to_nodes": variant_to_nodes,
-            "count_model": count_model,
-            "kmer_index": kmer_index,
-            "numpy_variants": numpy_variants,
-            "tricky_variants": tricky_variants,
-        }
-    # helper model
-    if make_helper_model:
-        from kage.models.helper_model import make_helper_model_from_genotype_matrix
-        genotype_matrix = GenotypeMatrix.from_haplotype_matrix(haplotype_matrix)
-        logging.info("Making helper model")
-        helper_model, combo_matrix = make_helper_model_from_genotype_matrix(
-            genotype_matrix.matrix, None, dummy_count=1.0, window_size=100)
-        indexes["helper_variants"] = HelperVariants(helper_model)
-        indexes["combination_matrix"] = CombinationMatrix(combo_matrix)
-    else:
-        logging.info("Not making helper model")
-
-
-    index = IndexBundle(
-        indexes
-    )
-    index.to_file(out_base_name, compress=False)
-
-
-def make_index_cli(args):
-    return make_index(args.reference, args.vcf, args.vcf_no_genotypes, args.out_base_name, args.kmer_size, make_helper_model=args.make_helper_model, modulo=args.modulo)
 

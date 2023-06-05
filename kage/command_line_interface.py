@@ -31,7 +31,7 @@ from kmer_mapper.command_line_interface import map_bnp
 from argparse import Namespace
 from obgraph.numpy_variants import NumpyVariants
 from .indexing.sparse_haplotype_matrix import make_sparse_haplotype_matrix_cli
-from .indexing.path_variant_indexing import make_index_cli
+from kage.indexing.main import make_index_cli
 import gc
 
 np.random.seed(1)

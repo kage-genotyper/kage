@@ -58,18 +58,9 @@ def test_path_kmers(graph, paths):
     ]
 
 
-def _test_path_kmers2(graph, paths):
-    path_kmers = PathKmers.from_graph_and_paths(graph, paths, k=2)
-    # 5 is the index of the path that is 1, 0, 1, 0, 1 (window=3)
-    #seq =
-    path_kmers = path_kmers[5]
-    ref_kmers = [[k.to_string() for k in node] for node in ref_path]
-    #assert ref_kmers == [
-
 def test_get_kmers_for_haplotype(graph, paths):
     path_kmers = PathKmers.from_graph_and_paths(graph, paths, k=2)
     haplotype_as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles([0]*5, paths, window=3)
-
     kmers = path_kmers.get_for_haplotype(haplotype_as_paths)
     kmers = [k.to_string() for k in kmers]
     correct = ["GG", "GG", "GA", "AG", "GG", "GA", "AG", "GG", "GA", "AG", "GG", "GA", "AG", "GG", "GA", "AG", "GG"]
@@ -79,12 +70,8 @@ def test_get_kmers_for_haplotype(graph, paths):
 def test_get_kmers_for_haplotype2(graph, paths):
     path_kmers = PathKmers.from_graph_and_paths(graph, paths, k=2)
     haplotype_as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles([0, 1, 0, 1, 0], paths, window=3)
-    print(path_kmers.kmers)
-    print(haplotype_as_paths.paths)
     correct_seq = "GGG A GG C GG A GG C GG A GG".replace(" ", "")
     correct = [correct_seq[i:i+2] for i in range(len(correct_seq)-1)]
-    print(correct)
     kmers = path_kmers.get_for_haplotype(haplotype_as_paths)
     kmers = [k.to_string() for k in kmers]
-    print("Kmers found", kmers)
     assert sorted(kmers) == sorted(correct)
