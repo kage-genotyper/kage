@@ -8,6 +8,8 @@ from kage.indexing.path_variant_indexing import Graph, PathCreator, make_kmer_sc
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix, GenotypeMatrix
 from kage.models.helper_model import HelperVariants, CombinationMatrix
 from .path_based_count_model import PathBasedMappingModelCreator
+from kage.models.mapping_model import convert_model_to_sparse
+
 
 def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, out_base_name, k=31,
                modulo=20000033, variant_window=4, make_helper_model=False):
@@ -29,7 +31,7 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
 
 
     signatures = SignatureFinder3(paths, scorer=scorer, k=k).run()
-    tricky_variants = find_tricky_variants_from_signatures(signatures)
+    #tricky_variants = find_tricky_variants_from_signatures(signatures)
     kmer_index = signatures.get_as_kmer_index(modulo=modulo, k=k)
 
 
@@ -40,6 +42,7 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
 
     from ..models.mapping_model import refine_sampling_model_noncli
     count_model = refine_sampling_model_noncli(count_model, variant_to_nodes)
+    convert_model_to_sparse(count_model)
 
     numpy_variants = NumpyVariants.from_vcf(vcf_no_genotypes_file_name)
     indexes = {
@@ -47,7 +50,7 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
             "count_model": count_model,
             "kmer_index": kmer_index,
             "numpy_variants": numpy_variants,
-            "tricky_variants": tricky_variants,
+            #"tricky_variants": tricky_variants,
         }
     # helper model
     if make_helper_model:
