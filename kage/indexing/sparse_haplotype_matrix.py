@@ -66,7 +66,6 @@ class SparseHaplotypeMatrix:
 
         offset = 0
         for i, chunk in enumerate(vcf.read_chunks()):
-            logging.info(f"Processed {offset} variants")
             genotypes = chunk.genotypes.raw()
             n_haplotypes = genotypes.shape[1] * 2
             # encoding is 0: "0|0", 1: "0|1", 2: "1|0", 3: "1|1"
@@ -88,6 +87,7 @@ class SparseHaplotypeMatrix:
             offset += len(chunk)
 
 
+        logging.info(f"In total {offset} variants and {n_haplotypes} haplotypes")
         return cls.from_variants_and_haplotypes(np.concatenate(all_variant_ids),
                                                 np.concatenate(all_haplotype_ids),
                                                 n_variants=offset,

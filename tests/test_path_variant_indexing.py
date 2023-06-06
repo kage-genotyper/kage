@@ -147,10 +147,11 @@ def test_mapping_model_creator(graph, haplotype_matrix):
 
 
 def test_graph_from_vcf():
-    graph = Graph.from_vcf("example_data/few_variants.vcf", "example_data/small_reference.fa")
-    assert graph.n_variants() == 3
+    graph = Graph.from_vcf("example_data/few_variants_two_chromosomes.vcf", "example_data/small_reference_two_chromosomes.fa")
+
+    assert graph.n_variants() == 4
     assert [s for s in graph.genome.sequence.tolist()] == \
-        ["AAA", "CC", "CCG", "TTTT"]
+        ["AAA", "CC", "CCG", "TTTTAAA", "CC"]
 
     assert graph.variants.get_allele_sequence(0, 0) == "A"
     assert graph.variants.get_allele_sequence(0, 1) == "T"
@@ -158,25 +159,14 @@ def test_graph_from_vcf():
     assert graph.variants.get_allele_sequence(1, 1) == "TTT"
     assert graph.variants.get_allele_sequence(2, 0) == "GGG"
     assert graph.variants.get_allele_sequence(2, 1) == ""
+    assert graph.variants.get_allele_sequence(3, 0) == "A"
+    assert graph.variants.get_allele_sequence(3, 1) == "T"
 
     # following ref at all variants should give ref sequence
-    assert graph.sequence(np.array([0, 0, 0])).ravel().to_string() == "AAAACCCCGGGGTTTT"
+    assert graph.sequence(np.array([0, 0, 0, 0])).ravel().to_string() == "AAAACCCCGGGGTTTTAAAACC"
 
     # following alt at all variants
-    assert graph.sequence(np.array([1, 1, 1])).ravel().to_string() == "AAATCCTTTCCGTTTT"
-
-
-
-
-
-
-def test_graph_from_vcf_two_chromosomes():
-    graph = Graph.from_vcf("example_data/few_variants_two_chromosomes.vcf", "example_data/small_reference_two_chromosomes.fa")
-    assert graph.n_variants() == 4
-    print(graph.genome.sequence)
-    assert len(graph.genome.sequence) == 5
-    assert graph.genome.sequence[3].to_string() == "TTTTAAA"
-
+    assert graph.sequence(np.array([1, 1, 1, 1])).ravel().to_string() == "AAATCCTTTCCGTTTTAAATCC"
 
 
 

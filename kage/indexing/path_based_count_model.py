@@ -56,7 +56,7 @@ class PathKmers:
         # kmers for a variant should include the kmers for the variant and
         # the kmers for the following ref sequence before next variant
         n_paths = path_allele_matrix.shape[0]
-        logging.info("Maping pathkmers for %d paths", n_paths)
+        logging.info("Making pathkmers for %d paths", n_paths)
         return cls([graph.kmers_for_pairs_of_ref_and_variants(path_allele_matrix[i, :], k) for i in range(n_paths)])
 
 
@@ -112,11 +112,11 @@ class PathBasedMappingModelCreator(MappingModelCreator):
 
     def _process_individual(self, i):
         t0 = time.perf_counter()
-        logging.info("Staring individual %d", i)
+        #logging.info("Staring individual %d", i)
         haplotype1 = self._haplotype_matrix.get_haplotype(i * 2)
         haplotype2 = self._haplotype_matrix.get_haplotype(i * 2 + 1)
 
-        logging.info("Getting haplotypes took %.3f sec", time.perf_counter() - t0)
+        #logging.info("Getting haplotypes took %.3f sec", time.perf_counter() - t0)
         t0 = time.perf_counter()
 
         all_kmers = []
@@ -124,19 +124,19 @@ class PathBasedMappingModelCreator(MappingModelCreator):
             as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles(haplotype, self._paths.variant_alleles, window=3)
             all_kmers.append(self._path_kmers.get_for_haplotype(as_paths).raw().ravel().astype(np.uint64))
 
-        logging.info("Getting all kmers took %.3f sec", time.perf_counter() - t0)
+        #logging.info("Getting all kmers took %.3f sec", time.perf_counter() - t0)
         t0 = time.perf_counter()
 
         haplotype1_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2)
         haplotype2_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2+1)
-        logging.info("Getting nodes took %.3f sec", time.perf_counter() - t0)
+        #logging.info("Getting nodes took %.3f sec", time.perf_counter() - t0)
         t0 = time.perf_counter()
 
         node_counts = self._kmer_index.map_kmers(np.concatenate(all_kmers), self._n_nodes)
-        logging.info("Mapping kmers took %.3f sec", time.perf_counter() - t0)
+        #logging.info("Mapping kmers took %.3f sec", time.perf_counter() - t0)
         t0 = time.perf_counter()
 
         self._add_node_counts(haplotype1_nodes, haplotype2_nodes, node_counts)
-        logging.info("Adding node counts took %.3f sec", time.perf_counter() - t0)
+        #logging.info("Adding node counts took %.3f sec", time.perf_counter() - t0)
 
 

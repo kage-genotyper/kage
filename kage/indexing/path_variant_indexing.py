@@ -12,6 +12,7 @@ import tqdm
 from .sparse_haplotype_matrix import SparseHaplotypeMatrix
 from ..models.mapping_model import LimitedFrequencySamplingComboModel
 from .tricky_variants import TrickyVariants
+from bionumpy.datatypes import Interval
 
 
 """
@@ -130,8 +131,62 @@ class Graph:
         sequence = self.sequence(haplotype).ravel()
         return bnp.get_kmers(sequence, k).ravel().raw().astype(np.uint64)
 
+
     @classmethod
     def from_vcf(cls, vcf_file_name, reference_file_name, k=31):
+        reference_sequences = bnp.open(reference_file_name).read()
+        chromosome_names = reference_sequences.name
+        chromosome_sequences = reference_sequences.sequence
+        chromosome_lengths = {name.to_string(): len(seq) for name, seq in zip(chromosome_names, chromosome_sequences)}
+
+        global_reference_sequence = np.concatenate(chromosome_sequences)
+        global_reference_sequence = bnp.change_encoding(global_reference_sequence, bnp.encodings.ACGTnEncoding)
+
+        global_offset = bnp.genomic_data.global_offset.GlobalOffset(chromosome_lengths)
+
+        # reading all variants into memory, should be fine with normal vcfs
+        logging.info("Reading variants")
+        variants = bnp.open(vcf_file_name).read()
+
+        is_indel = variants.ref_seq.shape[1] != variants.alt_seq.shape[1]
+
+        variants_as_intervals = Interval(variants.chromosome, variants.position, variants.position+variants.ref_seq.shape[1])
+        variants_global_offset = global_offset.from_local_interval(variants_as_intervals)
+
+        # start position should be first base of "unique" ref sequence in variant
+        # stop should be first base of ref sequence after variant
+        global_starts = variants_global_offset.start.copy()
+        global_stops = variants_global_offset.stop.copy()
+        global_starts[is_indel] += 1
+
+        between_variants_start = np.insert(global_stops, 0, 0)
+        between_variants_end = np.insert(global_starts, len(global_starts), len(global_reference_sequence))
+
+        sequence_between_variants = bnp.ragged_slice(global_reference_sequence, between_variants_start, between_variants_end)
+
+        variant_ref_sequences = variants.ref_seq
+        variant_alt_sequences = variants.alt_seq
+
+        # remove first trailing base from indels
+        mask = np.ones_like(variant_ref_sequences.raw(), dtype=bool)
+        mask[is_indel, 0] = False
+        variant_ref_sequences = bnp.EncodedRaggedArray(variant_ref_sequences[mask], mask.sum(axis=1))
+
+        mask = np.ones_like(variant_alt_sequences.raw(), dtype=bool)
+        mask[is_indel, 0] = False
+        variant_alt_sequences = bnp.EncodedRaggedArray(variant_alt_sequences[mask], mask.sum(axis=1))
+
+        # replace N's with A
+        sequence_between_variants[sequence_between_variants == "N"] = "A"
+        sequence_between_variants = bnp.change_encoding(sequence_between_variants, bnp.DNAEncoding)
+
+
+        return cls(GenomeBetweenVariants(sequence_between_variants),
+                   Variants(np.concatenate([variant_ref_sequences, variant_alt_sequences])))
+
+
+    @classmethod
+    def _from_vcf(cls, vcf_file_name, reference_file_name, k=31):
         reference = bnp.open(reference_file_name, bnp.encodings.ACGTnEncoding).read()
         reference = {s.name.to_string(): s.sequence for s in reference}
         #assert len(reference) == 1, "Only one chromosome supported now"
