@@ -14,7 +14,8 @@ from .sparse_haplotype_matrix import SparseHaplotypeMatrix
 from ..models.mapping_model import LimitedFrequencySamplingComboModel
 from .tricky_variants import TrickyVariants
 from bionumpy.datatypes import Interval
-
+from ..util import log_memory_usage_now
+from shared_memory_wrapper.util import interval_chunks
 
 """
 Module for simple variant signature finding by using static predetermined paths through the "graph".
@@ -80,6 +81,11 @@ def zip_sequences(a: bnp.EncodedRaggedArray, b: bnp.EncodedRaggedArray):
     return new
 
 
+def stream_ragged_array(a, chunk_size=100000):
+    chunks = interval_chunks(0, len(a), 1+len(a) // chunk_size)
+    for chunk in chunks:
+        yield a[chunk[0]:chunk[1]]
+
 @dataclass
 class Graph:
     genome: GenomeBetweenVariants
@@ -91,7 +97,7 @@ class Graph:
     def n_nodes(self):
         return self.n_variants()*2
 
-    def sequence(self, haplotypes: np.ndarray) -> bnp.EncodedArray:
+    def sequence(self, haplotypes: np.ndarray, stream=False) -> bnp.EncodedArray:
         """
         Returns the sequence through the graph given haplotypes for all variants
         """
@@ -100,7 +106,11 @@ class Graph:
         variant_sequences = self.variants.get_haplotype_sequence(haplotypes)
 
         # stitch these together
-        return zip_sequences(ref_sequence, variant_sequences)
+        result = zip_sequences(ref_sequence, variant_sequences)
+        if not stream:
+            return result
+        else:
+            return (res for res in stream_ragged_array(result))
 
     def sequence_of_pairs_of_ref_and_variants_as_ragged_array(self, haplotypes: np.ndarray) -> bnp.EncodedRaggedArray:
         """
@@ -128,10 +138,13 @@ class Graph:
         sequence_lengths[-1] -= k-1
         return bnp.EncodedRaggedArray(all_kmers.ravel(), sequence_lengths)
 
-    def get_haplotype_kmers(self, haplotype: np.array, k) -> np.ndarray:
-        sequence = self.sequence(haplotype).ravel()
-        return bnp.get_kmers(sequence, k).ravel().raw().astype(np.uint64)
-
+    def get_haplotype_kmers(self, haplotype: np.array, k, stream=False) -> np.ndarray:
+        if not stream:
+            sequence = self.sequence(haplotype).ravel()
+            return bnp.get_kmers(sequence, k).ravel().raw().astype(np.uint64)
+        else:
+            sequence = self.sequence(haplotype, stream=True)
+            return (bnp.get_kmers(subseq.ravel(), k).ravel().raw().astype(np.uint64) for subseq in sequence)
 
     @classmethod
     def from_vcf(cls, vcf_file_name, reference_file_name, k=31):
@@ -360,13 +373,27 @@ def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: Spar
     counter = FastApproxCounter.empty(modulo)
     chosen_haplotypes = np.random.choice(np.arange(haplotype_matrix.n_haplotypes), n_haplotypes, replace=False)
     logging.info("Picked random haplotypes to make kmer scorer: %s" % chosen_haplotypes)
-    for haplotype in tqdm.tqdm(chosen_haplotypes, desc="Estimating global kmer counts", unit="haplotype"):
-        counter.add(graph.get_haplotype_kmers(haplotype_matrix.get_haplotype(haplotype), k=k))
+    haplotype_nodes = (haplotype_matrix.get_haplotype(haplotype) for haplotype in chosen_haplotypes)
 
     # also add the reference and a haplotype with all variants
-    counter.add(graph.get_haplotype_kmers(np.zeros(haplotype_matrix.n_variants, dtype=np.uint8), k=k))
-    counter.add(graph.get_haplotype_kmers(np.ones(haplotype_matrix.n_variants, dtype=np.uint8), k=k))
+    haplotype_nodes = itertools.chain(haplotype_nodes,
+                                      [np.zeros(haplotype_matrix.n_variants, dtype=np.uint8),
+                                        np.ones(haplotype_matrix.n_variants, dtype=np.uint8)])
 
+    for i, nodes in tqdm.tqdm(enumerate(haplotype_nodes), desc="Estimating global kmer counts", total=len(chosen_haplotypes), unit="haplotype"):
+        #haplotype_nodes = haplotype_matrix.get_haplotype(haplotype)
+        log_memory_usage_now("Memory after getting nodes")
+        kmers = graph.get_haplotype_kmers(nodes, k=k, stream=True)
+        log_memory_usage_now("Memory after kmers")
+        for subkmers in kmers:
+            counter.add(subkmers)
+        log_memory_usage_now("After adding haplotype %d" % i)
+
+    # also add the reference and a haplotype with all variants
+    #kmers = graph.get_haplotype_kmers(np.zeros(haplotype_matrix.n_variants, dtype=np.uint8), k=k, stream=False)
+    #print(kmers)
+    #counter.add(kmers)
+    #counter.add(graph.get_haplotype_kmers(np.ones(haplotype_matrix.n_variants, dtype=np.uint8), k=k))
 
     return counter
 

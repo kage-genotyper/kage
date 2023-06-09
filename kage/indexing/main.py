@@ -9,10 +9,10 @@ from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix, Genotyp
 from kage.models.helper_model import HelperVariants, CombinationMatrix
 from .path_based_count_model import PathBasedMappingModelCreator
 from kage.models.mapping_model import convert_model_to_sparse
-
+from kage.util import log_memory_usage_now
 
 def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, out_base_name, k=31,
-               modulo=20000033, variant_window=4, make_helper_model=False):
+               modulo=20000033, variant_window=3, make_helper_model=False):
     """
     Makes all indexes and writes to an index bundle.
     """
@@ -20,8 +20,14 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     haplotype_matrix = SparseHaplotypeMatrix.from_vcf(vcf_file_name)
     logging.info("N variants in haplotype matrix: %d" % haplotype_matrix.data.shape[0])
 
+
     logging.info("Making graph")
     graph = Graph.from_vcf(vcf_no_genotypes_file_name, reference_file_name)
+
+    log_memory_usage_now("After graph")
+    scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=8, modulo=modulo)
+
+    log_memory_usage_now("After scorer")
 
     logging.info("Making paths")
     paths = PathCreator(graph, window=variant_window,
@@ -34,7 +40,6 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
 
     variant_to_nodes = VariantToNodes(np.arange(graph.n_variants())*2, np.arange(graph.n_variants())*2+1)
 
-    scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=8, modulo=modulo)
 
 
     signatures = SignatureFinder3(paths, scorer=scorer, k=k).run()

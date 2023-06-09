@@ -57,7 +57,7 @@ class PathKmers:
         # the kmers for the following ref sequence before next variant
         n_paths = path_allele_matrix.shape[0]
         logging.info("Making pathkmers for %d paths", n_paths)
-        return cls([graph.kmers_for_pairs_of_ref_and_variants(path_allele_matrix[i, :], k) for i in range(n_paths)])
+        return cls((graph.kmers_for_pairs_of_ref_and_variants(path_allele_matrix[i, :], k) for i in range(n_paths)))
 
 
     def get_for_haplotype(self, haplotype: HaplotypeAsPaths, include_reverse_complements=False):
@@ -86,14 +86,15 @@ class PathKmers:
         Prunes away kmers that are not in kmer index.
         Prunes inplace.
         """
-        for i in range(len(self.kmers)):
-            encoding = self.kmers[i].encoding
-            raw_kmers = self.kmers[i].raw().ravel().astype(np.uint64)
+        new = []
+        for i, kmers in enumerate(self.kmers):
+            encoding = kmers.encoding
+            raw_kmers = kmers.raw().ravel().astype(np.uint64)
             is_in = kmer_index.has_kmers(raw_kmers)
-            mask = nps.RaggedArray(is_in, self.kmers[i].shape, dtype=bool)
-            logging.info(f"Pruned away {np.sum(mask==False)}/{len(self.kmers[i])} kmers for path {i}")
-            self.kmers[i] = bnp.EncodedRaggedArray(bnp.EncodedArray(self.kmers[i][mask], encoding), np.sum(mask, axis=1))
-
+            mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)
+            logging.info(f"Pruned away {np.sum(mask==False)}/{len(kmers)} kmers for path {i}")
+            new.append(bnp.EncodedRaggedArray(bnp.EncodedArray(kmers[mask], encoding), np.sum(mask, axis=1)))
+        self.kmers = new
 
 class PathBasedMappingModelCreator(MappingModelCreator):
     def __init__(self, graph: Graph, kmer_index: KmerIndex,
