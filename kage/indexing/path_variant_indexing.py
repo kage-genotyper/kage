@@ -165,8 +165,6 @@ class Graph:
         variants = bnp.open(vcf_file_name).read()
         variants = Variants.from_vcf_entry(variants)
 
-        #is_indel = variants.ref_seq.shape[1] != variants.alt_seq.shape[1]
-
         variants_as_intervals = Interval(variants.chromosome, variants.position, variants.position+variants.ref_seq.shape[1])
         variants_global_offset = global_offset.from_local_interval(variants_as_intervals)
 
@@ -174,7 +172,6 @@ class Graph:
         # stop should be first base of ref sequence after variant
         global_starts = variants_global_offset.start.copy()
         global_stops = variants_global_offset.stop.copy()
-        #global_starts[is_indel] += 1
 
         between_variants_start = np.insert(global_stops, 0, 0)
         between_variants_end = np.insert(global_starts, len(global_starts), len(global_reference_sequence))
@@ -183,15 +180,6 @@ class Graph:
 
         variant_ref_sequences = variants.ref_seq
         variant_alt_sequences = variants.alt_seq
-
-        # remove first trailing base from indels
-        #mask = np.ones_like(variant_ref_sequences.raw(), dtype=bool)
-        #mask[is_indel, 0] = False
-        #variant_ref_sequences = bnp.EncodedRaggedArray(variant_ref_sequences[mask], mask.sum(axis=1))
-
-        #mask = np.ones_like(variant_alt_sequences.raw(), dtype=bool)
-        #mask[is_indel, 0] = False
-        #variant_alt_sequences = bnp.EncodedRaggedArray(variant_alt_sequences[mask], mask.sum(axis=1))
 
         # replace N's with A
         sequence_between_variants[sequence_between_variants == "N"] = "A"
