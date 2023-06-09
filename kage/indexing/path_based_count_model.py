@@ -67,6 +67,10 @@ class PathKmers:
 
         Returns kmers in no particular order.
         """
+        if not isinstance(self.kmers, list):
+            # only used for testing. This function is normally called after pruning and then kmers is a list
+            self.kmers = list(self.kmers)
+
         kmers_found = []
         # add kmers on first ref node
         start_kmers = self.kmers[int(haplotype.paths[0])][0].ravel()

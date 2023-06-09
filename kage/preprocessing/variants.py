@@ -136,5 +136,9 @@ class VariantPadder:
         new_ref_sequences = bnp.EncodedRaggedArray(bnp.EncodedArray(ref_merged.ravel(), bnp.BaseEncoding), ref_merged.shape)
         new_alt_sequences = bnp.EncodedRaggedArray(bnp.EncodedArray(alt_merged.ravel(), bnp.BaseEncoding), alt_merged.shape)
 
-
         return Variants(self._variants.chromosome, new_positions, new_ref_sequences, new_alt_sequences)
+
+
+
+def pad_variants(vcf_file_name, reference_file_name):
+    pass

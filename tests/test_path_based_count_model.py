@@ -46,7 +46,7 @@ def test_haplotype_as_paths(paths2):
 
 def test_path_kmers(graph, paths):
     path_kmers = PathKmers.from_graph_and_paths(graph, paths, k=2)
-    ref_path = path_kmers.kmers[0]
+    ref_path = list(path_kmers.kmers)[0]
     ref_kmers = [[k.to_string() for k in node] for node in ref_path]
     assert ref_kmers == [
         ["GG", "GG", "GA"],
