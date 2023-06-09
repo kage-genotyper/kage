@@ -1,4 +1,4 @@
-from kage.preprocessing.variants import VariantPadder, Variants
+from kage.preprocessing.variants import VariantPadder, Variants, get_padded_variants_from_vcf
 import pytest
 from bionumpy.datatypes import VCFEntry
 import bionumpy as bnp
@@ -98,3 +98,8 @@ def test_variant_padder2(variants2, reference2):
 
     assert padded == correct
 
+
+
+def test_get_padded_variants_from_vcf():
+    variants = get_padded_variants_from_vcf("example_data/few_variants_two_chromosomes.vcf", "example_data/small_reference_two_chromosomes.fa")
+    print(variants)

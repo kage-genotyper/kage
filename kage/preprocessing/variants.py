@@ -139,6 +139,18 @@ class VariantPadder:
         return Variants(self._variants.chromosome, new_positions, new_ref_sequences, new_alt_sequences)
 
 
+def get_padded_variants_from_vcf(vcf_file_name, reference_file_name):
+    variants = bnp.open(vcf_file_name).read_chunks()
+    genome = bnp.open(reference_file_name).read()
+    sequences = {str(sequence.name): sequence.sequence for sequence in genome}
+    print(sequences)
+    all_variants = []
 
-def pad_variants(vcf_file_name, reference_file_name):
-    pass
+    for chromosome, chromosome_variants in bnp.groupby(variants, "chromosome"):
+        padded_variants = VariantPadder(chromosome_variants, sequences[chromosome]).run()
+        all_variants.append(padded_variants)
+
+    return np.concatenate(all_variants)
+
+
+

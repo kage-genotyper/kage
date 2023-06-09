@@ -15,7 +15,7 @@ from ..models.mapping_model import LimitedFrequencySamplingComboModel
 from .tricky_variants import TrickyVariants
 from bionumpy.datatypes import Interval
 
-from ..preprocessing.variants import Variants
+from ..preprocessing.variants import Variants, get_padded_variants_from_vcf
 from ..util import log_memory_usage_now
 from shared_memory_wrapper.util import interval_chunks
 
@@ -149,7 +149,7 @@ class Graph:
             return (bnp.get_kmers(subseq.ravel(), k).ravel().raw().astype(np.uint64) for subseq in sequence)
 
     @classmethod
-    def from_vcf(cls, vcf_file_name, reference_file_name, k=31):
+    def from_vcf(cls, vcf_file_name, reference_file_name, pad_variants=False):
         reference_sequences = bnp.open(reference_file_name).read()
         chromosome_names = reference_sequences.name
         chromosome_sequences = reference_sequences.sequence
@@ -162,8 +162,12 @@ class Graph:
 
         # reading all variants into memory, should be fine with normal vcfs
         logging.info("Reading variants")
-        variants = bnp.open(vcf_file_name).read()
-        variants = Variants.from_vcf_entry(variants)
+
+        if pad_variants:
+            variants = get_padded_variants_from_vcf(vcf_file_name, reference_file_name)
+        else:
+            variants = bnp.open(vcf_file_name).read()
+            variants = Variants.from_vcf_entry(variants)
 
         variants_as_intervals = Interval(variants.chromosome, variants.position, variants.position+variants.ref_seq.shape[1])
         variants_global_offset = global_offset.from_local_interval(variants_as_intervals)
