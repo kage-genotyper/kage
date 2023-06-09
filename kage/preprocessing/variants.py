@@ -86,6 +86,9 @@ class VariantPadder:
         pad_left = self.get_distance_to_ref_mask(dir="left")
         pad_right = self.get_distance_to_ref_mask(dir="right")
 
+        print("Pad left:", pad_left)
+        print("Pad right:", pad_right)
+
         # left padding
         to_pad = pad_left[self._variants.position] > 1
         start_of_padding = self._variants.position[to_pad] - pad_left[self._variants.position[to_pad]] + 1
@@ -97,15 +100,23 @@ class VariantPadder:
         lengths_left[to_pad] = left_padding.shape[1]
         left_padding = EncodedRaggedArray(left_padding.ravel(), lengths_left)
 
+        # position is adjusted by left padding
+        new_positions = self._variants.position.copy()
+        new_positions -= lengths_left.astype(int)
 
         # right padding
-        to_pad = pad_right[self._variants.position + self._variants.ref_seq.shape[1]] > 1
+        to_pad = pad_right[self._variants.position + self._variants.ref_seq.shape[1]] >= 1
         print(to_pad)
         subset = self._variants[to_pad]
-        start_of_padding = subset.position + subset.ref_seq.shape[1]
-        end_of_padding = start_of_padding + pad_right[start_of_padding]
+        print("Subset position")
+        print(subset.position)
+        start_of_padding = subset.position + subset.ref_seq.shape[1] + 0
+        print("Start of padding")
+        print(start_of_padding)
+        end_of_padding = start_of_padding + pad_right[start_of_padding] + 0
         print(start_of_padding, end_of_padding)
         right_padding = bnp.ragged_slice(self._reference, start_of_padding, end_of_padding)
+
 
         # make new ragged array with the padded sequences
         lengths_right = np.zeros(len(self._variants))
@@ -125,4 +136,5 @@ class VariantPadder:
         new_ref_sequences = bnp.EncodedRaggedArray(bnp.EncodedArray(ref_merged.ravel(), bnp.BaseEncoding), ref_merged.shape)
         new_alt_sequences = bnp.EncodedRaggedArray(bnp.EncodedArray(alt_merged.ravel(), bnp.BaseEncoding), alt_merged.shape)
 
-        return Variants(self._variants.chromosome, self._variants.position, new_ref_sequences, new_alt_sequences)
+
+        return Variants(self._variants.chromosome, new_positions, new_ref_sequences, new_alt_sequences)

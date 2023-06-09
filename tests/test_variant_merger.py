@@ -66,6 +66,35 @@ def test_variant_padder(variants, reference):
     assert padded == correct
 
 
+@pytest.fixture
+def variants2():
+    return Variants.from_entry_tuples(
+        [
+            ("1", 4, "TGCAT", ""),
+            ("1", 6, "C", "G"),
+            ("1", 7, "A", "T"),
+            ("1", 8, "T", "C"),
+        ]
+    )
+
+@pytest.fixture
+def reference2():
+    return bnp.as_encoded_array("TGCA"*4)
+
 
 def test_variant_padder2(variants2, reference2):
-    pass
+    padder = VariantPadder(variants2, reference2)
+    padded = padder.run()
+
+    correct = Variants.from_entry_tuples(
+        [
+            ("1", 4, "TGCAT", ""),
+            ("1", 4, "TGCAT", "TGGAT"),
+            ("1", 4, "TGCAT", "TGCTT"),
+            ("1", 4, "TGCAT", "TGCAC"),
+        ]
+    )
+    print(padded)
+
+    assert padded == correct
+
