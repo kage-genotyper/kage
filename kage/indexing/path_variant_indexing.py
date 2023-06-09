@@ -8,6 +8,7 @@ import numpy as np
 import bionumpy as bnp
 from graph_kmer_index import KmerIndex, FlatKmers
 import tqdm
+from shared_memory_wrapper import from_file, to_file
 
 from .sparse_haplotype_matrix import SparseHaplotypeMatrix
 from ..models.mapping_model import LimitedFrequencySamplingComboModel
@@ -273,7 +274,7 @@ class VariantWindowKmers:
 @dataclass
 class MatrixVariantWindowKmers:
     """
-    Represents kmers around kmers in a 3-dimensional matrix, possible when n kmers per variant allele is fixed
+    Represents kmers around variants in a 3-dimensional matrix, possible when n kmers per variant allele is fixed
     """
     kmers: np.ndarray  # n_paths, n variants x n_windows
     variant_alleles: np.ndarray
@@ -288,7 +289,7 @@ class MatrixVariantWindowKmers:
         matrix = np.zeros((n_paths, n_variants, n_windows), dtype=np.uint64)
 
 
-        for i, path in enumerate(paths.paths):
+        for i, path in enumerate(paths.iter_path_sequences()):
             starts = path._shape.starts[1::2]
             window_starts = starts - k + 1 + k//2
             #window_ends = np.minimum(starts + k, path.size)
@@ -371,10 +372,21 @@ def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: Spar
 
 @dataclass
 class Paths:
+    # the sequence for each path, as a ragged array (nodes)
     paths: List[bnp.EncodedRaggedArray]
     # the allele present at each variant in each path
     variant_alleles: np.ndarray  # n_paths x n_variants
-    #path_kmers: List[bnp.EncodedRaggedArray] = None
+
+    def get_path_sequence(self, path_index):
+        path_sequence = self.paths[path_index]
+        if isinstance(path_sequence, DiscBackedPath):
+            return path_sequence.load()
+        else:
+            return path_sequence
+
+    def iter_path_sequences(self):
+        for i in range(len(self.paths)):
+            yield self.get_path_sequence(i)
 
     def n_variants(self):
         return self.variant_alleles.shape[1]
@@ -394,7 +406,6 @@ class Paths:
             windowed_paths.append(
                 bnp.get_kmers(windows, k=k)
             )
-
         return VariantWindowKmers(windowed_paths, self.variant_alleles)
 
     def __str__(self):
@@ -404,10 +415,9 @@ class Paths:
         return str(self)
 
     def get_kmers(self, variant, allele, kmer_size=3):
+        raise NotImplementedError("Not to be used more")
         # gets all kmers of size kmer_size around the variant allele (on all paths relevant for the allele)
         path_sequences = self.paths_for_allele_at_variant(allele, variant)
-        window_sequences = []
-        window_kmers = []
         n_kmers_per_window = kmer_size
         out = np.zeros((len(path_sequences), n_kmers_per_window), dtype=np.uint64)
         for i, path in enumerate(path_sequences):
@@ -415,38 +425,48 @@ class Paths:
             start = offset_in_path - kmer_size + 1
             assert start >= 0, "NOt supporting variants < kmer_size away from edge"
             end = offset_in_path + kmer_size
-            #assert end < len(path), "NOt supporting variants < kmer_size away from edge"
-            #window_sequences.append(path.ravel()[start:end])
-            #window_kmers.append()
             kmers = bnp.get_kmers(path.ravel()[start:end], kmer_size).ravel().raw().astype(np.uint64)
             out[i, :len(kmers)] = kmers
 
-        #window_sequences = bnp.as_encoded_array(window_sequences, bnp.DNAEncoding)
-        #kmers = bnp.get_kmers(window_sequences, kmer_size)
-        #return kmers
         return out
-        #return nps.RaggedArray(window_kmers)
-    
+
+    def to_disc_backend(self, file_base_name):
+        self.paths = [
+            DiscBackedPath(to_file(path, f"{file_base_name}_path_{i}")) for i, path in enumerate(self.paths)
+        ]
+
 
 @dataclass
-class PathsAroundVariants:
+class DiscBackedPath:
     """
-    Path-like, but only contains sequences around variants, precomputed with kmer
+    Can be used as the paths property in Paths, stores sequences on disk and only allows iterating over them.
     """
-    kmers: List[bnp.EncodedRaggedArray]  # one encoded ragged array for each path. Each row in each ragged array represents a variant
-    variant_alleles: np.ndarray
+    # the sequence for each path, as a ragged array (nodes)
+    file: str
 
-    def get_kmers(self, alleles):
-        """ Returns kmers for all variants"""
-        pass
+    def __getitem__(self, item):
+        data = from_file(self.file)
+        return data[item]
+
+    def load(self):
+        return from_file(self.file)
+
+    @classmethod
+    def from_non_disc_backed(cls, path, file_name):
+        return cls(to_file(path, file_name))
 
 
 class PathCreator:
-    def __init__(self, graph, window: int = 3):
+    def __init__(self, graph, window: int = 3, make_disc_backed=False, disc_backed_file_base_name=None):
         self._graph = graph
         self._variants = graph.variants
         self._genome = graph.genome
         self._window = window
+        self._make_disc_backed = make_disc_backed
+        if self._make_disc_backed:
+            logging.info("Will make disc backed paths")
+            assert disc_backed_file_base_name is not None
+            self._disc_backed_file_base_name = disc_backed_file_base_name
 
     def run(self):
         alleles = [0, 1]  # possible alleles, assuming biallelic variants
@@ -460,23 +480,9 @@ class PathCreator:
         ref_between = self._genome.sequence
         for i, alleles in tqdm.tqdm(enumerate(combinations), total=n_paths, desc="Creating paths through graph", unit="path"):
             # make a new EncodedRaggedArray where every other row is ref/variant
-            """
-            n_rows = len(ref_between) + n_variants
-            row_lengths = np.zeros(n_rows)
-            row_lengths[0::2] = ref_between.shape[1]
-
-
-            variant_sequences = bnp.as_encoded_array(
-                [self._variants.allele_sequences[allele][variant].to_string() for variant, allele in enumerate(alleles)], bnp.DNAEncoding)
-
-            row_lengths[1:-1:2] = variant_sequences.shape[1]
-
-            # empty placeholder to fill
-            path = bnp.EncodedRaggedArray(bnp.EncodedArray(np.zeros(int(np.sum(row_lengths)), dtype=np.uint8), bnp.DNAEncoding), row_lengths)
-            path[0::2] = ref_between
-            path[1:-1:2] = variant_sequences
-            """
             path = self._graph.sequence(alleles)
+            if self._make_disc_backed:
+                path = DiscBackedPath.from_non_disc_backed(path, f"{self._disc_backed_file_base_name}_path_{i}")
             paths.append(path)
 
         return Paths(paths, combinations)

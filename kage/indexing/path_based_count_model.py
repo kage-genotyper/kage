@@ -94,9 +94,10 @@ class PathKmers:
             logging.info(f"Pruned away {np.sum(mask==False)}/{len(self.kmers[i])} kmers for path {i}")
             self.kmers[i] = bnp.EncodedRaggedArray(bnp.EncodedArray(self.kmers[i][mask], encoding), np.sum(mask, axis=1))
 
+
 class PathBasedMappingModelCreator(MappingModelCreator):
     def __init__(self, graph: Graph, kmer_index: KmerIndex,
-                 haplotype_matrix: SparseHaplotypeMatrix, window, paths: Paths = None,
+                 haplotype_matrix: SparseHaplotypeMatrix, window, paths_allele_matrix = None,
                  max_count=10, k=31):
         self._graph = graph
         self._kmer_index = kmer_index
@@ -106,8 +107,8 @@ class PathBasedMappingModelCreator(MappingModelCreator):
         logging.info("Inited empty model")
         self._k = k
         self._max_count = max_count
-        self._paths = paths
-        self._path_kmers = PathKmers.from_graph_and_paths(graph, paths.variant_alleles, k=k)
+        self._path_allele_matrix = paths_allele_matrix
+        self._path_kmers = PathKmers.from_graph_and_paths(graph, paths_allele_matrix, k=k)
         self._path_kmers.prune(kmer_index)
 
     def _process_individual(self, i):
@@ -121,7 +122,7 @@ class PathBasedMappingModelCreator(MappingModelCreator):
 
         all_kmers = []
         for haplotype in [haplotype1, haplotype2]:
-            as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles(haplotype, self._paths.variant_alleles, window=3)
+            as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles(haplotype, self._path_allele_matrix, window=3)
             all_kmers.append(self._path_kmers.get_for_haplotype(as_paths).raw().ravel().astype(np.uint64))
 
         #logging.info("Getting all kmers took %.3f sec", time.perf_counter() - t0)

@@ -20,7 +20,12 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     graph = Graph.from_vcf(vcf_no_genotypes_file_name, reference_file_name)
 
     logging.info("Making paths")
-    paths = PathCreator(graph, window=variant_window).run()
+    paths = PathCreator(graph, window=variant_window,
+                        make_disc_backed=True, disc_backed_file_base_name=out_base_name).run()
+    #logging.info("Saving paths to disc")
+    #paths.to_disc_backend(out_base_name + ".paths")
+    #print("DTYPE")
+    #print(paths.paths[0].dtype)
     #scorer = make_scorer_from_paths(paths, k, modulo)
 
     logging.info("Making haplotype matrix")
@@ -37,7 +42,11 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
 
     logging.info("Creating count model")
     #model_creator = MappingModelCreator(graph, kmer_index, haplotype_matrix, k=k)
-    model_creator = PathBasedMappingModelCreator(graph, kmer_index, haplotype_matrix, k=k, paths=paths, window=variant_window)
+    model_creator = PathBasedMappingModelCreator(graph, kmer_index,
+                                                 haplotype_matrix,
+                                                 k=k,
+                                                 paths_allele_matrix=paths.variant_alleles,
+                                                 window=variant_window)
     count_model = model_creator.run()
 
     from ..models.mapping_model import refine_sampling_model_noncli
@@ -72,4 +81,5 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
 
 
 def make_index_cli(args):
-    return make_index(args.reference, args.vcf, args.vcf_no_genotypes, args.out_base_name, args.kmer_size, make_helper_model=args.make_helper_model, modulo=args.modulo)
+    return make_index(args.reference, args.vcf, args.vcf_no_genotypes, args.out_base_name,
+                      args.kmer_size, make_helper_model=args.make_helper_model, modulo=args.modulo)

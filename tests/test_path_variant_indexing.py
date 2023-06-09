@@ -94,7 +94,7 @@ def test_create_path(graph):
     assert len(paths.paths) == 8
 
 
-def test_get_kmers(graph):
+def _test_get_kmers(graph):
     creator = PathCreator(graph)
     paths = creator.run()
     kmers = paths.get_kmers(0, 0, kmer_size=4)
@@ -136,12 +136,14 @@ def test_zip_sequences():
 
 def test_mapping_model_creator(graph, haplotype_matrix):
     paths = PathCreator(graph, window=3).run()
-    signatures = SignatureFinder(paths).run()
+    scorer = FastApproxCounter.from_keys_and_values(np.array([1, 2, 100]), np.array([1, 2, 3]), 21)
+    signatures = SignatureFinder3(paths, scorer).run()
     kmer_index = signatures.get_as_kmer_index(k=3)
     model_creator = MappingModelCreator(graph, kmer_index, haplotype_matrix, k=3)
     model = model_creator.run()
     print(model)
-    path_based_model = PathBasedMappingModelCreator(graph, kmer_index, haplotype_matrix, window=3, k=3, paths=paths).run()
+    path_based_model = PathBasedMappingModelCreator(graph, kmer_index, haplotype_matrix, window=3, k=3,
+                                                    paths_allele_matrix=paths.variant_alleles).run()
     print(path_based_model)
     assert model == path_based_model
 
@@ -196,3 +198,10 @@ def test_tricky_variants_from_signatures():
     tricky_variants = find_tricky_variants_from_signatures(signatures)
     assert np.all(tricky_variants.tricky_variants == [True, True, False, True])
     print(tricky_variants)
+
+
+def test_disc_backed_path(graph):
+    creator = PathCreator(graph)
+    paths = creator.run()
+    paths.to_disc_backend("test_paths")
+    print(paths.paths[0][0:1])
