@@ -22,7 +22,7 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
 
 
     logging.info("Making graph")
-    graph = Graph.from_vcf(vcf_no_genotypes_file_name, reference_file_name)
+    graph = Graph.from_vcf(vcf_no_genotypes_file_name, reference_file_name, pad_variants=True)
 
     log_memory_usage_now("After graph")
     scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=8, modulo=modulo)
@@ -32,23 +32,14 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     logging.info("Making paths")
     paths = PathCreator(graph, window=variant_window,
                         make_disc_backed=True, disc_backed_file_base_name=out_base_name).run()
-    #logging.info("Saving paths to disc")
-    #paths.to_disc_backend(out_base_name + ".paths")
-    #print("DTYPE")
-    #print(paths.paths[0].dtype)
-    #scorer = make_scorer_from_paths(paths, k, modulo)
 
     variant_to_nodes = VariantToNodes(np.arange(graph.n_variants())*2, np.arange(graph.n_variants())*2+1)
-
-
 
     signatures = SignatureFinder3(paths, scorer=scorer, k=k).run()
     #tricky_variants = find_tricky_variants_from_signatures(signatures)
     kmer_index = signatures.get_as_kmer_index(modulo=modulo, k=k)
 
-
     logging.info("Creating count model")
-    #model_creator = MappingModelCreator(graph, kmer_index, haplotype_matrix, k=k)
     model_creator = PathBasedMappingModelCreator(graph, kmer_index,
                                                  haplotype_matrix,
                                                  k=k,

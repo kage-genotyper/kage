@@ -42,10 +42,10 @@ def test_reference_mask(variants, reference):
 def test_padding_distance(variants, reference):
     padder = VariantPadder(variants, reference)
     dist = padder.get_distance_to_ref_mask(dir="left")
-    assert np.all(dist == [0,0,0,0,1,0,0,0,0,1,2,3,0,0])
+    assert np.all(dist == [0,0,0,0,0,0,0,0,0,0,1,2,0,0])
 
     dist = padder.get_distance_to_ref_mask(dir="right")
-    assert np.all(dist == [0,0,0,0,1,0,0,0,0,3,2,1,0,0])
+    assert np.all(dist == [0,0,0,0,0,0,0,0,0,2,1,0,0,0])
 
     print(dist)
 
@@ -99,7 +99,38 @@ def test_variant_padder2(variants2, reference2):
     assert padded == correct
 
 
+def test_pad_overlapping_variants():
+    variants = Variants.from_entry_tuples([
+        ("1", 4, "AAAAA", ""),
+        ("1", 6, "AAAAA", ""),
+        ("1", 7, "", "CCCCCCC"),
+        ("1", 8, "AAAAA", ""),
+        ("1", 14, "AAAAA", ""),
+        ("1", 16, "AAAAA", ""),
+        ("1", 18, "AAAAA", ""),
+    ])
+    ref = bnp.as_encoded_array("A"*50)
+    padder = VariantPadder(variants, ref)
+    padded = padder.run()
+    print(padded)
+
+
+def test_pad_large_variants():
+    variants = Variants.from_entry_tuples([
+        ("chr1", 10, "A", "C"),
+        ("chr1", 30, "", "T" * 10),
+        ("chr1", 50, "G" * 10, ""),
+        ("chr1", 70, "T", "C"),
+        ("chr1", 100, "G" * 10, "")
+    ])
+
+    ref = bnp.as_encoded_array("A"*200000)
+    padder = VariantPadder(variants, ref)
+    padded = padder.run()
+    print(padded)
+
 
 def test_get_padded_variants_from_vcf():
     variants = get_padded_variants_from_vcf("example_data/few_variants_two_chromosomes.vcf", "example_data/small_reference_two_chromosomes.fa")
     print(variants)
+

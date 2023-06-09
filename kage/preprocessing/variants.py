@@ -2,6 +2,7 @@ import bionumpy as bnp
 import numpy as np
 from bionumpy.bnpdataclass import bnpdataclass
 from bionumpy import EncodedRaggedArray
+import logging
 
 
 @bnpdataclass
@@ -43,13 +44,16 @@ class VariantPadder:
     variants that start and end at the same position
     """
     def __init__(self, variants: bnp.datatypes.VCFEntry, reference: bnp.EncodedArray):
+        assert isinstance(variants, Variants), "Must be Variants object (not VcfEntry or something else)"
         self._variants = variants
+        assert np.all(variants.position[1:] >= variants.position[:-1]), "Variants must be sorted by position"
         self._reference = reference
 
     def get_reference_mask(self):
         variants_start = self._variants.position
         variants_stop = variants_start + self._variants.ref_seq.shape[1]
         highest_pos = np.max(variants_stop+1)
+        print("Highest pos", highest_pos)
 
         mask = np.zeros(highest_pos)
         mask += np.bincount(variants_start, minlength=highest_pos)
@@ -63,35 +67,67 @@ class VariantPadder:
         if dir == "right":
             mask = mask[::-1]
 
+        print("Original mask")
+        print(mask)
+
         starts = np.ediff1d(mask, to_begin=[0]) == 1
+        print(np.nonzero(starts))
         cumsum = np.cumsum(mask)
+        print("CUMSUM")
+        print(cumsum)
+        assert np.all(cumsum >= 0)
         mask2 = mask.copy()
-        mask2[starts] -= cumsum[starts] - 1
+
+        # idea is to subtract the difference of the cumsum at this variant and the previous (what the previous variant increased)
+        subtract = cumsum[np.nonzero(starts)]-cumsum[np.insert(np.nonzero(starts), 0, 0)[:-1]]
+        print("Starts")
+        print(np.nonzero(starts))
+        print("SUbtract")
+        print(subtract)
+        print(cumsum[starts])
+        mask2[starts] -= (subtract)
+        print("MASK 2 after minus")
+        print(mask2)
         dists = np.cumsum(mask2)
+        print("Dists after cumsum of mask2")
+        print(dists)
+
+        if not np.all(dists >= 0):
+            print("SIDE", dir)
+            for v in self._variants:
+                print(v.chromosome, v.position, len(v.ref_seq), len(v.alt_seq))
+            print(np.where(dists <0), dists[dists < 0])
+            assert False
         dists[mask == 0] = 0
+
+        print("Final dists")
+        print(dists)
 
         if dir == "right":
             return dists[::-1]
 
         return dists
 
-
     def run(self):
         """
         Pad all variants in overlapping regions so that there are no overlapping variants.
         """
-        mask = self.get_reference_mask()
-
         # find variants that need to be padded
         pad_left = self.get_distance_to_ref_mask(dir="left")
-        pad_right = self.get_distance_to_ref_mask(dir="right")
+        print()
+        print("DISTS left")
+        print(pad_left)
+        assert np.all(pad_left >= 0), pad_left[pad_left < 0]
 
-        print("Pad left:", pad_left)
-        print("Pad right:", pad_right)
+        pad_right = self.get_distance_to_ref_mask(dir="right")
+        print()
+        print("DISTS RIGHT")
+        print(pad_right)
+        assert np.all(pad_right >= 0)
 
         # left padding
-        to_pad = pad_left[self._variants.position] > 1
-        start_of_padding = self._variants.position[to_pad] - pad_left[self._variants.position[to_pad]] + 1
+        to_pad = pad_left[self._variants.position] > 0
+        start_of_padding = self._variants.position[to_pad] - pad_left[self._variants.position[to_pad]]
         end_of_padding = self._variants.position[to_pad]
         left_padding = bnp.ragged_slice(self._reference, start_of_padding, end_of_padding)
 
@@ -105,17 +141,22 @@ class VariantPadder:
         new_positions -= lengths_left.astype(int)
 
         # right padding
-        to_pad = pad_right[self._variants.position + self._variants.ref_seq.shape[1]] >= 1
+        to_pad = pad_right[self._variants.position + self._variants.ref_seq.shape[1] - 1] >= 1
+
+        print("TO pad right")
         print(to_pad)
+        print(self._variants.position + self._variants.ref_seq.shape[1])
+
         subset = self._variants[to_pad]
-        print("Subset position")
-        print(subset.position)
+        #print("Subset position")
+        #print(subset.position)
         start_of_padding = subset.position + subset.ref_seq.shape[1] + 0
-        print("Start of padding")
-        print(start_of_padding)
-        end_of_padding = start_of_padding + pad_right[start_of_padding] + 0
-        print(start_of_padding, end_of_padding)
+        #print("Start of padding")
+        #print(start_of_padding)
+        end_of_padding = start_of_padding + pad_right[start_of_padding] + 1
+        #print(start_of_padding, end_of_padding)
         right_padding = bnp.ragged_slice(self._reference, start_of_padding, end_of_padding)
+
 
 
         # make new ragged array with the padded sequences
@@ -123,14 +164,19 @@ class VariantPadder:
         lengths_right[to_pad] = right_padding.shape[1]
         right_padding = EncodedRaggedArray(right_padding.ravel(), lengths_right)
 
-        print("Padding left")
-        print(left_padding)
-        print("Padding right")
+        print("Right padding")
         print(right_padding)
 
-        lengths_right= np.zeros(len(self._variants))
+        logging.info(f"{np.sum(right_padding.shape[1] > 0)} variants where padded to the right")
+        logging.info(f"{np.sum(left_padding.shape[1] > 0)} variants where padded to the right")
 
-        print(right_padding.raw())
+
+        #print("Padding left")
+        #print(left_padding)
+        #print("Padding right")
+        #print(right_padding)
+
+        #print(right_padding.raw())
         ref_merged = np.concatenate([left_padding.raw(), self._variants.ref_seq.raw(), right_padding.raw()], axis=1)
         alt_merged = np.concatenate([left_padding.raw(), self._variants.alt_seq.raw(), right_padding.raw()], axis=1)
         new_ref_sequences = bnp.EncodedRaggedArray(bnp.EncodedArray(ref_merged.ravel(), bnp.BaseEncoding), ref_merged.shape)
@@ -143,14 +189,18 @@ def get_padded_variants_from_vcf(vcf_file_name, reference_file_name):
     variants = bnp.open(vcf_file_name).read_chunks()
     genome = bnp.open(reference_file_name).read()
     sequences = {str(sequence.name): sequence.sequence for sequence in genome}
-    print(sequences)
     all_variants = []
 
     for chromosome, chromosome_variants in bnp.groupby(variants, "chromosome"):
+        chromosome_variants = Variants.from_vcf_entry(chromosome_variants)
+        logging.info("Padding variants on chromosome " + chromosome)
+        logging.info("%d variants" % len(chromosome_variants))
         padded_variants = VariantPadder(chromosome_variants, sequences[chromosome]).run()
         all_variants.append(padded_variants)
 
-    return np.concatenate(all_variants)
+    all_variants = np.concatenate(all_variants)
+    logging.info(f"In total {len(all_variants)} variants")
+    return all_variants
 
 
 

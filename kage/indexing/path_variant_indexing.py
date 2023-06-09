@@ -107,8 +107,12 @@ class Graph:
         ref_sequence = self.genome.sequence
         variant_sequences = self.variants.get_haplotype_sequence(haplotypes)
 
+        assert np.all(ref_sequence.shape[1] >= 0)
+        assert np.all(variant_sequences.shape[1] >= 0)
+
         # stitch these together
         result = zip_sequences(ref_sequence, variant_sequences)
+        assert np.all(result.shape[1] >= 0), result.shape[1]
         if not stream:
             return result
         else:
@@ -122,6 +126,7 @@ class Graph:
         sequence = self.sequence(haplotypes)
         # merge pairs of rows
         old_lengths = sequence.shape[1]
+        assert np.all(old_lengths >= 0)
         new_lengths = np.zeros(1+len(sequence)//2, dtype=int)
         new_lengths[0] = old_lengths[0]
         new_lengths[1:] = old_lengths[1::2] + old_lengths[2::2]
@@ -138,6 +143,7 @@ class Graph:
         assert sequence_lengths[-1] >= k, "Last sequence in graph must be larger than k"
         # on last node, there will be fewer kmers
         sequence_lengths[-1] -= k-1
+        assert np.all(sequence_lengths > 0)
         return bnp.EncodedRaggedArray(all_kmers.ravel(), sequence_lengths)
 
     def get_haplotype_kmers(self, haplotype: np.array, k, stream=False) -> np.ndarray:
@@ -180,7 +186,10 @@ class Graph:
         between_variants_start = np.insert(global_stops, 0, 0)
         between_variants_end = np.insert(global_starts, len(global_starts), len(global_reference_sequence))
 
+        assert np.all(between_variants_start <= between_variants_end), "Some variants start before others end. Are there overlapping variants?"
+
         sequence_between_variants = bnp.ragged_slice(global_reference_sequence, between_variants_start, between_variants_end)
+
 
         variant_ref_sequences = variants.ref_seq
         variant_alt_sequences = variants.alt_seq
@@ -188,6 +197,7 @@ class Graph:
         # replace N's with A
         sequence_between_variants[sequence_between_variants == "N"] = "A"
         sequence_between_variants = bnp.change_encoding(sequence_between_variants, bnp.DNAEncoding)
+
 
 
         return cls(GenomeBetweenVariants(sequence_between_variants),
