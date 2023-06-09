@@ -16,6 +16,10 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     """
     Makes all indexes and writes to an index bundle.
     """
+    logging.info("Making haplotype matrix")
+    haplotype_matrix = SparseHaplotypeMatrix.from_vcf(vcf_file_name)
+    logging.info("N variants in haplotype matrix: %d" % haplotype_matrix.data.shape[0])
+
     logging.info("Making graph")
     graph = Graph.from_vcf(vcf_no_genotypes_file_name, reference_file_name)
 
@@ -28,8 +32,6 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     #print(paths.paths[0].dtype)
     #scorer = make_scorer_from_paths(paths, k, modulo)
 
-    logging.info("Making haplotype matrix")
-    haplotype_matrix = SparseHaplotypeMatrix.from_vcf(vcf_file_name)
     variant_to_nodes = VariantToNodes(np.arange(graph.n_variants())*2, np.arange(graph.n_variants())*2+1)
 
     scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=8, modulo=modulo)

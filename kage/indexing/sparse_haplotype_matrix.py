@@ -4,10 +4,32 @@ import bionumpy as bnp
 import numpy as np
 import scipy
 import tqdm
+from graph_kmer_index.nplist import NpList
+
+
+#class SparseColumnMatrix:
+#    pass
+
+
+#class SparsColumnMatrixRaggedArray:
+
 
 @dataclass
 class SparseHaplotypeMatrix:
     data: scipy.sparse.csc_matrix
+
+    def extend(self, other: "SparseHaplotypeMatrix"):
+        if self.data is None:
+           self.data = other.data
+        else:
+            self.data = scipy.sparse.vstack([self.data, other.data])
+
+    def __add__(self, other):
+        return SparseHaplotypeMatrix(self.data + other.data)
+
+    @classmethod
+    def empty(cls):
+        return cls(None)
 
     @classmethod
     def from_nonsparse_matrix(cls, matrix):
@@ -60,12 +82,18 @@ class SparseHaplotypeMatrix:
     @classmethod
     def from_vcf(cls, vcf_file_name):
         vcf = bnp.open(vcf_file_name, buffer_type=bnp.io.delimited_buffers.PhasedVCFMatrixBuffer)
-        all_variant_ids = []
-        all_haplotype_ids = []
+        all_variant_ids = NpList(dtype=np.uint32)
+        all_haplotype_ids = NpList(dtype=np.uint16)
         n_haplotypes = None
 
         offset = 0
-        for i, chunk in enumerate(vcf.read_chunks()):
+        from kage.util import log_memory_usage_now
+        matrix = SparseHaplotypeMatrix.empty()
+
+        for i, chunk in enumerate(vcf.read_chunks(min_chunk_size=500000000)):
+            logging.info("Chunk %d, variant %s, %s. %d variants processed" % (i, chunk.chromosome[0], chunk.position[0], offset))
+            logging.info("N nonzero haplotypes: %d" % len(all_haplotype_ids))
+            log_memory_usage_now("Chunk %d" % i)
             genotypes = chunk.genotypes.raw()
             n_haplotypes = genotypes.shape[1] * 2
             # encoding is 0: "0|0", 1: "0|1", 2: "1|0", 3: "1|1"
@@ -73,23 +101,28 @@ class SparseHaplotypeMatrix:
             # 0 | 1 or 1 | 1
             variant_ids, individuals = np.where((genotypes == 1) | (genotypes == 3))
             haplotypes = 2 * individuals + 1
-            variant_ids += offset
-            all_variant_ids.append(variant_ids)
-            all_haplotype_ids.append(haplotypes)
+            #variant_ids += offset
+            #all_variant_ids.extend(variant_ids)
+            #all_haplotype_ids.extend(haplotypes)
+            submatrix1 = cls.from_variants_and_haplotypes(variant_ids, haplotypes, n_variants=len(chunk), n_haplotypes=n_haplotypes)
 
             # 1 | 0 or 1 | 1
             variant_ids, individuals = np.where((genotypes == 2) | (genotypes == 3))
             haplotypes = 2 * individuals
-            variant_ids += offset
-            all_variant_ids.append(variant_ids)
-            all_haplotype_ids.append(haplotypes)
+            #variant_ids += offset
+            #all_variant_ids.extend(variant_ids)
+            #all_haplotype_ids.extend(haplotypes)
 
             offset += len(chunk)
+            submatrix2 = cls.from_variants_and_haplotypes(variant_ids, haplotypes, n_variants=len(chunk), n_haplotypes=n_haplotypes)
 
+            matrix.extend(submatrix1+submatrix2)
 
         logging.info(f"In total {offset} variants and {n_haplotypes} haplotypes")
-        return cls.from_variants_and_haplotypes(np.concatenate(all_variant_ids),
-                                                np.concatenate(all_haplotype_ids),
+
+        return matrix
+        return cls.from_variants_and_haplotypes(all_variant_ids.get_nparray(),
+                                                all_haplotype_ids.get_nparray(),
                                                 n_variants=offset,
                                                 n_haplotypes=n_haplotypes)
 
