@@ -34,7 +34,7 @@ class GenomeBetweenVariants:
         pass
 
 
-class Variants:
+class VariantAlleleSequences:
     def __init__(self, data: bnp.EncodedRaggedArray, n_alleles: int = 2):
         self._data = data  # data contains sequence for first allele first, then second allele, etc.
         self.n_alleles = n_alleles
@@ -89,7 +89,7 @@ def stream_ragged_array(a, chunk_size=100000):
 @dataclass
 class Graph:
     genome: GenomeBetweenVariants
-    variants: Variants
+    variants: VariantAlleleSequences
 
     def n_variants(self):
         return self.variants.n_variants
@@ -196,7 +196,7 @@ class Graph:
 
 
         return cls(GenomeBetweenVariants(sequence_between_variants),
-                   Variants(np.concatenate([variant_ref_sequences, variant_alt_sequences])))
+                   VariantAlleleSequences(np.concatenate([variant_ref_sequences, variant_alt_sequences])))
 
 
     @classmethod
@@ -264,7 +264,7 @@ class Graph:
         sequences_between_variants.append(reference[chromosome][prev_ref_pos:].to_string().upper().replace("N", "A"))
 
         return cls(GenomeBetweenVariants(bnp.as_encoded_array(sequences_between_variants, bnp.DNAEncoding)),
-                     Variants.from_list(variant_sequences))
+                   VariantAlleleSequences.from_list(variant_sequences))
 
 
 @dataclass

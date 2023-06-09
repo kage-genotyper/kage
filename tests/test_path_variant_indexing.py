@@ -1,5 +1,5 @@
 import pytest
-from kage.indexing.path_variant_indexing import Paths, Variants, PathCreator, GenomeBetweenVariants, \
+from kage.indexing.path_variant_indexing import Paths, VariantAlleleSequences, PathCreator, GenomeBetweenVariants, \
     SignatureFinder, SignatureFinder2, zip_sequences, Graph, MappingModelCreator, \
     MatrixVariantWindowKmers, FastApproxCounter, SignatureFinder3, find_tricky_variants_from_signatures, \
     Signatures
@@ -11,7 +11,7 @@ from kage.indexing.path_based_count_model import PathBasedMappingModelCreator
 
 @pytest.fixture
 def variants():
-    return Variants.from_list(
+    return VariantAlleleSequences.from_list(
         [["A", "C"], ["A", "C"], ["", "C"], ["A", "C"], ["A", "C"]]
     )
 

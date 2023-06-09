@@ -1,5 +1,5 @@
 import pytest
-from kage.indexing.path_variant_indexing import Paths, Graph, Variants, GenomeBetweenVariants, PathCreator
+from kage.indexing.path_variant_indexing import Paths, Graph, VariantAlleleSequences, GenomeBetweenVariants, PathCreator
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 from kage.indexing.path_based_count_model import HaplotypeAsPaths, PathKmers
 import numpy as np
@@ -19,7 +19,7 @@ def paths2():
 def graph():
     return Graph(
         GenomeBetweenVariants(bnp.as_encoded_array(["GGG", "GG", "GG", "GG", "GG", "GG"], bnp.DNAEncoding)),
-        Variants.from_list([["A", "C"]] * 5)
+        VariantAlleleSequences.from_list([["A", "C"]] * 5)
     )
 
 
