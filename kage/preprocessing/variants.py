@@ -53,7 +53,7 @@ class VariantPadder:
         variants_start = self._variants.position
         variants_stop = variants_start + self._variants.ref_seq.shape[1]
         highest_pos = np.max(variants_stop+1)
-        print("Highest pos", highest_pos)
+        #print("Highest pos", highest_pos)
 
         mask = np.zeros(highest_pos)
         mask += np.bincount(variants_start, minlength=highest_pos)
@@ -67,30 +67,30 @@ class VariantPadder:
         if dir == "right":
             mask = mask[::-1]
 
-        print("Original mask")
-        print(mask)
+        #print("Original mask")
+        #print(mask)
 
         starts = np.ediff1d(mask, to_begin=[0]) == 1
-        print(np.nonzero(starts))
+        #print(np.nonzero(starts))
         cumsum = np.cumsum(mask)
-        print("CUMSUM")
-        print(cumsum)
+        #print("CUMSUM")
+        #print(cumsum)
         assert np.all(cumsum >= 0)
         mask2 = mask.copy()
 
         # idea is to subtract the difference of the cumsum at this variant and the previous (what the previous variant increased)
         subtract = cumsum[np.nonzero(starts)]-cumsum[np.insert(np.nonzero(starts), 0, 0)[:-1]]
-        print("Starts")
-        print(np.nonzero(starts))
-        print("SUbtract")
-        print(subtract)
-        print(cumsum[starts])
+        #print("Starts")
+        #print(np.nonzero(starts))
+        #print("SUbtract")
+        #print(subtract)
+        #print(cumsum[starts])
         mask2[starts] -= (subtract)
-        print("MASK 2 after minus")
-        print(mask2)
+        #print("MASK 2 after minus")
+        #print(mask2)
         dists = np.cumsum(mask2)
-        print("Dists after cumsum of mask2")
-        print(dists)
+        #print("Dists after cumsum of mask2")
+        #print(dists)
 
         if not np.all(dists >= 0):
             print("SIDE", dir)
@@ -100,8 +100,8 @@ class VariantPadder:
             assert False
         dists[mask == 0] = 0
 
-        print("Final dists")
-        print(dists)
+        #print("Final dists")
+        #print(dists)
 
         if dir == "right":
             return dists[::-1]
@@ -114,15 +114,15 @@ class VariantPadder:
         """
         # find variants that need to be padded
         pad_left = self.get_distance_to_ref_mask(dir="left")
-        print()
-        print("DISTS left")
-        print(pad_left)
+        #print()
+        #print("DISTS left")
+        #print(pad_left)
         assert np.all(pad_left >= 0), pad_left[pad_left < 0]
 
         pad_right = self.get_distance_to_ref_mask(dir="right")
-        print()
-        print("DISTS RIGHT")
-        print(pad_right)
+        #print()
+        #print("DISTS RIGHT")
+        #print(pad_right)
         assert np.all(pad_right >= 0)
 
         # left padding
@@ -143,9 +143,9 @@ class VariantPadder:
         # right padding
         to_pad = pad_right[self._variants.position + self._variants.ref_seq.shape[1] - 1] >= 1
 
-        print("TO pad right")
-        print(to_pad)
-        print(self._variants.position + self._variants.ref_seq.shape[1])
+        #print("TO pad right")
+        #print(to_pad)
+        #print(self._variants.position + self._variants.ref_seq.shape[1])
 
         subset = self._variants[to_pad]
         #print("Subset position")
@@ -164,8 +164,11 @@ class VariantPadder:
         lengths_right[to_pad] = right_padding.shape[1]
         right_padding = EncodedRaggedArray(right_padding.ravel(), lengths_right)
 
-        print("Right padding")
-        print(right_padding)
+        #print("Left padding")
+        #print(left_padding[left_padding.shape[1] > 0])
+
+        #print("Right padding")
+        #print(right_padding[right_padding.shape[1] > 0])
 
         logging.info(f"{np.sum(right_padding.shape[1] > 0)} variants where padded to the right")
         logging.info(f"{np.sum(left_padding.shape[1] > 0)} variants where padded to the right")

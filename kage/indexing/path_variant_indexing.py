@@ -107,7 +107,7 @@ class Graph:
         ref_sequence = self.genome.sequence
         variant_sequences = self.variants.get_haplotype_sequence(haplotypes)
 
-        assert np.all(ref_sequence.shape[1] >= 0)
+        assert np.all(ref_sequence.shape[1] >= 0), ref_sequence.shape[1]
         assert np.all(variant_sequences.shape[1] >= 0)
 
         # stitch these together
@@ -143,7 +143,7 @@ class Graph:
         assert sequence_lengths[-1] >= k, "Last sequence in graph must be larger than k"
         # on last node, there will be fewer kmers
         sequence_lengths[-1] -= k-1
-        assert np.all(sequence_lengths > 0)
+        assert np.all(sequence_lengths >= 0), sequence_lengths
         return bnp.EncodedRaggedArray(all_kmers.ravel(), sequence_lengths)
 
     def get_haplotype_kmers(self, haplotype: np.array, k, stream=False) -> np.ndarray:
@@ -157,14 +157,6 @@ class Graph:
     @classmethod
     def from_vcf(cls, vcf_file_name, reference_file_name, pad_variants=False):
         reference_sequences = bnp.open(reference_file_name).read()
-        chromosome_names = reference_sequences.name
-        chromosome_sequences = reference_sequences.sequence
-        chromosome_lengths = {name.to_string(): len(seq) for name, seq in zip(chromosome_names, chromosome_sequences)}
-
-        global_reference_sequence = np.concatenate(chromosome_sequences)
-        global_reference_sequence = bnp.change_encoding(global_reference_sequence, bnp.encodings.ACGTnEncoding)
-
-        global_offset = bnp.genomic_data.global_offset.GlobalOffset(chromosome_lengths)
 
         # reading all variants into memory, should be fine with normal vcfs
         logging.info("Reading variants")
@@ -175,34 +167,50 @@ class Graph:
             variants = bnp.open(vcf_file_name).read()
             variants = Variants.from_vcf_entry(variants)
 
-        variants_as_intervals = Interval(variants.chromosome, variants.position, variants.position+variants.ref_seq.shape[1])
-        variants_global_offset = global_offset.from_local_interval(variants_as_intervals)
+        return cls.from_variants_and_reference(reference_sequences, variants)
 
+
+    @classmethod
+    def from_variants_and_reference(cls, reference_sequences: bnp.datatypes.SequenceEntry, variants: Variants):
+        chromosome_names = reference_sequences.name
+        chromosome_sequences = reference_sequences.sequence
+        chromosome_lengths = {name.to_string(): len(seq) for name, seq in zip(chromosome_names, chromosome_sequences)}
+        global_reference_sequence = np.concatenate(chromosome_sequences)
+        global_reference_sequence = bnp.change_encoding(global_reference_sequence, bnp.encodings.ACGTnEncoding)
+        global_offset = bnp.genomic_data.global_offset.GlobalOffset(chromosome_lengths)
+        variants_as_intervals = Interval(variants.chromosome, variants.position,
+                                         variants.position + variants.ref_seq.shape[1])
+        variants_global_offset = global_offset.from_local_interval(variants_as_intervals)
         # start position should be first base of "unique" ref sequence in variant
         # stop should be first base of ref sequence after variant
         global_starts = variants_global_offset.start.copy()
         global_stops = variants_global_offset.stop.copy()
-
         between_variants_start = np.insert(global_stops, 0, 0)
         between_variants_end = np.insert(global_starts, len(global_starts), len(global_reference_sequence))
-
-        assert np.all(between_variants_start <= between_variants_end), "Some variants start before others end. Are there overlapping variants?"
-
-        sequence_between_variants = bnp.ragged_slice(global_reference_sequence, between_variants_start, between_variants_end)
-
-
+        if not np.all(between_variants_start[1:] >= between_variants_start[:-1]):
+            logging.error("Some variants start before others end. Are there overlapping variants?")
+            where = np.where(between_variants_start[1:] < between_variants_start[:-1])
+            for variant in variants[where]:
+                print(f"{variant.position}\t\t{variant.ref_seq}\t\t{variant.alt_seq}")
+            raise
+        # some variants will start and end at the same position. Then we don't need the sequence between them
+        adjust_ends = np.where(between_variants_end < between_variants_start)[0]
+        logging.info("Adjusting ends for %d variants because these are before starts", len(adjust_ends))
+        # these ends should have starts that match the next start
+        assert np.all(between_variants_start[adjust_ends] == between_variants_start[adjust_ends + 1])
+        # adjust these to be the same as start
+        between_variants_end[adjust_ends] = between_variants_start[adjust_ends]
+        between_variants_end = np.maximum(between_variants_start, between_variants_end)
+        sequence_between_variants = bnp.ragged_slice(global_reference_sequence, between_variants_start,
+                                                     between_variants_end)
         variant_ref_sequences = variants.ref_seq
         variant_alt_sequences = variants.alt_seq
-
         # replace N's with A
         sequence_between_variants[sequence_between_variants == "N"] = "A"
         sequence_between_variants = bnp.change_encoding(sequence_between_variants, bnp.DNAEncoding)
 
-
-
         return cls(GenomeBetweenVariants(sequence_between_variants),
                    VariantAlleleSequences(np.concatenate([variant_ref_sequences, variant_alt_sequences])))
-
 
     @classmethod
     def _from_vcf(cls, vcf_file_name, reference_file_name, k=31):
@@ -300,10 +308,8 @@ class MatrixVariantWindowKmers:
     @classmethod
     def from_paths(cls, paths, k):
         n_variants = paths.n_variants()
-        print(f"n_variants: {n_variants}")
         n_paths = len(paths.paths)
         n_windows = k - k//2 - 1
-        print(f"n_paths: {n_paths}, n_windows: {n_windows}")
         matrix = np.zeros((n_paths, n_variants, n_windows), dtype=np.uint64)
 
 

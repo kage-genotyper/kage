@@ -1,3 +1,5 @@
+import logging
+logging.basicConfig(level=logging.INFO)
 import pytest
 from kage.indexing.path_variant_indexing import Paths, VariantAlleleSequences, PathCreator, GenomeBetweenVariants, \
     SignatureFinder, SignatureFinder2, zip_sequences, Graph, MappingModelCreator, \
@@ -8,6 +10,8 @@ import bionumpy as bnp
 import numpy as np
 import npstructures as nps
 from kage.indexing.path_based_count_model import PathBasedMappingModelCreator
+from kage.preprocessing.variants import Variants
+
 
 @pytest.fixture
 def variants():
@@ -171,6 +175,15 @@ def test_graph_from_vcf():
     assert graph.sequence(np.array([1, 1, 1, 1])).ravel().to_string() == "AAATCCTTTCCGTTTTAAATCC"
 
 
+def test_graph_from_padded_overlapping_variants():
+    reference = bnp.datatypes.SequenceEntry.from_entry_tuples([("chr1", "CCCCAAAA" + "T"*10)])
+    variants = Variants.from_entry_tuples([
+        ("chr1", 4, "AAAA", ""),
+        ("chr1", 4, "AAAA", "AAGA")
+    ])
+    graph = Graph.from_variants_and_reference(reference, variants)
+    assert [s for s in graph.genome.sequence.tolist()] == \
+           ["CCCC", "", "T"*10]
 
 def test_path_windows(graph):
     creator = PathCreator(graph)

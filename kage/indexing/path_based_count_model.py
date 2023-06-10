@@ -81,23 +81,8 @@ class PathKmers:
         kmers_found.append(start_kmers.raw())
 
         for path in range(len(self.kmers)):
-            print("PATH ", path)
-            print(haplotype, path, len(self.kmers[path]))
             variants_with_path = np.where(haplotype.paths == path)[0] + 1  # +1 because first element in kmers is the first ref
-
-            print("Variants with path")
-            print(variants_with_path)
-            print(len(self.kmers[path]))
-            print(np.sum(self.kmers[path].shape[1]))
-            print("All path kmers")
-            print(len(self.kmers[path].ravel()))
-
-            print("Subset")
             kmers = self.kmers[path][variants_with_path]
-            print(kmers.ravel())
-            print(len(kmers))
-            print(kmers.shape)
-            print(kmers.dtype)
             kmers = kmers.raw().ravel()
             kmers_found.append(kmers)
 
@@ -112,24 +97,11 @@ class PathKmers:
         new = []
         for i, kmers in enumerate(self.kmers):
             assert np.all(kmers.shape[0] >= 0)
-            print("----------__I ", i)
             encoding = kmers.encoding
             raw_kmers = kmers.raw().ravel().astype(np.uint64)
             is_in = kmer_index.has_kmers(raw_kmers)
-            print("IS IN")
-            print(is_in)
             assert len(is_in) == len(kmers.ravel()) == len(raw_kmers) == np.sum(kmers.shape[1])
             mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)
-            print("SUM IS IN: %d" % np.sum(is_in))
-            print("SUM mask: %d" % np.sum(mask))
-            print("SUM mask ravel: %d" % np.sum(mask.ravel()))
-            print("SUM mask row sums: %d" % np.sum(np.sum(mask, axis=1)))
-            print("N raw kmers: %d" % len(raw_kmers))
-            print("N raw kmers[mask]: %d" % len(raw_kmers[mask.ravel()]))
-
-            #if i == 2:
-            #    to_file(mask, "mask.npy")
-            #    assert False
 
             assert len(mask.ravel()) == np.sum(mask.shape[1])
             assert len(mask.ravel()) == len(is_in)
@@ -137,7 +109,6 @@ class PathKmers:
             logging.info(f"Pruned away {np.sum(mask==False)}/{len(kmers)} kmers for path {i}")
             kmers = raw_kmers[mask.ravel()]
             shape = np.sum(mask, axis=1)
-            print("Shape for path ", i, ":", np.sum(shape))
             assert np.sum(shape) == len(kmers), (np.sum(shape), len(kmers), np.sum(is_in), np.sum(is_in == True))
             new.append(bnp.EncodedRaggedArray(bnp.EncodedArray(kmers, encoding), shape))
             assert np.sum(mask) == len(kmers)
