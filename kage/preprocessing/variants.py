@@ -38,6 +38,12 @@ class Variants:
 
         return cls(variants.chromosome, variants_start, variant_ref_sequences, variant_alt_sequences)
 
+    def to_vcf_entry(self, ):
+        # adds trailing bases to indels and adjusts positions
+        is_indel = (self.ref_seq.shape[1] != 1) | (self.alt_seq.shape[1] != 1)
+        new_positions = self.position.copy()
+
+
 class VariantPadder:
     """
     Merging of overlapping variants into non-overlapping
@@ -170,8 +176,8 @@ class VariantPadder:
         #print("Right padding")
         #print(right_padding[right_padding.shape[1] > 0])
 
-        logging.info(f"{np.sum(right_padding.shape[1] > 0)} variants where padded to the right")
-        logging.info(f"{np.sum(left_padding.shape[1] > 0)} variants where padded to the right")
+        logging.info(f"{np.sum(right_padding.shape[1] > 0)} variants were padded to the right")
+        logging.info(f"{np.sum(left_padding.shape[1] > 0)} variants were padded to the left")
 
 
         #print("Padding left")
@@ -205,5 +211,17 @@ def get_padded_variants_from_vcf(vcf_file_name, reference_file_name):
     logging.info(f"In total {len(all_variants)} variants")
     return all_variants
 
+
+def pad_vcf_cli(args):
+    variants = get_padded_variants_from_vcf(args.vcf_file_name, args.reference)
+    original_variants = bnp.open(args.vcf_file_name).read_chunks()
+    offset = 0
+    with bnp.open(args.out_file_name, "w") as out:
+        for chunk in original_variants:
+            variant_chunk = variants[offset:offset + len(chunk)]
+            chunk.position = variant_chunk.position
+            chunk.ref_j
+
+            offset += len(chunk)
 
 

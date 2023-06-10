@@ -13,6 +13,7 @@ from graph_kmer_index import KmerIndex
 from .sparse_haplotype_matrix import SparseHaplotypeMatrix
 from ..models.mapping_model import LimitedFrequencySamplingComboModel
 import npstructures as nps
+from ..util import log_memory_usage_now
 
 @dataclass
 class HaplotypeAsPaths:
@@ -59,6 +60,7 @@ class PathKmers:
         # kmers for a variant should include the kmers for the variant and
         # the kmers for the following ref sequence before next variant
         n_paths = path_allele_matrix.shape[0]
+        log_memory_usage_now("Before making pathkmers")
         logging.info("Making pathkmers for %d paths", n_paths)
         return cls((graph.kmers_for_pairs_of_ref_and_variants(path_allele_matrix[i, :], k) for i in range(n_paths)))
 
@@ -94,11 +96,14 @@ class PathKmers:
         Prunes away kmers that are not in kmer index.
         Prunes inplace.
         """
+        logging.info("Pruning")
         new = []
         for i, kmers in enumerate(self.kmers):
+            logging.info("Pruning path %d", i)
             assert np.all(kmers.shape[0] >= 0)
             encoding = kmers.encoding
             raw_kmers = kmers.raw().ravel().astype(np.uint64)
+            logging.info("Calling kmer index has_kmers")
             is_in = kmer_index.has_kmers(raw_kmers)
             assert len(is_in) == len(kmers.ravel()) == len(raw_kmers) == np.sum(kmers.shape[1])
             mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)

@@ -35,6 +35,11 @@ class GenomeBetweenVariants:
         # splits into two GenomeBetweenVariants. The first contains all bases ..
         pass
 
+    def pad_at_end(self, n_bases):
+        s = self.sequence
+        shape = s.raw().shape
+        shape[1][-1] += n_bases
+        self.sequence = bnp.EncodedRaggedArray(np.concatenate([s.ravel(), bnp.as_encoded_array("A" * n_bases, bnp.DNAEncoding)]), shape)
 
 class VariantAlleleSequences:
     def __init__(self, data: bnp.EncodedRaggedArray, n_alleles: int = 2):
@@ -200,7 +205,8 @@ class Graph:
         assert np.all(between_variants_start[adjust_ends] == between_variants_start[adjust_ends + 1])
         # adjust these to be the same as start
         between_variants_end[adjust_ends] = between_variants_start[adjust_ends]
-        between_variants_end = np.maximum(between_variants_start, between_variants_end)
+        #between_variants_end = np.maximum(between_variants_start, between_variants_end)
+
         sequence_between_variants = bnp.ragged_slice(global_reference_sequence, between_variants_start,
                                                      between_variants_end)
         variant_ref_sequences = variants.ref_seq
@@ -311,7 +317,6 @@ class MatrixVariantWindowKmers:
         n_paths = len(paths.paths)
         n_windows = k - k//2 - 1
         matrix = np.zeros((n_paths, n_variants, n_windows), dtype=np.uint64)
-
 
         for i, path in enumerate(paths.iter_path_sequences()):
             starts = path._shape.starts[1::2]
@@ -611,6 +616,7 @@ class SignatureFinder:
         """
         Returns a list of kmers. List contains alleles, each RaggedArray represents the variants
         """
+        raise NotImplementedError("Not used anymore")
         chosen_ref_kmers = []
         chosen_alt_kmers = []
 

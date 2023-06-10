@@ -23,6 +23,10 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
 
     logging.info("Making graph")
     graph = Graph.from_vcf(vcf_no_genotypes_file_name, reference_file_name, pad_variants=True)
+    if len(graph.genome.sequence[-1]) < k:
+        # pad genome
+        logging.warning("Last variant is too close to end of the genome. Padding")
+        graph.genome.pad_at_end(k)
 
     log_memory_usage_now("After graph")
     scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=8, modulo=modulo)

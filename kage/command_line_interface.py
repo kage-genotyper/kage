@@ -405,6 +405,13 @@ def run_argument_parser(args):
     subparser.set_defaults(func=make_index_cli)
 
 
+    #subparser = subparsers.add_parser("pad_vcf")
+    #subparser.add_argument("-v", "--vcf-file-name", required=True)
+    #subparser.add_argument("-r", "--reference", required=True)
+    #subparser.add_argument("-o", "--out-file-name", required=True)
+    #subparser.set_defaults(func=pad_vcf_cli)
+
+
     if len(args) == 0:
         parser.print_help()
         sys.exit(1)
