@@ -10,11 +10,47 @@ import npstructures as nps
 
 
 @dataclass
+class PathSequences:
+    sequences: List[bnp.EncodedRaggedArray]
+
+    def __getitem__(self, item):
+        return self.sequences[item]
+
+    def __len__(self):
+        return len(self.sequences)
+
+    def __iter__(self):
+        return iter(self.sequences)
+
+
+@dataclass
+class PathCombinationMatrix:
+    """
+    Represents which allele each path has on each variant (as a matrix)
+    """
+    matrix: np.ndarray  # n_paths x n_variants
+
+    def __getitem__(self, item):
+        return self.matrix[item]
+
+    @property
+    def T(self):
+        return self.matrix.T
+
+    @property
+    def shape(self):
+        return self.matrix.shape
+
+    def __len__(self):
+        return len(self.matrix)
+
+
+@dataclass
 class Paths:
     # the sequence for each path, as a ragged array (nodes)
-    paths: List[bnp.EncodedRaggedArray]
+    paths: PathSequences
     # the allele present at each variant in each path
-    variant_alleles: np.ndarray  # n_paths x n_variants
+    variant_alleles: PathCombinationMatrix  # n_paths x n_variants
 
     def get_path_sequence(self, path_index):
         path_sequence = self.paths[path_index]
@@ -95,27 +131,6 @@ class DiscBackedPath:
         return cls(to_file(path, file_name))
 
 
-@dataclass
-class PathCombinationMatrix:
-    """
-    Represents which allele each path has on each variant (as a matrix)
-    """
-    matrix: np.ndarray  # n_paths x n_variants
-
-    def __getitem__(self, item):
-        return self.matrix[item]
-
-    @property
-    def T(self):
-        return self.matrix.T
-
-    @property
-    def shape(self):
-        return self.matrix.shape
-
-    def __len__(self):
-        return len(self.matrix)
-
 
 class PathCreator:
     def __init__(self, graph, window: int = 3, make_disc_backed=False, disc_backed_file_base_name=None):
@@ -150,7 +165,7 @@ class PathCreator:
                 path = DiscBackedPath.from_non_disc_backed(path, f"{self._disc_backed_file_base_name}_path_{i}")
             paths.append(path)
 
-        return Paths(paths, combinations)
+        return Paths(PathSequences(paths), combinations)
 
     @staticmethod
     def make_combination_matrix(alleles, n_variants, window) -> PathCombinationMatrix:

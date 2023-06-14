@@ -43,3 +43,10 @@ def test_multiallelic_paths():
     for i, allele in enumerate(alleles):
         assert all(a in matrix.matrix[:, i] for a in range(allele))
 
+
+def test_matrix_window_kmers_flexible_window_size():
+    pass
+    #paths = Paths()
+
+
+

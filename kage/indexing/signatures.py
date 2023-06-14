@@ -10,6 +10,7 @@ from .kmer_scoring import Scorer
 from .paths import Paths
 from ..preprocessing.variants import Variants
 from typing import List
+import awkward as ak
 
 
 @dataclass
@@ -52,7 +53,8 @@ class Signatures:
 
 @dataclass
 class MultiAllelicSignatures:
-    signatures: List[nps.RaggedArray] # one RaggedArray for each allele
+    # there can be multiple signatures for one allele at a variant
+    signatures: ak.Array  # n_variants x n_alleles x signatures
 
     def get_as_flat_kmers(self):
         # convert alleles to "nodes ids"
@@ -72,6 +74,17 @@ class SignatureFinder:
         self._k = k
         self._chosen_ref_kmers = []
         self._chosen_alt_kmers = []
+
+
+class MultiAllelicSignatureFinder(SignatureFinder):
+    def run(self, variants: Variants = None) -> Signatures:
+        kmers = MatrixVariantWindowKmers.from_paths(self._paths, self._k)
+        self._all_possible_kmers = kmers
+        best_kmers = kmers.get_best_kmers(self._scorer)
+
+        # hack to split matrix into ref and alt kmers
+        n_variants = self._paths.n_variants()
+        n_paths = len(self._paths.paths)
 
 
 class SignatureFinder2(SignatureFinder):
@@ -224,48 +237,6 @@ class SignatureFinder3(SignatureFinder):
                 n_alt_replaced += 1
                 n_ref_replaced += 1
 
-
-            """
-            # improvement would be to allow different window pos at ref and alt
-            # todo: Find all okay windows, and pick the one with the highest score
-            if len(set(ref_kmers).intersection(unique_alt)) == 0 and len(set(alt_kmers).intersection(unique_ref)) == 0:
-                # this window is good
-                self._chosen_ref_kmers[id] = ref_kmers
-                self._chosen_alt_kmers[id] = alt_kmers
-                n_alt_replaced += 1
-                n_ref_replaced += 1
-                print(f"REPLACED INDEL {id}")
-                print(f"Picked window {window}")
-                print("New kmers ref", ref_kmers)
-                print("New kmers alt", alt_kmers)
-                break
-            """
-
-
-            """
-            unique_options_ref = np.setdiff1d(options_ref, options_alt)
-            unique_options_alt = np.setdiff1d(options_alt, options_ref)
-
-            if len(unique_options_ref) > 0 and len(unique_options_alt) > 0:
-                score_ref = self._scorer.score_kmers(unique_options_ref)
-                #print("Best score ref: ", np.max(score_ref))
-                best_ref = unique_options_ref[np.argmax(score_ref)]
-                n_ref_replaced += 1
-
-                score_alt = self._scorer.score_kmers(unique_options_alt)
-                best_alt = unique_options_alt[np.argmax(score_alt)]
-                n_alt_replaced += 1
-                print("REPLACED INDEL {id}")
-                print("Old ref", options_ref)
-                print("Old alt", options_alt)
-                print("New ref", best_ref)
-                print("New alt", best_alt)
-                print("Picked in old", self._chosen_ref_kmers[id], self._chosen_alt_kmers[id])
-                print()
-                self._chosen_ref_kmers[id] = np.array([best_ref])
-                self._chosen_alt_kmers[id] = np.array([best_alt])
-            """
-
         print(f"Replaced {n_ref_replaced} ref and {n_alt_replaced} alt kmers for indels")
 
     def _manually_process_svs(self, variants: Variants):
@@ -349,6 +320,29 @@ class MatrixVariantWindowKmers:
             matrix[i, :, :] = kmers
 
         return cls(matrix, paths.variant_alleles)
+
+    @classmethod
+    def from_paths_with_flexible_window_size(cls, paths, k, variant_alleles):
+        # uses different windows for each variant, stores in an awkward array
+        n_variants = paths.n_variants()
+        n_paths = len(paths.paths)
+        kmers_found = []  # one RaggedArray for each path. Each element in ragged array represents a variant allele
+
+        for i, path in enumerate(paths.iter_path_sequences()):
+            variant_sizes = path[1::2].shape[1]
+            window_sizes = variant_sizes + (k-1)*2
+            # for each variant, find the kmers for this path and fill into the window
+            starts = path._shape.starts[1::2]
+            window_starts = starts - k + 1
+            window_ends = starts + k - 1
+            windows = bnp.ragged_slice(path.ravel(), window_starts, window_ends)
+            kmers = bnp.get_kmers(windows, k=k).ravel().raw().astype(np.uint64)
+
+            kmers_found.append(
+                nps.RaggedArray(kmers, window_sizes)
+            )
+
+        return cls(kmers_found)  #matrix[i, :, :] = kmers
 
     def get_kmers(self, variant, allele):
         relevant_paths = np.where(self.variant_alleles[:, variant] == allele)[0]

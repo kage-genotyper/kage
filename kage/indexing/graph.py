@@ -67,6 +67,13 @@ class MultiAllelicVariantSequences(VariantAlleleSequences):
         self._data = data
         self.n_variants = len(self._data)
 
+    @property
+    def variant_sizes(self):
+        """
+        Return size of ref allele of each variant.
+        """
+        return ak.to_numpy(ak.num(self._data[:, 0]))
+
     @classmethod
     def from_list(cls, variant_sequences: List[List]):
         return cls(ak.Array(variant_sequences))
