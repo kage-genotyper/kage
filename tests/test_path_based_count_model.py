@@ -91,3 +91,4 @@ def test_prune_path_kmers(graph, paths):
     path_kmers.prune(DummyKmerIndex())
     print(path_kmers)
 
+

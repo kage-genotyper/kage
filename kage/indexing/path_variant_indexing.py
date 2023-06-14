@@ -315,7 +315,7 @@ class MatrixVariantWindowKmers:
     def from_paths(cls, paths, k):
         n_variants = paths.n_variants()
         n_paths = len(paths.paths)
-        n_windows = k - k//2 - 1
+        n_windows = k - 1 - k//2
         matrix = np.zeros((n_paths, n_variants, n_windows), dtype=np.uint64)
 
         for i, path in enumerate(paths.iter_path_sequences()):
@@ -361,14 +361,14 @@ class FastApproxCounter:
 
     @classmethod
     def empty(cls, modulo):
-        return cls(np.zeros(modulo, dtype=np.uint16), modulo)
+        return cls(np.zeros(modulo, dtype=np.int16), modulo)
 
     def add(self, values):
         self._array[values % self._modulo] += 1
 
     @classmethod
     def from_keys_and_values(cls, keys, values, modulo):
-        array = np.zeros(modulo, dtype=np.uint16)
+        array = np.zeros(modulo, dtype=np.int16)
         array[keys % modulo] = values
         return cls(array, modulo)
 
@@ -377,6 +377,7 @@ class FastApproxCounter:
 
     def score_kmers(self, kmers):
         return -self[kmers]
+
 
 
 def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: SparseHaplotypeMatrix,
@@ -611,6 +612,8 @@ class SignatureFinder:
         self._paths = paths
         self._scorer = scorer
         self._k = k
+        self._chosen_ref_kmers = []
+        self._chosen_alt_kmers = []
 
     def run(self) -> Signatures:
         """
@@ -687,8 +690,9 @@ class SignatureFinder2(SignatureFinder):
 
 
 class SignatureFinder3(SignatureFinder):
-    def run(self) -> Signatures:
+    def run(self, variants: Variants = None) -> Signatures:
         kmers = MatrixVariantWindowKmers.from_paths(self._paths, self._k)
+        self._all_possible_kmers = kmers
         best_kmers = kmers.get_best_kmers(self._scorer)
 
         # hack to split matrix into ref and alt kmers
@@ -697,20 +701,207 @@ class SignatureFinder3(SignatureFinder):
         all_ref_kmers = best_kmers.T[kmers.variant_alleles.T == 0].reshape((n_variants, n_paths//2))
         all_alt_kmers = best_kmers.T[kmers.variant_alleles.T == 1].reshape((n_variants, n_paths//2))
 
-        chosen_ref_kmers = []
-        chosen_alt_kmers = []
+
+        n_snps_with_identical_kmers = 0
+        n_indels_with_identical_kmers = 0
+        n_snps_total = 0
+        n_indels_total = 0
+
+        indels_with_identical_kmers = []
 
         for variant_id, (ref_kmers, alt_kmers) in tqdm.tqdm(enumerate(zip(all_ref_kmers, all_alt_kmers)), desc="Iterating signatures", unit="variants", total=n_variants):
             ref_kmers = np.unique(ref_kmers)
             alt_kmers = np.unique(alt_kmers)
+
+            if variants is not None:
+                is_snp = len(variants.ref_seq[variant_id]) == 1 and len(variants.alt_seq[variant_id]) == 1
+                if is_snp:
+                    n_snps_total += 1
+                else:
+                    n_indels_total += 1
+
             if set(ref_kmers).intersection(alt_kmers):
                 ref_kmers = np.array([])
                 alt_kmers = np.array([])
 
-            chosen_ref_kmers.append(ref_kmers)
-            chosen_alt_kmers.append(alt_kmers)
+                if variants is not None:
+                    if is_snp:
+                        n_snps_with_identical_kmers += 1
+                    else:
+                        print("Indel with identical kmers, sequences:")
+                        print(variants.ref_seq[variant_id], variants.alt_seq[variant_id])
+                        n_indels_with_identical_kmers += 1
+                        indels_with_identical_kmers.append(variant_id)
 
-        return Signatures(nps.RaggedArray(chosen_ref_kmers), nps.RaggedArray(chosen_alt_kmers))
+            self._chosen_ref_kmers.append(ref_kmers)
+            self._chosen_alt_kmers.append(alt_kmers)
+
+        if variants is not None:
+            self._manuall_process_indels(indels_with_identical_kmers)
+            #self._manually_process_svs(variants)
+
+        logging.info(f"{n_snps_with_identical_kmers}/{n_snps_total} snps had identical kmers in ref and alt")
+        logging.info(f"{n_indels_with_identical_kmers}/{n_indels_total} indels had identical kmers in ref and alt")
+
+        return Signatures(nps.RaggedArray(self._chosen_ref_kmers), nps.RaggedArray(self._chosen_alt_kmers))
+
+    def _manuall_process_indels(self, indel_ids):
+        # try to find kmers that are unique to the alleles
+        n_ref_replaced = 0
+        n_alt_replaced = 0
+
+
+
+        for id in indel_ids:
+            options_ref = self._all_possible_kmers.get_kmers(id, 0)
+            options_alt = self._all_possible_kmers.get_kmers(id, 1)
+
+            window_scores_ref = []  # score for each window
+            window_scores_alt = []
+
+            # all windows for ref/alt until now, and score them
+            window_kmers_ref = [k for k in options_ref.T]
+            window_kmers_alt = [k for k in options_alt.T]
+
+            assert len(window_kmers_alt) == len(window_kmers_ref)
+
+            unique_ref = np.unique(options_ref)
+            unique_alt = np.unique(options_alt)
+            print("Unique ref", unique_ref)
+            print("Unique alt", unique_alt)
+
+            # try to find a window position where no kmers are found in the other
+            for window in range(len(window_kmers_ref)):
+                ref_kmers = window_kmers_ref[window]
+                alt_kmers = window_kmers_alt[window]
+                print("Window", window, ":" , ref_kmers, alt_kmers)
+
+                score_ref = np.min(self._scorer.score_kmers(ref_kmers))  # wors score of the score of kmers in this window
+                score_alt = np.min(self._scorer.score_kmers(alt_kmers))
+
+                # if any kmers are found in the other, decrease score
+                if len(set(ref_kmers).intersection(unique_alt)) > 0:
+                    score_ref -= 1000
+                if len(set(alt_kmers).intersection(unique_ref)) > 0:
+                    score_alt -= 1000
+
+                window_scores_ref.append(score_ref)
+                window_scores_alt.append(score_alt)
+
+            assert len(window_scores_ref) == len(window_kmers_ref)
+
+            # pick best window for ref/alt
+            print("WIndow scores")
+            print(window_scores_ref)
+            print(window_scores_alt)
+            best_ref = np.argmax(window_scores_ref)
+            best_alt = np.argmax(window_scores_alt)
+            print(f"Picked window {best_ref} for ref and {best_alt} for alt with scores {window_scores_ref[best_ref]} and {window_scores_alt[best_alt]}")
+            # only replace kmers if we found some unique
+            if window_scores_ref[best_ref] > -1000 and window_scores_alt[best_alt] > -1000:
+                self._chosen_ref_kmers[id] = np.unique(window_kmers_ref[best_ref])
+                self._chosen_alt_kmers[id] = np.unique(window_kmers_alt[best_alt])
+                n_alt_replaced += 1
+                n_ref_replaced += 1
+
+
+            """
+            # improvement would be to allow different window pos at ref and alt
+            # todo: Find all okay windows, and pick the one with the highest score
+            if len(set(ref_kmers).intersection(unique_alt)) == 0 and len(set(alt_kmers).intersection(unique_ref)) == 0:
+                # this window is good
+                self._chosen_ref_kmers[id] = ref_kmers
+                self._chosen_alt_kmers[id] = alt_kmers
+                n_alt_replaced += 1
+                n_ref_replaced += 1
+                print(f"REPLACED INDEL {id}")
+                print(f"Picked window {window}")
+                print("New kmers ref", ref_kmers)
+                print("New kmers alt", alt_kmers)
+                break
+            """
+
+
+            """
+            unique_options_ref = np.setdiff1d(options_ref, options_alt)
+            unique_options_alt = np.setdiff1d(options_alt, options_ref)
+
+            if len(unique_options_ref) > 0 and len(unique_options_alt) > 0:
+                score_ref = self._scorer.score_kmers(unique_options_ref)
+                #print("Best score ref: ", np.max(score_ref))
+                best_ref = unique_options_ref[np.argmax(score_ref)]
+                n_ref_replaced += 1
+
+                score_alt = self._scorer.score_kmers(unique_options_alt)
+                best_alt = unique_options_alt[np.argmax(score_alt)]
+                n_alt_replaced += 1
+                print("REPLACED INDEL {id}")
+                print("Old ref", options_ref)
+                print("Old alt", options_alt)
+                print("New ref", best_ref)
+                print("New alt", best_alt)
+                print("Picked in old", self._chosen_ref_kmers[id], self._chosen_alt_kmers[id])
+                print()
+                self._chosen_ref_kmers[id] = np.array([best_ref])
+                self._chosen_alt_kmers[id] = np.array([best_alt])
+            """
+
+        print(f"Replaced {n_ref_replaced} ref and {n_alt_replaced} alt kmers for indels")
+
+    def _manually_process_svs(self, variants: Variants):
+        # slower version that manually tries to pick better signatures for each sv
+        # returns a Signature object where  that can be merged with another Signature object
+        is_sv = np.where((variants.ref_seq.shape[1] > self._k) | (variants.alt_seq.shape[1] > self._k))[0]
+        print("N large insertions: ", np.sum(variants.alt_seq.shape[1] > self._k))
+        print("N large deletions: ", np.sum(variants.ref_seq.shape[1] > self._k))
+        print(f"There are {len(is_sv)} SVs that signatures will be adjusted for")
+        n_ref_replaced = 0
+        n_alt_replaced = 0
+
+        for sv_id in is_sv:
+            variant = variants[sv_id]
+            current_options_ref = np.unique(self._all_possible_kmers.get_kmers(sv_id, 0))
+            current_options_alt = np.unique(self._all_possible_kmers.get_kmers(sv_id, 1))
+
+            #print("Ref/alt seq")
+            #print(variant.ref_seq, variant.alt_seq)
+
+            #print("current options")
+            #print(current_options_ref, current_options_alt)
+
+            # add kmers inside nodes to possible options
+            new_ref = bnp.get_kmers(variant.ref_seq.ravel(), self._k).ravel().raw().astype(np.uint64)
+            new_alt = bnp.get_kmers(variant.alt_seq.ravel(), self._k).ravel().raw().astype(np.uint64)
+
+            options_ref = np.concatenate([current_options_ref, new_ref])
+            options_alt = np.concatenate([current_options_alt, new_alt])
+
+            # remove kmers that are in both ref and alt
+            unique_options_ref = np.setdiff1d(options_ref, options_alt)
+            unique_options_alt = np.setdiff1d(options_alt, options_ref)
+
+            #print("Unique options")
+            #print(unique_options_ref, unique_options_alt)
+
+            # pick the option with best score
+            if len(unique_options_ref) > 0 and len(unique_options_alt) > 0:
+                score_ref = self._scorer.score_kmers(unique_options_ref)
+                #print("Best score ref: ", np.max(score_ref))
+                best_ref = unique_options_ref[np.argmax(score_ref)]
+                self._chosen_ref_kmers[sv_id] = np.array([best_ref])
+                n_ref_replaced += 1
+
+            #if len(unique_options_alt) > 0:
+                score_alt = self._scorer.score_kmers(unique_options_alt)
+                #print("Best score alt: ", np.max(score_alt))
+                best_alt = unique_options_alt[np.argmax(score_alt)]
+                self._chosen_alt_kmers[sv_id] = np.array([best_alt])
+                n_alt_replaced += 1
+
+            # alternatively, one could pick more than one good kmer if the allele is big
+
+        print(f"Replaced {n_ref_replaced} ref and {n_alt_replaced} alt kmers for SVs")
+
 
 
 class SignaturesWithNodes:
@@ -848,5 +1039,41 @@ def find_tricky_variants_from_signatures(signatures: Signatures):
 
     logging.info(f"{np.sum(tricky_variants)} tricky variants")
     return TrickyVariants(tricky_variants)
+
+
+def find_tricky_variants_from_signatures2(signatures: Signatures):
+    n_tricky_no_signatures = 0
+    tricky_variants = np.zeros(signatures.ref.shape[0], dtype=bool)
+    for i, (ref, alt) in tqdm.tqdm(enumerate(zip(signatures.ref, signatures.alt)), total=signatures.ref.shape[0], desc="Finding tricky variants", unit="variants"):
+        if len(ref) == 0 or len(alt) == 0:
+            tricky_variants[i] = True
+            n_tricky_no_signatures += 1
+        if set(ref).intersection(alt):
+            tricky_variants[i] = True
+
+    logging.info(f"{np.sum(tricky_variants)} tricky variants")
+    logging.info(f"Tricky because no signatures: {n_tricky_no_signatures}")
+    return TrickyVariants(tricky_variants)
+
+
+def find_tricky_variants_with_count_model(signatures: Signatures, model):
+    tricky = find_tricky_variants_from_signatures2(signatures).tricky_variants
+
+    # also check if model is missing data
+    n_missing_model = 0
+    for variant in tqdm.tqdm(range(len(signatures.ref.shape[1])), total=signatures.ref.shape[0], desc="Finding tricky variants", unit="variants"):
+        ref_node = variant*2
+        alt_node = variant*2 + 1
+        if model.has_no_data(ref_node, threshold=3) or model.has_no_data(alt_node, threshold=3):
+            tricky[variant] = True
+            n_missing_model += 1
+            print(model.describe_node(ref_node))
+            print(model.describe_node(alt_node))
+
+    logging.info("N tricky variants due to missing data in model: %d" % n_missing_model)
+    return TrickyVariants(tricky)
+
+
+
 
 

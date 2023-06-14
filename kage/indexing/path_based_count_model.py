@@ -103,7 +103,6 @@ class PathKmers:
             assert np.all(kmers.shape[0] >= 0)
             encoding = kmers.encoding
             raw_kmers = kmers.raw().ravel().astype(np.uint64)
-            logging.info("Calling kmer index has_kmers")
             is_in = kmer_index.has_kmers(raw_kmers)
             assert len(is_in) == len(kmers.ravel()) == len(raw_kmers) == np.sum(kmers.shape[1])
             mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)
@@ -111,7 +110,7 @@ class PathKmers:
             assert len(mask.ravel()) == np.sum(mask.shape[1])
             assert len(mask.ravel()) == len(is_in)
             assert np.sum(mask.ravel()) == np.sum(is_in)
-            logging.info(f"Pruned away {np.sum(mask==False)}/{len(kmers)} kmers for path {i}")
+            #logging.info(f"Pruned away {np.sum(mask==False)}/{len(kmers)} kmers for path {i}")
             kmers = raw_kmers[mask.ravel()]
             shape = np.sum(mask, axis=1)
             assert np.sum(shape) == len(kmers), (np.sum(shape), len(kmers), np.sum(is_in), np.sum(is_in == True))

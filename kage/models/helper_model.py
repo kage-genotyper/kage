@@ -22,6 +22,9 @@ class HelperVariants:
     def from_file(cls, file_name):
         return cls(np.load(file_name))
 
+    def __getitem__(self, variant_id):
+        return self.helper_variants[variant_id]
+
 
 class CombinationMatrix:
     properties = {"matrix"}

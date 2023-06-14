@@ -209,10 +209,10 @@ class LimitedFrequencySamplingComboModel(Model):
         assert all([np.all(np.sum(c, axis=-1) > 0) for c in self.diplotype_counts])
         logging.debug("Filling empty data took %.2f sec " % (time.perf_counter()-t))
 
-    def has_no_data(self, idx):
+    def has_no_data(self, idx, threshold=2):
         missing = [np.sum(c[idx]) == 0 for c in self.diplotype_counts]
         # if 2 out of 3 is missing data, return True
-        return sum(missing) >= 2
+        return sum(missing) >= threshold
 
     def has_duplicates(self, idx):
         counts = [c[idx] for c in self.diplotype_counts]

@@ -33,6 +33,7 @@ from obgraph.numpy_variants import NumpyVariants
 from .indexing.sparse_haplotype_matrix import make_sparse_haplotype_matrix_cli
 from kage.indexing.main import make_index_cli
 import gc
+from .analysis.debugging import debug_cli
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -83,6 +84,7 @@ def genotype(args):
         # map with kmer_mapper to get node counts
         assert args.reads is not None, "--reads must be specified if not node_counts is specified"
         node_counts = get_kmer_counts(kmer_index, args.kmer_size, args.reads, config.n_threads, args.gpu)
+        np.save(args.out_file_name + ".node_counts.npy", node_counts.node_counts)
     else:
         node_counts = NodeCounts.from_file(args.counts)
 
@@ -402,8 +404,17 @@ def run_argument_parser(args):
     subparser.add_argument("-k", "--kmer-size", required=False, type=int, default=31)
     subparser.add_argument("-M", "--make-helper-model", required=False, type=bool, default=False)
     subparser.add_argument("-m", "--modulo", required=False, type=int, default=200000033)
+    subparser.add_argument("-w", "--variant-window", required=False, type=int, default=4, help="Max neighbouring variants to consider. Indexing increases with this number")
     subparser.set_defaults(func=make_index_cli)
 
+
+    subparser = subparsers.add_parser("debug")
+    subparser.add_argument("-i", "--index", required=True)
+    subparser.add_argument("-t", "--truth", required=True)
+    subparser.add_argument("-g", "--genotypes", required=True)
+    subparser.add_argument("-r", "--report", required=True)
+    subparser.add_argument("-n", "--node-counts", required=True)
+    subparser.set_defaults(func=debug_cli)
 
     #subparser = subparsers.add_parser("pad_vcf")
     #subparser.add_argument("-v", "--vcf-file-name", required=True)

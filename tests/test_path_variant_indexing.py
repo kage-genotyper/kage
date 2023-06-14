@@ -3,14 +3,14 @@ logging.basicConfig(level=logging.INFO)
 import pytest
 from kage.indexing.path_variant_indexing import Paths, VariantAlleleSequences, PathCreator, GenomeBetweenVariants, \
     SignatureFinder, SignatureFinder2, zip_sequences, Graph, MappingModelCreator, \
-    MatrixVariantWindowKmers, FastApproxCounter, SignatureFinder3, find_tricky_variants_from_signatures, \
+    MatrixVariantWindowKmers, FastApproxCounter, SignatureFinder3, find_tricky_variants_from_signatures, find_tricky_variants_from_signatures2, \
     Signatures
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 import bionumpy as bnp
 import numpy as np
 import npstructures as nps
 from kage.indexing.path_based_count_model import PathBasedMappingModelCreator
-from kage.preprocessing.variants import Variants
+from kage.preprocessing.variants import Variants, VariantPadder
 
 
 @pytest.fixture
@@ -212,9 +212,65 @@ def test_tricky_variants_from_signatures():
     assert np.all(tricky_variants.tricky_variants == [True, True, False, True])
     print(tricky_variants)
 
+    tricky_variants = find_tricky_variants_from_signatures2(signatures)
+    print(tricky_variants)
+    assert np.all(tricky_variants.tricky_variants == [True, False, False, False])
+
 
 def test_disc_backed_path(graph):
     creator = PathCreator(graph)
     paths = creator.run()
     paths.to_disc_backend("test_paths")
     print(paths.paths[0][0:1])
+
+
+class DummyScorer2():
+    def score_kmers(self, kmers):
+        return np.zeros_like(kmers)
+
+
+@pytest.mark.xfail
+def test_signature_finder_with_svs():
+    variants = Variants.from_entry_tuples([
+            ("chr1", 10, "A", "T"),
+            ("chr1", 20, "A", "A"* 10 + "T" + "A"*10)
+        ])
+    graph = Graph.from_variants_and_reference(
+        bnp.datatypes.SequenceEntry.from_entry_tuples([("chr1", "A"*100)]),
+        variants
+    )
+    creator = PathCreator(graph)
+    paths = creator.run()
+    signature_finder = SignatureFinder3(paths, DummyScorer2(), k=5)
+    signatures = signature_finder.run(variants)
+
+    # AAAA kmer should have been replaced for the alt with something else that is unique
+    assert 0 not in signatures.alt[1]
+    assert len(signatures.alt[1]) >= 1
+
+
+
+def test_signatures_with_overlapping_indels():
+    variants = Variants.from_entry_tuples([
+        ("chr1", 4, "GGGG", ""),
+        ("chr1", 6, "G", "T"),
+    ])
+    sequence = bnp.datatypes.SequenceEntry.from_entry_tuples([("chr1", "ACGTGGGGACGTACGT")])
+    padded_variants = VariantPadder(variants, sequence[0].sequence).run()
+    print("PAdded variants")
+    print(padded_variants)
+
+    print(sequence)
+    graph = Graph.from_variants_and_reference(
+        sequence, padded_variants
+    )
+    creator = PathCreator(graph)
+    paths = creator.run()
+    signature_finder = SignatureFinder3(paths, DummyScorer2(), k=5)
+    signatures = signature_finder.run(variants)
+
+    # should be able to find unique signatures for ref
+    #assert len(signatures.ref[0]) > 0
+    print(signatures)
+
+

@@ -4,6 +4,18 @@ from bionumpy.bnpdataclass import bnpdataclass
 from bionumpy import EncodedRaggedArray
 import logging
 
+@bnpdataclass
+class MultiAllelelicVariants:
+    chromosome: str
+    position: np.ndarray
+    allele_sequences = List[str]
+
+
+    @classmethod
+    def from_variants(cls, variants):
+        # merges variants with same start and stop into multiallelic
+        pass
+
 
 @bnpdataclass
 class Variants:
