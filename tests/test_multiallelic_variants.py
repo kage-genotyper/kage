@@ -45,8 +45,7 @@ def test_multiallelic_paths():
 
 
 def test_matrix_window_kmers_flexible_window_size():
-    pass
-    #paths = Paths()
+    path_sequences = PathSequences
 
 
 

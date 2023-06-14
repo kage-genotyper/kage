@@ -7,7 +7,7 @@ import numpy as np
 import tqdm
 from graph_kmer_index import FlatKmers, CollisionFreeKmerIndex
 from .kmer_scoring import Scorer
-from .paths import Paths
+from .paths import Paths, PathSequences
 from ..preprocessing.variants import Variants
 from typing import List
 import awkward as ak
@@ -303,13 +303,13 @@ class MatrixVariantWindowKmers:
     variant_alleles: np.ndarray
 
     @classmethod
-    def from_paths(cls, paths, k):
-        n_variants = paths.n_variants()
-        n_paths = len(paths.paths)
+    def from_paths(cls, path_sequences: PathSequences, k):
+        n_variants = path_sequences.n_variants()
+        n_paths = len(path_sequences)
         n_windows = k - 1 - k//2
         matrix = np.zeros((n_paths, n_variants, n_windows), dtype=np.uint64)
 
-        for i, path in enumerate(paths.iter_path_sequences()):
+        for i, path in enumerate(path_sequences.iter_path_sequences()):
             starts = path._shape.starts[1::2]
             window_starts = starts - k + 1 + k//2
             #window_ends = np.minimum(starts + k, path.size)
@@ -319,16 +319,16 @@ class MatrixVariantWindowKmers:
             kmers = kmers.reshape((n_variants, n_windows))
             matrix[i, :, :] = kmers
 
-        return cls(matrix, paths.variant_alleles)
+        return cls(matrix, path_sequences.variant_alleles)
 
     @classmethod
-    def from_paths_with_flexible_window_size(cls, paths, k, variant_alleles):
+    def from_paths_with_flexible_window_size(cls, path_sequences: PathSequences, k, variant_alleles):
         # uses different windows for each variant, stores in an awkward array
-        n_variants = paths.n_variants()
-        n_paths = len(paths.paths)
+        n_variants = path_sequences.n_variants()
+        n_paths = len(path_sequences)
         kmers_found = []  # one RaggedArray for each path. Each element in ragged array represents a variant allele
 
-        for i, path in enumerate(paths.iter_path_sequences()):
+        for i, path in enumerate(path_sequences.iter_path_sequences()):
             variant_sizes = path[1::2].shape[1]
             window_sizes = variant_sizes + (k-1)*2
             # for each variant, find the kmers for this path and fill into the window

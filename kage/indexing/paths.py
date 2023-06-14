@@ -22,6 +22,20 @@ class PathSequences:
     def __iter__(self):
         return iter(self.sequences)
 
+    def n_variants(self):
+        return self.sequences[0].shape[0] // 2
+
+    def get_path_sequence(self, path_index):
+        path_sequence = self.sequences[path_index]
+        if isinstance(path_sequence, DiscBackedPath):
+            return path_sequence.load()
+        else:
+            return path_sequence
+
+    def iter_path_sequences(self):
+        for i in range(len(self.sequences)):
+            yield self.get_path_sequence(i)
+
 
 @dataclass
 class PathCombinationMatrix:
@@ -44,7 +58,6 @@ class PathCombinationMatrix:
     def __len__(self):
         return len(self.matrix)
 
-
 @dataclass
 class Paths:
     # the sequence for each path, as a ragged array (nodes)
@@ -52,16 +65,7 @@ class Paths:
     # the allele present at each variant in each path
     variant_alleles: PathCombinationMatrix  # n_paths x n_variants
 
-    def get_path_sequence(self, path_index):
-        path_sequence = self.paths[path_index]
-        if isinstance(path_sequence, DiscBackedPath):
-            return path_sequence.load()
-        else:
-            return path_sequence
 
-    def iter_path_sequences(self):
-        for i in range(len(self.paths)):
-            yield self.get_path_sequence(i)
 
     def n_variants(self):
         return self.variant_alleles.shape[1]
