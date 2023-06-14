@@ -25,6 +25,11 @@ class PathSequences:
     def n_variants(self):
         return self.sequences[0].shape[0] // 2
 
+    @classmethod
+    def from_list(cls, sequences):
+        return cls([bnp.as_encoded_array(s) for s in sequences])
+
+
     def get_path_sequence(self, path_index):
         path_sequence = self.sequences[path_index]
         if isinstance(path_sequence, DiscBackedPath):
@@ -43,6 +48,9 @@ class PathCombinationMatrix:
     Represents which allele each path has on each variant (as a matrix)
     """
     matrix: np.ndarray  # n_paths x n_variants
+
+    def __post_init__(self):
+        self.matrix = np.asarray(self.matrix, dtype=np.uint8)
 
     def __getitem__(self, item):
         return self.matrix[item]

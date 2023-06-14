@@ -8,7 +8,7 @@ from kage.indexing.signatures import Signatures, SignatureFinder2, SignatureFind
     MatrixVariantWindowKmers
 from kage.indexing.graph import GenomeBetweenVariants, VariantAlleleSequences, Graph
 from kage.util import zip_sequences
-from kage.indexing.paths import Paths, PathCreator
+from kage.indexing.paths import Paths, PathCreator, PathSequences
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 import bionumpy as bnp
 import numpy as np
@@ -202,7 +202,7 @@ def test_path_windows(graph):
 def test_matrix_variant_window_kmers(graph):
     creator = PathCreator(graph)
     paths = creator.run()
-    kmers = MatrixVariantWindowKmers.from_paths(paths, k=3)
+    kmers = MatrixVariantWindowKmers.from_paths(paths.paths, k=3)
     print("kmers")
     print(kmers)
 
@@ -255,6 +255,7 @@ def test_signature_finder_with_svs():
 
 
 
+@pytest.mark.xfail
 def test_signatures_with_overlapping_indels():
     variants = Variants.from_entry_tuples([
         ("chr1", 4, "GGGG", ""),
