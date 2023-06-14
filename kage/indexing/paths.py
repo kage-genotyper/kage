@@ -95,6 +95,28 @@ class DiscBackedPath:
         return cls(to_file(path, file_name))
 
 
+@dataclass
+class PathCombinationMatrix:
+    """
+    Represents which allele each path has on each variant (as a matrix)
+    """
+    matrix: np.ndarray  # n_paths x n_variants
+
+    def __getitem__(self, item):
+        return self.matrix[item]
+
+    @property
+    def T(self):
+        return self.matrix.T
+
+    @property
+    def shape(self):
+        return self.matrix.shape
+
+    def __len__(self):
+        return len(self.matrix)
+
+
 class PathCreator:
     def __init__(self, graph, window: int = 3, make_disc_backed=False, disc_backed_file_base_name=None):
         self._graph = graph
@@ -127,7 +149,7 @@ class PathCreator:
         return Paths(paths, combinations)
 
     @staticmethod
-    def make_combination_matrix(alleles, n_variants, window):
+    def make_combination_matrix(alleles, n_variants, window) -> PathCombinationMatrix:
         n_paths = len(alleles)**window
         # make all possible combinations of variant alleles through the path
         # where all combinations of alleles are present within a window of size self._window
@@ -141,7 +163,7 @@ class PathCreator:
         for i, c in enumerate(combinations):
             combination_matrix[i] = np.array(list(c))
 
-        return combination_matrix
+        return PathCombinationMatrix(combination_matrix)
 
 
 @dataclass
