@@ -8,7 +8,9 @@ from typing import List
 
 from shared_memory_wrapper import to_file
 
-from .path_variant_indexing import Graph, MappingModelCreator, Paths
+from .path_variant_indexing import MappingModelCreator
+from kage.indexing.graph import Graph
+from .paths import Paths
 from graph_kmer_index import KmerIndex
 from .sparse_haplotype_matrix import SparseHaplotypeMatrix
 from ..models.mapping_model import LimitedFrequencySamplingComboModel

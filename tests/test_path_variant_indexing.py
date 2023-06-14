@@ -1,10 +1,12 @@
 import logging
 logging.basicConfig(level=logging.INFO)
 import pytest
-from kage.indexing.path_variant_indexing import Paths, VariantAlleleSequences, PathCreator, GenomeBetweenVariants, \
-    SignatureFinder, SignatureFinder2, zip_sequences, Graph, MappingModelCreator, \
+from kage.indexing.path_variant_indexing import SignatureFinder, SignatureFinder2, MappingModelCreator, \
     MatrixVariantWindowKmers, FastApproxCounter, SignatureFinder3, find_tricky_variants_from_signatures, find_tricky_variants_from_signatures2, \
     Signatures
+from kage.indexing.graph import GenomeBetweenVariants, VariantAlleleSequences, Graph
+from kage.util import zip_sequences
+from kage.indexing.paths import Paths, PathCreator
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 import bionumpy as bnp
 import numpy as np
@@ -29,16 +31,17 @@ def graph(genome, variants):
     return Graph(genome, variants)
 
 
+def tests_variants(variants):
+    assert variants.get_allele_sequence(0, 0) == "A"
+    assert variants.get_allele_sequence(0, 1) == "C"
+    assert variants.get_allele_sequence(2, 0) == ""
+
+
 @pytest.fixture
 def haplotype_matrix(graph):
     return SparseHaplotypeMatrix.from_variants_and_haplotypes(
         np.array([0, 0, 1, 2, 2]), np.array([0, 1, 2, 2, 1]), graph.n_variants(), 4)
 
-
-def tests_variants(variants):
-    assert variants.get_allele_sequence(0, 0) == "A"
-    assert variants.get_allele_sequence(0, 1) == "C"
-    assert variants.get_allele_sequence(2, 0) == ""
 
 
 def test_sequence_ragged_array(graph):

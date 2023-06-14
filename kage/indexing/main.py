@@ -3,9 +3,11 @@ from obgraph.variant_to_nodes import VariantToNodes
 from obgraph.numpy_variants import NumpyVariants
 import numpy as np
 from kage.indexing.index_bundle import IndexBundle
-from kage.indexing.path_variant_indexing import Graph, PathCreator, make_kmer_scorer_from_random_haplotypes, \
+from kage.indexing.path_variant_indexing import make_kmer_scorer_from_random_haplotypes, \
     SignatureFinder3, find_tricky_variants_from_signatures, find_tricky_variants_from_signatures2, find_tricky_variants_with_count_model, \
     MappingModelCreator
+from kage.indexing.graph import Graph
+from .paths import PathCreator
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix, GenotypeMatrix
 from kage.models.helper_model import HelperVariants, CombinationMatrix
 from .path_based_count_model import PathBasedMappingModelCreator
