@@ -1,9 +1,11 @@
 import logging
 logging.basicConfig(level=logging.INFO)
 import pytest
-from kage.indexing.path_variant_indexing import SignatureFinder, SignatureFinder2, MappingModelCreator, \
-    MatrixVariantWindowKmers, FastApproxCounter, SignatureFinder3, find_tricky_variants_from_signatures, find_tricky_variants_from_signatures2, \
-    Signatures
+from kage.indexing.path_variant_indexing import MappingModelCreator, \
+    find_tricky_variants_from_signatures, find_tricky_variants_from_signatures2
+from kage.indexing.kmer_scoring import FastApproxCounter
+from kage.indexing.signatures import Signatures, SignatureFinder2, SignatureFinder3, \
+    MatrixVariantWindowKmers
 from kage.indexing.graph import GenomeBetweenVariants, VariantAlleleSequences, Graph
 from kage.util import zip_sequences
 from kage.indexing.paths import Paths, PathCreator

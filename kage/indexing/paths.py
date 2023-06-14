@@ -2,11 +2,11 @@ import itertools
 import logging
 from dataclasses import dataclass
 from typing import List
-
 import bionumpy as bnp
 import numpy as np
 import tqdm
 from shared_memory_wrapper import to_file, from_file
+import npstructures as nps
 
 
 @dataclass
@@ -129,11 +129,15 @@ class PathCreator:
             assert disc_backed_file_base_name is not None
             self._disc_backed_file_base_name = disc_backed_file_base_name
 
-    def run(self):
-        alleles = [0, 1]  # possible alleles, assuming biallelic variants
-        n_paths = len(alleles)**self._window
-        n_variants = self._variants.n_variants
-        combinations = PathCreator.make_combination_matrix(alleles, n_variants, self._window)
+    def run(self, n_alleles_at_each_variant=None):
+        if n_alleles_at_each_variant is None:
+            logging.info("Assuming all variants are biallelic")
+            alleles = [0, 1]  # possible alleles, assuming biallelic variants
+            n_paths = len(alleles)**self._window
+            n_variants = self._variants.n_variants
+            combinations = PathCreator.make_combination_matrix(alleles, n_variants, self._window)
+        else:
+            combinations = PathCreator.make_combination_matrix_multi_allele(n_alleles_at_each_variant, self._window)
 
         paths = []
 
@@ -164,6 +168,36 @@ class PathCreator:
             combination_matrix[i] = np.array(list(c))
 
         return PathCombinationMatrix(combination_matrix)
+
+    @staticmethod
+    def make_combination_matrix_multi_allele(n_alleles: np.ndarray, window) -> PathCombinationMatrix:
+        """
+        Makes a combination matrix for variants with variable number of alleles.
+        Only ensures all combinations within a window when alleles are biallelic.
+        """
+        new = []
+        n_alleles = np.asarray(n_alleles)
+        total_alleles = np.sum(n_alleles)
+
+        # make biallelic paths first
+        biallelic = PathCreator.make_combination_matrix([0, 1], total_alleles, window)
+        for i in range(len(biallelic.matrix)):
+            path = biallelic.matrix[i]
+            # each multiallelic variant will become one row
+            grouped_by_variant = nps.RaggedArray(path, n_alleles-1)
+            multiallele = np.where(grouped_by_variant.shape[1] > 1)[0]
+            selection = grouped_by_variant[multiallele]
+            # recode each row to one single number between 0 and n_alleles
+            # multiple by a factor and do modulo n alles to distribute evenly
+            factor = nps.RaggedArray([[2**i for i in range(len(row))] for row in selection])
+            selection = np.sum(selection * factor, axis=1) % (selection.shape[1] + 1)
+
+            # we want all nonmultiallelic and the new encoding for the multiallelic
+            # hack: Set first column of ragged array to new and slice
+            grouped_by_variant[multiallele, 0] = selection
+            new.append(grouped_by_variant[:, 0])
+
+        return PathCombinationMatrix(np.array(new))
 
 
 @dataclass
