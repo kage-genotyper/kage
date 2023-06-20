@@ -6,7 +6,7 @@ from kage.indexing.path_variant_indexing import MappingModelCreator, \
 from kage.indexing.kmer_scoring import FastApproxCounter
 from kage.indexing.signatures import Signatures, SignatureFinder2, SignatureFinder3, \
     MatrixVariantWindowKmers
-from kage.indexing.graph import GenomeBetweenVariants, VariantAlleleSequences, Graph
+from kage.indexing.graph import GenomeBetweenVariants, Graph
 from kage.util import zip_sequences
 from kage.indexing.paths import Paths, PathCreator, PathSequences
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
@@ -14,7 +14,7 @@ import bionumpy as bnp
 import numpy as np
 import npstructures as nps
 from kage.indexing.path_based_count_model import PathBasedMappingModelCreator
-from kage.preprocessing.variants import Variants, VariantPadder
+from kage.preprocessing.variants import Variants, VariantPadder, VariantAlleleSequences
 
 
 @pytest.fixture

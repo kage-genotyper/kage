@@ -1,10 +1,19 @@
+import itertools
+from dataclasses import dataclass
+import npstructures as nps
+import awkward as ak
 import bionumpy as bnp
 import numpy as np
 from bionumpy.bnpdataclass import bnpdataclass
-from bionumpy import EncodedRaggedArray
+from bionumpy import EncodedRaggedArray, Interval
 import logging
-from typing import List
+from typing import List, Tuple
 
+
+@dataclass
+class VariantToNodes:
+    ref_nodes: np.ndarray
+    var_nodes: np.ndarray
 
 
 @bnpdataclass
@@ -44,6 +53,72 @@ class Variants:
         # adds trailing bases to indels and adjusts positions
         is_indel = (self.ref_seq.shape[1] != 1) | (self.alt_seq.shape[1] != 1)
         new_positions = self.position.copy()
+
+    def get_multi_allele_variant_alleles(self) -> Tuple['MultiAllelicVariantSequences', 'VariantAlleleToNodeMap', Interval]:
+        """
+        Groups variants that are exactly overlapping and returns a MultiAllelicVariantSequences object.
+        This only makes sense when overlapping variants have been padded first so that they are perfectly
+        overlapping.
+
+        Also returns a BiallelicToMultiallelicIndex object that maps variant id + allele to new variant IDs and alleles.
+        """
+        sequences = []
+        prev_pos = -1
+        prev_chrom = ""
+        intervals = []
+
+        for i, variant in enumerate(self):
+            chrom = variant.chromosome.to_string()
+            ref_seq = variant.ref_seq.to_string()
+            alt_seq = variant.alt_seq.to_string()
+
+            if variant.position == prev_pos and chrom == prev_chrom:
+                assert ref_seq == self[i-1].ref_seq.to_string(), "Overlapping variants must have same ref sequence"
+                sequences[-1].append(alt_seq)
+            else:
+                sequences.append([ref_seq, alt_seq])
+                intervals.append((chrom, variant.position, variant.position + len(ref_seq)))
+
+            prev_pos = variant.position
+            prev_chrom = chrom
+
+        n_alleles_per_variant = [len(s) for s in sequences]
+
+        return MultiAllelicVariantSequences.from_list(sequences), \
+            VariantAlleleToNodeMap.from_n_alleles_per_variant(n_alleles_per_variant), \
+            Interval.from_entry_tuples(intervals)
+
+
+@dataclass
+class VariantAlleleToNodeMap:
+    node_ids: nps.RaggedArray  # rows are variant, columns are alleles. Values are node ids
+    biallelic_ref_nodes: np.ndarray  # node ids for biallelic ref alleles
+    biallelic_alt_nodes: np.ndarray
+
+    """
+    Index for looking up variant id and allele => variant id and allele
+    """
+
+    def lookup(self, variant_ids, alleles):
+        return self.node_ids[variant_ids, alleles]
+
+    def get_variant_to_nodes(self):
+        return VariantToNodes(self.biallelic_ref_nodes, self.biallelic_alt_nodes)
+
+    @classmethod
+    def from_n_alleles_per_variant(cls, n_alleles_per_variant: List[int]):
+        data = np.arange(np.sum(n_alleles_per_variant))
+        row_lengths = np.array(n_alleles_per_variant)
+        node_ids = nps.RaggedArray(data, row_lengths)
+
+        biallelic_ref_nodes = []
+        biallelic_alt_nodes = []
+        for multiallelic in node_ids:
+            for alt_allele in multiallelic[1:]:
+                biallelic_ref_nodes.append(multiallelic[0])
+                biallelic_alt_nodes.append(alt_allele)
+
+        return cls(node_ids, biallelic_ref_nodes, biallelic_alt_nodes)
 
 
 class VariantPadder:
@@ -227,3 +302,61 @@ def pad_vcf_cli(args):
             offset += len(chunk)
 
 
+class VariantAlleleSequences:
+    def __init__(self, data: bnp.EncodedRaggedArray, n_alleles: int = 2):
+        self._data = data  # data contains sequence for first allele first, then second allele, etc.
+        self.n_alleles = n_alleles
+        self.n_variants = len(self._data) // n_alleles
+
+    @classmethod
+    def from_list(cls, variant_sequences: List[List]):
+        zipped = list(itertools.chain(*zip(*variant_sequences)))
+        encoded = bnp.as_encoded_array(zipped, bnp.encodings.ACGTnEncoding)
+        encoded[encoded == "N"] = "A"
+        return cls(bnp.change_encoding(encoded, bnp.DNAEncoding))
+
+    @property
+    def allele_sequences(self):
+        return [self._data[self.n_variants*allele:self.n_variants*(allele+1)] for allele in range(self.n_alleles)]
+
+    def get_allele_sequence(self, variant, allele):
+        return self._data[self.n_variants*allele + variant].to_string()
+
+    def get_haplotype_sequence(self, haplotypes: np.ndarray) -> bnp.EncodedRaggedArray:
+        """
+        Gets all sequences from nodes given the haplotypes at those nodes.
+        """
+        assert len(haplotypes) == self.n_variants
+        rows = self.n_variants*haplotypes + np.arange(self.n_variants)
+        return self._data[rows]
+
+
+class MultiAllelicVariantSequences(VariantAlleleSequences):
+    """Supports more than two alleles (and flexible number of alleles for each variant).
+    Uses awkward arrays internally"""
+
+    def __init__(self, data: ak.Array):
+        self._data = data
+        self.n_variants = len(self._data)
+
+    @property
+    def variant_sizes(self):
+        """
+        Return size of ref allele of each variant.
+        """
+        return ak.to_numpy(ak.num(self._data[:, 0]))
+
+    @classmethod
+    def from_list(cls, variant_sequences: List[List]):
+        return cls(ak.Array(variant_sequences))
+
+    def get_haplotype_sequence(self, haplotypes: np.ndarray) -> bnp.EncodedRaggedArray:
+        assert len(haplotypes) == self.n_variants
+        allele_sequences = self._data[np.arange(self.n_variants), haplotypes]
+        shape = ak.to_numpy(ak.num(allele_sequences))
+        # flatten, and encode
+        bytes = ak.to_numpy(ak.flatten(ak.without_parameters(allele_sequences)))
+        return bnp.EncodedRaggedArray(bnp.change_encoding(bnp.EncodedArray(bytes, bnp.BaseEncoding), bnp.DNAEncoding), shape)
+
+    def to_list(self):
+        return ak.to_list(self._data)

@@ -7,7 +7,7 @@ from kage.indexing.path_variant_indexing import find_tricky_variants_from_signat
     MappingModelCreator
 from kage.indexing.kmer_scoring import make_kmer_scorer_from_random_haplotypes
 from kage.indexing.signatures import SignatureFinder3
-from kage.indexing.graph import Graph
+from kage.indexing.graph import Graph, make_multiallelic_graph
 from .paths import PathCreator
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix, GenotypeMatrix
 from kage.models.helper_model import HelperVariants, CombinationMatrix
@@ -32,6 +32,7 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     reference_sequences = bnp.open(reference_file_name).read()
     variants = get_padded_variants_from_vcf(vcf_file_name, reference_file_name)
     graph = Graph.from_variants_and_reference(reference_sequences, variants)
+    #graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
 
     if len(graph.genome.sequence[-1]) < k:
         # pad genome

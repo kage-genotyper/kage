@@ -23,12 +23,11 @@ class PathSequences:
         return iter(self.sequences)
 
     def n_variants(self):
-        return self.sequences[0].shape[0] // 2
+        return self.get_path_sequence(0).shape[0] // 2
 
     @classmethod
     def from_list(cls, sequences):
         return cls([bnp.as_encoded_array(s) for s in sequences])
-
 
     def get_path_sequence(self, path_index):
         path_sequence = self.sequences[path_index]

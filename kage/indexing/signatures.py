@@ -8,9 +8,10 @@ import tqdm
 from graph_kmer_index import FlatKmers, CollisionFreeKmerIndex
 from .kmer_scoring import Scorer
 from .paths import Paths, PathSequences
-from ..preprocessing.variants import Variants
+from ..preprocessing.variants import Variants, VariantAlleleToNodeMap
 from typing import List, Union
 import awkward as ak
+from graph_kmer_index import FlatKmers
 
 
 @dataclass
@@ -61,12 +62,35 @@ class MultiAllelicSignatures:
     # there can be multiple signatures for one allele at a variant
     signatures: ak.Array  # n_variants x n_alleles x signatures
 
-    def get_as_flat_kmers(self):
-        # convert alleles to "nodes ids"
-        pass
+    @classmethod
+    def from_list(cls, l) -> 'MultiAllelicSignatures':
+       return cls(ak.Array(l))
 
-    def get_as_kmer_index(self, k, modulo=103, include_reverse_complements=True):
-        pass
+    def get_as_flat_kmers(self, node_mapping: VariantAlleleToNodeMap):
+        signatures = self.signatures
+
+        all_kmers = []
+        all_node_ids = []
+
+        for variant in range(len(signatures)):
+            for allele in range(len(signatures[variant])):
+                node_id = node_mapping.lookup(variant, allele)
+                kmers = ak.to_numpy(signatures[variant, allele])
+                all_kmers.append(kmers)
+                all_node_ids.append(np.full(len(kmers), node_id))
+
+        return FlatKmers(np.concatenate(all_kmers), np.concatenate(all_node_ids))
+
+    def get_as_kmer_index(self, k, node_mapping: VariantAlleleToNodeMap, modulo=103, include_reverse_complements=True):
+        flat = self.get_as_flat_kmers(node_mapping)
+        if include_reverse_complements:
+            rev_comp_flat = flat.get_reverse_complement_flat_kmers(k)
+            flat = FlatKmers.from_multiple_flat_kmers([flat, rev_comp_flat])
+
+        assert modulo > len(flat._hashes), "Modulo is too small for number of kmers. Increase"
+        index = KmerIndex.from_flat_kmers(flat, skip_frequencies=True, modulo=modulo)
+        index.convert_to_int32()
+        return index
 
 
 class SignatureFinder:
@@ -224,7 +248,7 @@ class SignatureFinder3(SignatureFinder):
             self._chosen_ref_kmers.append(ref_kmers)
             self._chosen_alt_kmers.append(alt_kmers)
 
-        if variants is not None:
+        if variants is not None and False:
             self._manuall_process_indels(indels_with_identical_kmers)
             #self._manually_process_svs(variants)
 

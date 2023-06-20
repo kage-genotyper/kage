@@ -1,13 +1,17 @@
 #from kage.preprocessing.variants import MultiAllelelicVariants
+import npstructures
 import pytest
-from kage.indexing.graph import Graph, VariantAlleleSequences, GenomeBetweenVariants, MultiAllelicVariantSequences
+from bionumpy import Interval
+from kage.indexing.graph import Graph, GenomeBetweenVariants
+from kage.preprocessing.variants import VariantAlleleSequences, MultiAllelicVariantSequences, Variants, VariantAlleleToNodeMap
 from kage.indexing.paths import PathCreator, PathSequences
 import bionumpy as bnp
-from kage.indexing.signatures import MatrixVariantWindowKmers
+from kage.indexing.signatures import MatrixVariantWindowKmers, MultiAllelicSignatures
 import numpy as np
 from kage.indexing.paths import PathCombinationMatrix, Paths
 from kage.indexing.signatures import MultiAllelicSignatureFinder
 import awkward as ak
+from kage.indexing.graph import make_multiallelic_graph
 
 
 @pytest.fixture
@@ -104,4 +108,70 @@ def test_multiallelic_signature_finder():
     assert len(s[0][1]) == 1
     assert len(s[1][0]) == 1
     assert len(s[1][1]) == 1
+
+
+def test_multiallelic_signatures_as_kmer_index():
+    signatures = MultiAllelicSignatures.from_list([
+        [[1], [10, 11], [20]],
+        [[5, 6], [5]]
+    ])
+    node_mapping = VariantAlleleToNodeMap(
+        npstructures.RaggedArray([
+            [0, 1, 2],
+            [3, 4]
+        ]),
+        biallelic_ref_nodes=np.array([0, 0, 3]),
+        biallelic_alt_nodes=np.array([1, 2, 4])
+    )
+
+    index = signatures.get_as_kmer_index(3, node_mapping)
+    assert np.all(index.get_nodes(1) == [0])
+    assert np.all(index.get_nodes(10) == [1])
+    assert np.all(index.get_nodes(11) == [1])
+    assert np.all(index.get_nodes(5) == [3, 4])
+
+
+@pytest.fixture
+def variants():
+    return Variants.from_entry_tuples([
+        ("1", 1, "A", "C"),
+        ("1", 10, "ACTG", "ATTG"),
+        ("1", 10, "ACTG", ""),
+        ("2", 10, "A", "C")
+    ])
+
+
+@pytest.fixture
+def reference_sequence():
+    return bnp.datatypes.SequenceEntry.from_entry_tuples([
+        ("1", "CACCCCCCCCACTGCCCC"),
+        ("2", "GGGGGGGGGGAGGG")
+    ])
+
+
+def test_get_multiallelic_variant_alleles_from_variants(variants):
+    multiallelic, node_ids, intervals = variants.get_multi_allele_variant_alleles()
+    assert multiallelic.to_list() == [["A", "C"], ["ACTG", "ATTG", ""], ["A", "C"]]
+    assert np.all(node_ids.lookup([0, 0], [0, 1]) == [0, 1])
+    assert np.all(node_ids.lookup([1, 1, 1], [0, 1, 2]) == [2, 3, 4])
+    assert np.all(node_ids.biallelic_ref_nodes == [0, 2, 2, 5])
+    assert np.all(node_ids.biallelic_alt_nodes == [1, 3, 4, 6])
+
+    correct_interval = Interval.from_entry_tuples([
+        ("1", 1, 2),
+        ("1", 10, 14),
+        ("2", 10, 11)
+    ])
+
+    assert np.all(intervals == correct_interval)
+
+
+def test_make_multiallelic_graph(reference_sequence, variants):
+    graph, node_mapping = make_multiallelic_graph(reference_sequence, variants)
+    assert graph.genome.to_list() == ["C", "CCCCCCCC", "CCCCGGGGGGGGGG", "GGG"]
+    assert graph.variants.to_list() == [["A", "C"], ["ACTG", "ATTG", ""], ["A", "C"]]
+
+
+
+
 

@@ -1,5 +1,6 @@
 import pytest
-from kage.indexing.graph import GenomeBetweenVariants, VariantAlleleSequences, Graph
+from kage.indexing.graph import GenomeBetweenVariants, Graph
+from kage.preprocessing.variants import VariantAlleleSequences
 from kage.indexing.paths import Paths, PathCreator
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 from kage.indexing.path_based_count_model import HaplotypeAsPaths, PathKmers

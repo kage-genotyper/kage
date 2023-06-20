@@ -1,14 +1,13 @@
-import itertools
 import logging
 from dataclasses import dataclass
-from typing import List
 import bionumpy as bnp
 import numpy as np
+from kage.preprocessing.variants import VariantAlleleSequences, MultiAllelicVariantSequences
 from kage.util import stream_ragged_array
 from ..preprocessing.variants import get_padded_variants_from_vcf, Variants
 from ..util import zip_sequences
 from bionumpy.datatypes import Interval
-import awkward as ak
+from typing import Tuple
 
 
 @dataclass
@@ -20,6 +19,9 @@ class GenomeBetweenVariants:
         # splits into two GenomeBetweenVariants. The first contains all bases ..
         pass
 
+    def to_list(self):
+        return self.sequence.tolist()
+
     def pad_at_end(self, n_bases):
         s = self.sequence
         shape = s.raw().shape
@@ -30,61 +32,44 @@ class GenomeBetweenVariants:
     def from_list(cls, l):
         return cls(bnp.as_encoded_array(l, bnp.DNAEncoding))
 
-class VariantAlleleSequences:
-    def __init__(self, data: bnp.EncodedRaggedArray, n_alleles: int = 2):
-        self._data = data  # data contains sequence for first allele first, then second allele, etc.
-        self.n_alleles = n_alleles
-        self.n_variants = len(self._data) // n_alleles
-
     @classmethod
-    def from_list(cls, variant_sequences: List[List]):
-        zipped = list(itertools.chain(*zip(*variant_sequences)))
-        encoded = bnp.as_encoded_array(zipped, bnp.encodings.ACGTnEncoding)
-        encoded[encoded == "N"] = "A"
-        return cls(bnp.change_encoding(encoded, bnp.DNAEncoding))
+    def from_reference_and_variant_intervals(cls, reference_sequences: bnp.datatypes.SequenceEntry,
+                                             variant_intervals: bnp.datatypes.Interval):
+        chromosome_names = reference_sequences.name
+        chromosome_sequences = reference_sequences.sequence
+        chromosome_lengths = {name.to_string(): len(seq) for name, seq in zip(chromosome_names, chromosome_sequences)}
+        global_reference_sequence = np.concatenate(chromosome_sequences)
+        global_reference_sequence = bnp.change_encoding(global_reference_sequence, bnp.encodings.ACGTnEncoding)
+        global_offset = bnp.genomic_data.global_offset.GlobalOffset(chromosome_lengths)
 
-    @property
-    def allele_sequences(self):
-        return [self._data[self.n_variants*allele:self.n_variants*(allele+1)] for allele in range(self.n_alleles)]
+        variants_global_offset = global_offset.from_local_interval(variant_intervals)
+        # start position should be first base of "unique" ref sequence in variant
+        # stop should be first base of ref sequence after variant
+        global_starts = variants_global_offset.start.copy()
+        global_stops = variants_global_offset.stop.copy()
+        between_variants_start = np.insert(global_stops, 0, 0)
+        between_variants_end = np.insert(global_starts, len(global_starts), len(global_reference_sequence))
+        if not np.all(between_variants_start[1:] >= between_variants_start[:-1]):
+            logging.error("Some variants start before others end. Are there overlapping variants?")
+            raise Exception("")
 
-    def get_allele_sequence(self, variant, allele):
-        return self._data[self.n_variants*allele + variant].to_string()
+        # some variants will start and end at the same position. Then we don't need the sequence between them
+        adjust_ends = np.where(between_variants_end < between_variants_start)[0]
+        logging.info("Adjusting ends for %d variants because these are before starts", len(adjust_ends))
+        # these ends should have starts that match the next start
+        assert np.all(between_variants_start[adjust_ends] == between_variants_start[adjust_ends + 1])
+        # adjust these to be the same as start
+        between_variants_end[adjust_ends] = between_variants_start[adjust_ends]
+        # between_variants_end = np.maximum(between_variants_start, between_variants_end)
 
-    def get_haplotype_sequence(self, haplotypes: np.ndarray) -> bnp.EncodedRaggedArray:
-        """
-        Gets all sequences from nodes given the haplotypes at those nodes.
-        """
-        assert len(haplotypes) == self.n_variants
-        rows = self.n_variants*haplotypes + np.arange(self.n_variants)
-        return self._data[rows]
+        sequence_between_variants = bnp.ragged_slice(global_reference_sequence, between_variants_start,
+                                                     between_variants_end)
 
+        # replace N's with A
+        sequence_between_variants[sequence_between_variants == "N"] = "A"
+        sequence_between_variants = bnp.change_encoding(sequence_between_variants, bnp.DNAEncoding)
 
-class MultiAllelicVariantSequences(VariantAlleleSequences):
-    """Supports more than two alleles (and flexible number of alleles for each variant).
-    Uses awkward arrays internally"""
-
-    def __init__(self, data: ak.Array):
-        self._data = data
-        self.n_variants = len(self._data)
-
-    @property
-    def variant_sizes(self):
-        """
-        Return size of ref allele of each variant.
-        """
-        return ak.to_numpy(ak.num(self._data[:, 0]))
-
-    @classmethod
-    def from_list(cls, variant_sequences: List[List]):
-        return cls(ak.Array(variant_sequences))
-
-    def get_haplotype_sequence(self, haplotypes: np.ndarray) -> bnp.EncodedRaggedArray:
-        assert len(haplotypes) == self.n_variants
-        allele_sequences = self._data[np.arange(self.n_variants), haplotypes]
-        shape = ak.to_numpy(ak.num(allele_sequences))
-        # flatten, and encode
-        bytes = ak.to_numpy(ak.flatten(ak.without_parameters(allele_sequences)))
-        return bnp.EncodedRaggedArray(bnp.change_encoding(bnp.EncodedArray(bytes, bnp.BaseEncoding), bnp.DNAEncoding), shape)
+        return cls(sequence_between_variants)
 
 
 @dataclass
@@ -171,110 +156,23 @@ class Graph:
 
     @classmethod
     def from_variants_and_reference(cls, reference_sequences: bnp.datatypes.SequenceEntry, variants: Variants):
-        chromosome_names = reference_sequences.name
-        chromosome_sequences = reference_sequences.sequence
-        chromosome_lengths = {name.to_string(): len(seq) for name, seq in zip(chromosome_names, chromosome_sequences)}
-        global_reference_sequence = np.concatenate(chromosome_sequences)
-        global_reference_sequence = bnp.change_encoding(global_reference_sequence, bnp.encodings.ACGTnEncoding)
-        global_offset = bnp.genomic_data.global_offset.GlobalOffset(chromosome_lengths)
-        variants_as_intervals = Interval(variants.chromosome, variants.position,
-                                         variants.position + variants.ref_seq.shape[1])
-        variants_global_offset = global_offset.from_local_interval(variants_as_intervals)
-        # start position should be first base of "unique" ref sequence in variant
-        # stop should be first base of ref sequence after variant
-        global_starts = variants_global_offset.start.copy()
-        global_stops = variants_global_offset.stop.copy()
-        between_variants_start = np.insert(global_stops, 0, 0)
-        between_variants_end = np.insert(global_starts, len(global_starts), len(global_reference_sequence))
-        if not np.all(between_variants_start[1:] >= between_variants_start[:-1]):
-            logging.error("Some variants start before others end. Are there overlapping variants?")
-            where = np.where(between_variants_start[1:] < between_variants_start[:-1])
-            for variant in variants[where]:
-                print(f"{variant.position}\t\t{variant.ref_seq}\t\t{variant.alt_seq}")
-            raise
-        # some variants will start and end at the same position. Then we don't need the sequence between them
-        adjust_ends = np.where(between_variants_end < between_variants_start)[0]
-        logging.info("Adjusting ends for %d variants because these are before starts", len(adjust_ends))
-        # these ends should have starts that match the next start
-        assert np.all(between_variants_start[adjust_ends] == between_variants_start[adjust_ends + 1])
-        # adjust these to be the same as start
-        between_variants_end[adjust_ends] = between_variants_start[adjust_ends]
-        #between_variants_end = np.maximum(between_variants_start, between_variants_end)
 
-        sequence_between_variants = bnp.ragged_slice(global_reference_sequence, between_variants_start,
-                                                     between_variants_end)
+        variant_intervals = Interval(variants.chromosome, variants.position,
+                                         variants.position + variants.ref_seq.shape[1])
+
+        genome_between_variants = GenomeBetweenVariants.from_reference_and_variant_intervals(reference_sequences, variant_intervals)
+
         variant_ref_sequences = variants.ref_seq
         variant_alt_sequences = variants.alt_seq
-        # replace N's with A
-        sequence_between_variants[sequence_between_variants == "N"] = "A"
-        sequence_between_variants = bnp.change_encoding(sequence_between_variants, bnp.DNAEncoding)
+        variant_allele_sequence = VariantAlleleSequences(np.concatenate([variant_ref_sequences, variant_alt_sequences]))
 
-        return cls(GenomeBetweenVariants(sequence_between_variants),
-                   VariantAlleleSequences(np.concatenate([variant_ref_sequences, variant_alt_sequences])))
-
-    @classmethod
-    def _from_vcf(cls, vcf_file_name, reference_file_name, k=31):
-        reference = bnp.open(reference_file_name, bnp.encodings.ACGTnEncoding).read()
-        reference = {s.name.to_string(): s.sequence for s in reference}
-        #assert len(reference) == 1, "Only one chromosome supported now"
+        return cls(genome_between_variants, variant_allele_sequence)
 
 
-        sequences_between_variants = []
-        variant_sequences = []
+def make_multiallelic_graph(reference_sequences: bnp.datatypes.SequenceEntry, biallelic_padded_variants: Variants) -> Tuple[Graph, 'VariantAlleleToNodeMap']:
+    variant_allele_sequences, node_mapping, variant_regions = biallelic_padded_variants.get_multi_allele_variant_alleles()
 
-        vcf = bnp.open(vcf_file_name, bnp.DNAEncoding)
-        prev_ref_pos = 0
-        prev_chromosome = None
-        for chunk in vcf:
-            for variant in chunk:
-                chromosome = variant.chromosome.to_string()
-                pos = variant.position
-                ref = variant.ref_seq
-                alt = variant.alt_seq
+    # make intervals for where bubbles start and end
+    genome_between_variants = GenomeBetweenVariants.from_reference_and_variant_intervals(reference_sequences, variant_regions)
+    return Graph(genome_between_variants, variant_allele_sequences), node_mapping
 
-                #if pos > len(reference) - k:
-                #logging.info("Skipping variant too close to end of chromosome")
-                #continue
-
-
-                if len(ref) > len(alt) or len(alt) > len(ref):
-                    # indel
-                    pos_before = pos
-                    if len(ref) == 1:
-                        # insertion
-                        pos_after = pos_before + 1
-                        ref = ref[0:0]
-                        alt = alt[1:]
-                    else:
-                        # deletion
-                        assert len(alt) == 1
-                        pos_after = pos_before + len(ref)
-                        alt = alt[0:0]
-                        ref = ref[1:]
-
-                else:
-                    # snp
-                    assert len(ref) == len(alt) == 1
-                    pos_before = pos - 1
-                    pos_after = pos_before + 2
-
-                if prev_chromosome is not None and chromosome != prev_chromosome:
-                    # add last bit of last chromosome
-                    new_sequence = reference[prev_chromosome][prev_ref_pos:].to_string().upper().replace("N", "A") \
-                        + reference[chromosome][0:pos_before + 1].to_string().upper().replace("N", "A")
-                    sequences_between_variants.append(new_sequence)
-                else:
-                    new_sequence = reference[chromosome][prev_ref_pos:pos_before + 1].to_string().upper().replace("N",
-                                                                                                                  "A")
-                    sequences_between_variants.append(new_sequence)
-
-                prev_ref_pos = pos_after
-                variant_sequences.append([ref.to_string(), alt.to_string()])
-
-                prev_chromosome = chromosome
-
-        # add last bit of reference
-        sequences_between_variants.append(reference[chromosome][prev_ref_pos:].to_string().upper().replace("N", "A"))
-
-        return cls(GenomeBetweenVariants(bnp.as_encoded_array(sequences_between_variants, bnp.DNAEncoding)),
-                   VariantAlleleSequences.from_list(variant_sequences))
