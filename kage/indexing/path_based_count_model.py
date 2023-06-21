@@ -22,7 +22,6 @@ class HaplotypeAsPaths:
     """Represents a haplotype as a combination of paths"""
     paths: np.ndarray
 
-
     @classmethod
     def from_haplotype_and_path_alleles(cls, haplotype: np.ndarray, path_alleles: np.ndarray, window):
         convolve_array = 2**np.arange(window)
@@ -38,19 +37,6 @@ class HaplotypeAsPaths:
         for i in range(path_signatures.shape[0]):
             matching_paths[path_signatures[i] == haplotype_signatures] = i
         return cls(matching_paths)
-
-    @classmethod
-    def _from_haplotype_and_path_alleles(cls, haplotype: np.ndarray, path_alleles: np.ndarray, window):
-        # for every variant, find the path that matches the haplotype in the window from that variant
-        # paths are repeting, so the first window variant can be used
-        path_signatures = path_alleles[:, :window]
-        convolve_array = 2**np.arange(window)
-        path_signatures = convolve2d(path_signatures, [convolve_array], mode='valid').ravel()
-        signature_to_path = np.zeros(path_alleles.shape[0])
-        signature_to_path[path_signatures] = np.arange(path_signatures.shape[0], dtype=np.uint8)
-        haplotype_window_signatures = np.convolve(haplotype, convolve_array, mode='full')[window-1:].astype(np.uint8)
-        return cls(signature_to_path[haplotype_window_signatures])
-
 
 
 @dataclass
@@ -137,32 +123,20 @@ class PathBasedMappingModelCreator(MappingModelCreator):
         self._path_kmers.prune(kmer_index)
 
     def _process_individual(self, i):
-        t0 = time.perf_counter()
-        #logging.info("Staring individual %d", i)
         haplotype1 = self._haplotype_matrix.get_haplotype(i * 2)
         haplotype2 = self._haplotype_matrix.get_haplotype(i * 2 + 1)
-
-        #logging.info("Getting haplotypes took %.3f sec", time.perf_counter() - t0)
-        t0 = time.perf_counter()
 
         all_kmers = []
         for haplotype in [haplotype1, haplotype2]:
             as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles(haplotype, self._path_allele_matrix, window=3)
             all_kmers.append(self._path_kmers.get_for_haplotype(as_paths).raw().ravel().astype(np.uint64))
 
-        #logging.info("Getting all kmers took %.3f sec", time.perf_counter() - t0)
-        t0 = time.perf_counter()
-
+        # todo for multiallelic: use variant_to_nodes
         haplotype1_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2)
         haplotype2_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2+1)
-        #logging.info("Getting nodes took %.3f sec", time.perf_counter() - t0)
-        t0 = time.perf_counter()
 
         node_counts = self._kmer_index.map_kmers(np.concatenate(all_kmers), self._n_nodes)
-        #logging.info("Mapping kmers took %.3f sec", time.perf_counter() - t0)
-        t0 = time.perf_counter()
 
         self._add_node_counts(haplotype1_nodes, haplotype2_nodes, node_counts)
-        #logging.info("Adding node counts took %.3f sec", time.perf_counter() - t0)
 
 

@@ -17,7 +17,8 @@ setup(name='kage-genotyper',
                         'graph_read_simulator>=0.0.7',
                         'shared_memory_wrapper>=0.0.27',
                         'bionumpy>=0.2.21',
-                        'npstructures>=0.2.9'
+                        'npstructures>=0.2.9',
+                        'awkward',
                         ],
       include_dirs=["."],
       classifiers=[

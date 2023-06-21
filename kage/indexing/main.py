@@ -45,12 +45,17 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     log_memory_usage_now("After scorer")
 
     logging.info("Making paths")
+    # todo: Run with n_alleles_per_variant to get multiallelic paths
     paths = PathCreator(graph, window=variant_window,
                         make_disc_backed=True, disc_backed_file_base_name=out_base_name).run()
 
+    # todo: Get variant_to_nodes from node_mapping instead
     variant_to_nodes = VariantToNodes(np.arange(graph.n_variants())*2, np.arange(graph.n_variants())*2+1)
 
+    # todo: Change to MultiAllelicSignatureFinder
     signatures = SignatureFinder3(paths, scorer=scorer, k=k).run(variants)
+
+    # todo: Send in node_mapping to get kmer_index with correct node ids
     kmer_index = signatures.get_as_kmer_index(modulo=modulo, k=k)
 
     logging.info("Creating count model")
