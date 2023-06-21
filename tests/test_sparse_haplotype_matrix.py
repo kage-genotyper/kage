@@ -47,7 +47,7 @@ def test_convert_to_multiallelic():
 
     n_alleles_per_variant = np.array([2, 2, 3, 2])
     nonsparse = matrix.to_multiallelic(n_alleles_per_variant)
-    
+
     correct = [
         [1, 1, 0],
         [0, 0, 0],

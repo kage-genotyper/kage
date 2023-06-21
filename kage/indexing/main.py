@@ -52,6 +52,11 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     # todo: Get variant_to_nodes from node_mapping instead
     variant_to_nodes = VariantToNodes(np.arange(graph.n_variants())*2, np.arange(graph.n_variants())*2+1)
 
+    # todo: Get n_alleles_per_variant from node_mapping
+    # n_alleles_per_variant = node_mapping.n_alleles_per_variant()
+    # convert haplotype matrix to multiallelic
+    # haplotype_matrix = HaplotypeMatrix.to_multiallelic(n_alleles_per_variant)
+
     # todo: Change to MultiAllelicSignatureFinder
     signatures = SignatureFinder3(paths, scorer=scorer, k=k).run(variants)
 
