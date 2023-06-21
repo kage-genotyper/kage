@@ -54,6 +54,16 @@ def test_multiallelic_paths():
         assert all(a in matrix.matrix[:, i] for a in range(allele))
 
 
+def test_convert_biallelic_path_to_multiallelic():
+    n_alleles_per_variant = [2, 2, 3, 2, 4, 2]
+    #       #  #  #...  #  #......  #
+    path = [0, 1, 0, 1, 1, 1, 1, 1, 1]
+    converted = PathCreator.convert_biallelic_path_to_multiallelic(n_alleles_per_variant, path, how="path")
+
+    correct = [0, 1, 2, 1, 3, 1]
+    assert np.all(converted == correct)
+
+
 def test_matrix_window_kmers_flexible_window_size():
     path_sequences = PathSequences([
         bnp.as_encoded_array(["AAA", "CCC", "AAA", "GGG", "AAA"], bnp.DNAEncoding),

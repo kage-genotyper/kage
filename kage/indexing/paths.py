@@ -1,7 +1,7 @@
 import itertools
 import logging
 from dataclasses import dataclass
-from typing import List
+from typing import List, Literal
 import bionumpy as bnp
 import numpy as np
 import tqdm
@@ -209,21 +209,41 @@ class PathCreator:
         biallelic = PathCreator.make_combination_matrix([0, 1], total_alleles, window)
         for i in range(len(biallelic.matrix)):
             path = biallelic.matrix[i]
-            # each multiallelic variant will become one row
-            grouped_by_variant = nps.RaggedArray(path, n_alleles-1)
-            multiallele = np.where(grouped_by_variant.shape[1] > 1)[0]
-            selection = grouped_by_variant[multiallele]
-            # recode each row to one single number between 0 and n_alleles
-            # multiple by a factor and do modulo n alles to distribute evenly
-            factor = nps.RaggedArray([[2**i for i in range(len(row))] for row in selection])
-            selection = np.sum(selection * factor, axis=1) % (selection.shape[1] + 1)
 
+            grouped_by_variant = PathCreator.convert_biallelic_path_to_multiallelic(n_alleles, path)
+            new.append(grouped_by_variant)
+
+        return PathCombinationMatrix(np.array(new))
+
+    @staticmethod
+    def convert_biallelic_path_to_multiallelic(n_alleles: np.ndarray, path: np.ndarray, how: Literal["path", "encoding"] = "path"):
+        """
+        :param n_alleles: number of alleles at each variant
+        :param path: allele number at each variant for actual path (or individual)
+        :param return_encoded: if True, returns the actual encoded path. If not, takes modulo to get a path (used with PathCreator)
+        """
+        n_alleles = np.asarray(n_alleles)
+        path = np.asarray(path)
+
+        # each multiallelic variant will become one row
+        grouped_by_variant = nps.RaggedArray(path, n_alleles - 1)
+        multiallele = np.where(grouped_by_variant.shape[1] > 1)[0]
+        selection = grouped_by_variant[multiallele]
+        # recode each row to one single number between 0 and n_alleles
+        # multiple by a factor and do modulo n alles to distribute evenly
+        if how == "encoding":
+            # encoding is the last variant with positive allele
+            factor = nps.RaggedArray([[i+1 for i in range(len(row))] for row in selection])
+            grouped_by_variant[multiallele, 0] = np.max(selection * factor, axis=1)  # np.max to get column index
+        else:
+            # encoding is using modulo to just distribute the path over all alleles evenly
+            factor = nps.RaggedArray([[2 ** i for i in range(len(row))] for row in selection])
+            encoded_multiallelic_path = np.sum(selection * factor, axis=1)
+            selection = encoded_multiallelic_path % (selection.shape[1] + 1)
             # we want all nonmultiallelic and the new encoding for the multiallelic
             # hack: Set first column of ragged array to new and slice
             grouped_by_variant[multiallele, 0] = selection
-            new.append(grouped_by_variant[:, 0])
-
-        return PathCombinationMatrix(np.array(new))
+        return grouped_by_variant[:, 0]
 
 
 @dataclass

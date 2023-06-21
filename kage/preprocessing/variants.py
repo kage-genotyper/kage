@@ -105,6 +105,9 @@ class VariantAlleleToNodeMap:
     def get_variant_to_nodes(self):
         return VariantToNodes(self.biallelic_ref_nodes, self.biallelic_alt_nodes)
 
+    def n_alleles_per_variant(self):
+        return self.node_ids.shape[1]
+
     @classmethod
     def from_n_alleles_per_variant(cls, n_alleles_per_variant: List[int]):
         data = np.arange(np.sum(n_alleles_per_variant))

@@ -6,6 +6,8 @@ import scipy
 import tqdm
 from graph_kmer_index.nplist import NpList
 
+from kage.indexing.paths import PathCreator
+
 
 #class SparseColumnMatrix:
 #    pass
@@ -16,7 +18,7 @@ from graph_kmer_index.nplist import NpList
 
 @dataclass
 class SparseHaplotypeMatrix:
-    data: scipy.sparse.csc_matrix
+    data: scipy.sparse.csc_matrix  # n_variants x n_haplotypes
 
     def extend(self, other: "SparseHaplotypeMatrix"):
         if self.data is None:
@@ -31,9 +33,28 @@ class SparseHaplotypeMatrix:
     def empty(cls):
         return cls(None)
 
+    def to_multiallelic(self, n_alleles_per_variant) -> 'SparseHaplotypeMatrix':
+        """
+        Converts a biallelic haplotype matrix to multialellic. Assumes current matrix has two alleles,
+        and uses n_alleles_per_variant to group variants.
+        """
+        columns = []
+        for haplotype in range(self.n_haplotypes):
+            h = self.get_haplotype(haplotype)
+            new_column = PathCreator.convert_biallelic_path_to_multiallelic(
+                n_alleles_per_variant,
+                h, how="encoding")
+            columns.append(new_column)
+
+        print(columns)
+        return SparseHaplotypeMatrix.from_nonsparse_matrix(np.array(columns).T)
+
     @classmethod
     def from_nonsparse_matrix(cls, matrix):
         return cls(scipy.sparse.csc_matrix(matrix))
+
+    def to_matrix(self):
+        return self.data.toarray()
 
     @classmethod
     def from_variants_and_haplotypes(cls, variant_ids, haplotype_ids, n_variants, n_haplotypes):

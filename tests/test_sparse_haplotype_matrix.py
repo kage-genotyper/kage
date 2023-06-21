@@ -31,3 +31,28 @@ def test_genotype_matrix():
         [0, 0],
         [1, 1],
     ]))
+
+
+
+def test_convert_to_multiallelic():
+    matrix = SparseHaplotypeMatrix.from_nonsparse_matrix(
+        [
+            [1, 1, 0],
+            [0, 0, 0],
+            [1, 1, 0], # grouped
+            [1, 0, 1], # grouped
+            [0, 0, 1]
+        ]
+    )
+
+    n_alleles_per_variant = np.array([2, 2, 3, 2])
+    nonsparse = matrix.to_multiallelic(n_alleles_per_variant)
+    
+    correct = [
+        [1, 1, 0],
+        [0, 0, 0],
+        [2, 1, 2],
+        [0, 0, 1]
+    ]
+
+    assert np.all(nonsparse.to_matrix() == np.array(correct))
