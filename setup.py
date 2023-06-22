@@ -27,7 +27,6 @@ setup(name='kage-genotyper',
       entry_points={
             'console_scripts': ['kage=kage.command_line_interface:main']
       }
-
 )
 
 """"
