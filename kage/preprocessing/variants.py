@@ -108,6 +108,9 @@ class VariantAlleleToNodeMap:
     def n_alleles_per_variant(self):
         return self.node_ids.shape[1]
 
+    def haplotypes_to_node_ids(self, haplotypes):
+        return self.node_ids[np.arange(len(self.node_ids)), haplotypes]
+
     @classmethod
     def from_n_alleles_per_variant(cls, n_alleles_per_variant: List[int]):
         data = np.arange(np.sum(n_alleles_per_variant))

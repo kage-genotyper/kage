@@ -2,6 +2,7 @@ import logging
 import time
 from dataclasses import dataclass
 import numpy as np
+from kage.preprocessing.variants import VariantAlleleToNodeMap
 from scipy.signal import convolve2d
 import bionumpy as bnp
 from typing import List
@@ -133,7 +134,7 @@ class PathKmers:
 class PathBasedMappingModelCreator(MappingModelCreator):
     def __init__(self, graph: Graph, kmer_index: KmerIndex,
                  haplotype_matrix: SparseHaplotypeMatrix, window, paths_allele_matrix = None,
-                 max_count=10, k=31):
+                 max_count=10, k=31, node_map: VariantAlleleToNodeMap = None):
         self._graph = graph
         self._kmer_index = kmer_index
         self._haplotype_matrix = haplotype_matrix
@@ -145,6 +146,7 @@ class PathBasedMappingModelCreator(MappingModelCreator):
         self._path_allele_matrix = paths_allele_matrix
         self._path_kmers = PathKmers.from_graph_and_paths(graph, paths_allele_matrix, k=k)
         self._path_kmers.prune(kmer_index)
+        self._node_map = node_map
 
     def _process_individual(self, i):
         haplotype1 = self._haplotype_matrix.get_haplotype(i * 2)
@@ -152,12 +154,17 @@ class PathBasedMappingModelCreator(MappingModelCreator):
 
         all_kmers = []
         for haplotype in [haplotype1, haplotype2]:
-            as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles(haplotype, self._path_allele_matrix, window=3)
+            as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles_multiallelic(haplotype, self._path_allele_matrix, window=3)
             all_kmers.append(self._path_kmers.get_for_haplotype(as_paths).raw().ravel().astype(np.uint64))
 
         # todo for multiallelic: use variant_to_nodes
-        haplotype1_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2)
-        haplotype2_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2+1)
+        if self._node_map is None:
+            logging.info("No node map provided. Assuming biallelic and deciding node ids implicitly")
+            haplotype1_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2)
+            haplotype2_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2+1)
+        else:
+            haplotype1_nodes = self._node_map.haplotypes_to_node_ids(haplotype1)
+            haplotype2_nodes = self._node_map.haplotypes_to_node_ids(haplotype2)
 
         node_counts = self._kmer_index.map_kmers(np.concatenate(all_kmers), self._n_nodes)
 
