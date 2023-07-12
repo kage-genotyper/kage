@@ -7,7 +7,7 @@ from kage.util import stream_ragged_array
 from ..preprocessing.variants import get_padded_variants_from_vcf, Variants
 from ..util import zip_sequences
 from bionumpy.datatypes import Interval
-from typing import Tuple
+from typing import Tuple, Union
 
 
 @dataclass
@@ -75,7 +75,7 @@ class GenomeBetweenVariants:
 @dataclass
 class Graph:
     genome: GenomeBetweenVariants
-    variants: VariantAlleleSequences
+    variants: Union[VariantAlleleSequences, MultiAllelicVariantSequences]
 
     def n_variants(self):
         return self.variants.n_variants

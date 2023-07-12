@@ -32,6 +32,7 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     reference_sequences = bnp.open(reference_file_name).read()
     variants = get_padded_variants_from_vcf(vcf_file_name, reference_file_name)
     graph = Graph.from_variants_and_reference(reference_sequences, variants)
+    # todo: Make multiallelic graph instead, get node mapping
     #graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
 
     if len(graph.genome.sequence[-1]) < k:

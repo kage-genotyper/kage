@@ -16,14 +16,39 @@ from .sparse_haplotype_matrix import SparseHaplotypeMatrix
 from ..models.mapping_model import LimitedFrequencySamplingComboModel
 import npstructures as nps
 from ..util import log_memory_usage_now
+from numpy.lib.stride_tricks import sliding_window_view
+
 
 @dataclass
 class HaplotypeAsPaths:
     """Represents a haplotype as a combination of paths"""
     paths: np.ndarray
 
+
+    @classmethod
+    def from_haplotype_and_path_alleles_multiallelic(cls, haplotype: np.ndarray, path_alleles: np.ndarray, window):
+        # same as method below, but supports haplotype and path alleles that are multiallelic
+        # thus, cannot match using convolve. This should support biallelic nicely also
+        # idea is to use sliding window and pad first with 0s, and do matching of windows
+
+        # padd with 0s at end so that last window can be matched
+        path_signatures = sliding_window_view(
+            np.append(path_alleles, np.zeros((path_alleles.shape[0], window-1)), axis=1),
+            window, axis=1)
+        haplotype_signatures = sliding_window_view(np.append(haplotype, np.zeros(window-1)), window)
+        matching_paths = np.zeros(len(haplotype), dtype=np.uint16)
+
+        #haplotype_signatures = np.append(haplotype_signatures, np.zeros(window-1))
+        #path_signatures = np.append(path_signatures, np.zeros((path_signatures.shape[0], window-1)), axis=1)
+
+        for i in range(path_signatures.shape[0]):
+            matching_paths[np.all(path_signatures[i] == haplotype_signatures, axis=1)] = i
+        return cls(matching_paths)
+
     @classmethod
     def from_haplotype_and_path_alleles(cls, haplotype: np.ndarray, path_alleles: np.ndarray, window):
+        return cls.from_haplotype_and_path_alleles_multiallelic(haplotype, path_alleles, window)
+        # todo: can be removed
         convolve_array = 2**np.arange(window)
         # get a signature for every window at every path
         # will match the haplotype to paths by matching the signatures at each variant
@@ -61,7 +86,6 @@ class PathKmers:
         Returns kmers in no particular order.
         """
         if not isinstance(self.kmers, list):
-            # only used for testing. This function is normally called after pruning and then kmers is a list
             self.kmers = list(self.kmers)
 
         kmers_found = []

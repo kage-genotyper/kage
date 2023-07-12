@@ -81,7 +81,6 @@ def test_matrix_window_kmers_flexible_window_size():
 
     assert kmers == correct
 
-
     variant_alleles = np.array([
         [1, 0],
         [0, 1]

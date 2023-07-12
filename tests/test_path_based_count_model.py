@@ -1,5 +1,5 @@
 import pytest
-from kage.indexing.graph import GenomeBetweenVariants, Graph
+from kage.indexing.graph import GenomeBetweenVariants, Graph, MultiAllelicVariantSequences
 from kage.preprocessing.variants import VariantAlleleSequences
 from kage.indexing.paths import Paths, PathCreator
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
@@ -44,6 +44,21 @@ def test_haplotype_as_paths(paths2):
     haplotypes_as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles(haplotype, paths2, window=3)
     correct = [6, 2, 2, 3, 7, 7]
     assert np.all(correct == haplotypes_as_paths.paths)
+
+
+def test_haplotype_as_paths_multiallelic():
+    paths = np.array([
+        [0, 1, 0, 1, 0, 1],
+        [1, 1, 2, 0, 1, 2],
+        [3, 1, 0, 2, 1, 3]
+    ])
+
+    haplotype = np.array([0, 1, 2, 0, 1, 3])
+
+    window = 2
+    correct = [0, 1, 1, 1, 2, 2]
+    haplotype_as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles_multiallelic(haplotype, paths, window=window)
+    assert np.all(correct == haplotype_as_paths.paths)
 
 
 def test_path_kmers(graph, paths):
@@ -94,3 +109,31 @@ def test_prune_path_kmers(graph, paths):
     print(path_kmers)
 
 
+
+def test_path_based_count_model_with_multiallelic_variants():
+    pass
+
+
+def test_get_kmers_for_haplotype_multiallelic():
+    graph = Graph(
+        GenomeBetweenVariants.from_list(["GGG", "GG", "GG", "GG", "GG"]),
+        MultiAllelicVariantSequences.from_list([
+            ["A", "C"],
+            ["A", "C", "T"],
+            ["A", "T"],
+            ["A", "C"]
+        ])
+    )
+
+    n_alleles = np.array([2, 3, 2, 2])
+    paths = PathCreator.make_combination_matrix_multi_allele(n_alleles, window=4)
+    haplotype = np.array([0, 2, 1, 1])
+    path_kmers = PathKmers.from_graph_and_paths(graph, paths, k=2)
+    haplotype_as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles_multiallelic(
+        haplotype, paths, window=2
+    )
+
+    kmers = path_kmers.get_for_haplotype(haplotype_as_paths)
+    kmers = [k.to_string() for k in kmers]
+    correct = ["GG", "GG", "GA", "AG", "GG", "GT", "TG", "GG", "GT", "TG", "GG", "GC", "CG", "GG"]
+    assert sorted(kmers) == sorted(correct)
