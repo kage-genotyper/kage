@@ -54,7 +54,6 @@ class MappingModelCreator:
         haplotype1_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2)
         haplotype2_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2+1)
 
-
         sequence1 = self._graph.sequence(haplotype1).ravel()
         sequence2 = self._graph.sequence(haplotype2).ravel()
         logging.info("Got haplotypes, total now: %.2f seconds" % (time.perf_counter() - t0))

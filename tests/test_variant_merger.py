@@ -66,6 +66,20 @@ def test_variant_padder(variants, reference):
     assert padded == correct
 
 
+def test_variant_padder_with_insertion():
+    """
+    Variants(chromosome=encoded_array('chrI'), position=array(33673), ref_seq=encoded_array(''), alt_seq=encoded_array('CCGCTAAC'))
+    Variants(chromosome=encoded_array('chrI'), position=array(33673), ref_seq=encoded_array('CT'), alt_seq=encoded_array('TT'))
+    """
+    variants = Variants.from_entry_tuples([
+        ("chr1", 5, "", "ACGT"),
+        ("chr1", 5, "AA", "TT")
+    ])
+    reference = bnp.as_encoded_array("A"*16)
+    padder = VariantPadder(variants, reference)
+    padded = padder.run()
+    print(padded)
+
 @pytest.fixture
 def variants2():
     return Variants.from_entry_tuples(

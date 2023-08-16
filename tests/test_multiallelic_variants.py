@@ -6,7 +6,8 @@ from kage.indexing.graph import Graph, GenomeBetweenVariants
 from kage.preprocessing.variants import VariantAlleleSequences, MultiAllelicVariantSequences, Variants, VariantAlleleToNodeMap
 from kage.indexing.paths import PathCreator, PathSequences
 import bionumpy as bnp
-from kage.indexing.signatures import MatrixVariantWindowKmers, MultiAllelicSignatures
+from kage.indexing.signatures import MatrixVariantWindowKmers, MultiAllelicSignatures, MultiAllelicSignatureFinderV2, \
+    VariantWindowKmers2
 import numpy as np
 from kage.indexing.paths import PathCombinationMatrix, Paths
 from kage.indexing.signatures import MultiAllelicSignatureFinder
@@ -119,6 +120,32 @@ def test_multiallelic_signature_finder():
     assert len(s[1][1]) == 1
 
 
+@pytest.fixture
+def paths():
+    return Paths(
+        PathSequences.from_list([
+            ["AAA", "CCC", "G", "TT", "AAA"],
+            ["AAA", "CCC", "G", "TT", "AAA"],
+            ["AAA", "G", "G", "CC", "AAA"],
+        ]),
+        PathCombinationMatrix([
+            [0, 1],
+            [0, 1],
+            [1, 0],
+            ]
+        )
+    )
+
+
+def test_multiallelic_signature_finder2(paths):
+    signature_finder = MultiAllelicSignatureFinder(paths, k=3, scorer=DummyScorer2())
+    signatures = signature_finder.run()
+
+    s = ak.to_list(signatures.signatures)
+    assert len(s[0][0]) == 1
+    assert len(s[0][1]) == 1
+
+
 def test_multiallelic_signatures_as_kmer_index():
     signatures = MultiAllelicSignatures.from_list([
         [[1], [10, 11], [20]],
@@ -138,6 +165,20 @@ def test_multiallelic_signatures_as_kmer_index():
     assert np.all(index.get_nodes(10) == [1])
     assert np.all(index.get_nodes(11) == [1])
     assert np.all(index.get_nodes(5) == [3, 4])
+
+
+def test_multialellic_signature_finderv2(paths):
+    k = 3
+    old = MultiAllelicSignatureFinder(paths, scorer=DummyScorer2(), k=k).run()
+    print(old.signatures)
+
+    variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
+    variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers, paths.variant_alleles.matrix)
+    new = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=DummyScorer2(), k=k).run()
+
+    print(new.signatures)
+    assert np.all(old.signatures == new.signatures)
+
 
 
 @pytest.fixture

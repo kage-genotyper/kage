@@ -164,6 +164,7 @@ class PathCreator:
             combinations = PathCreator.make_combination_matrix(alleles, n_variants, self._window)
         else:
             combinations = PathCreator.make_combination_matrix_multi_allele(n_alleles_at_each_variant, self._window)
+            n_paths = len(combinations)
 
         paths = []
 

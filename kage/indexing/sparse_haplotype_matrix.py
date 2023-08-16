@@ -101,7 +101,7 @@ class SparseHaplotypeMatrix:
 
 
     @classmethod
-    def from_vcf(cls, vcf_file_name):
+    def from_vcf(cls, vcf_file_name) -> 'SparseHaplotypeMatrix':
         vcf = bnp.open(vcf_file_name, buffer_type=bnp.io.delimited_buffers.PhasedVCFMatrixBuffer)
         all_variant_ids = NpList(dtype=np.uint32)
         all_haplotype_ids = NpList(dtype=np.uint16)

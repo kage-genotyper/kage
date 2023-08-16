@@ -64,6 +64,7 @@ class Variants:
         """
         sequences = []
         prev_pos = -1
+        prev_ref_seq = ""
         prev_chrom = ""
         intervals = []
 
@@ -72,8 +73,19 @@ class Variants:
             ref_seq = variant.ref_seq.to_string()
             alt_seq = variant.alt_seq.to_string()
 
+            # If variants start and end at same position as previous, these are perfectly overlapping
+            is_overlapping = False
             if variant.position == prev_pos and chrom == prev_chrom:
-                assert ref_seq == self[i-1].ref_seq.to_string(), "Overlapping variants must have same ref sequence"
+                if variant.position + len(ref_seq) == prev_pos + len(prev_ref_seq):
+                    is_overlapping = True
+                else:
+                    assert len(prev_ref_seq) == 0, "Two variants are starting at same position, but not ending at same position. These are overlapping and should have been padded"
+            
+            #if variant.position == prev_pos and chrom == prev_chrom and variant.position + len(ref_seq):
+            if is_overlapping:
+                #if ref_seq != self[i-1].ref_seq.to_string():
+                #    logging.error(f"Ref seq {ref_seq} does not match previous ref seq {self[i-1].ref_seq.to_string()} on variant {variant}")
+                #    raise Exception("Overlapping variants must have same ref sequence")
                 sequences[-1].append(alt_seq)
             else:
                 sequences.append([ref_seq, alt_seq])
@@ -81,6 +93,7 @@ class Variants:
 
             prev_pos = variant.position
             prev_chrom = chrom
+            prev_ref_seq = ref_seq
 
         n_alleles_per_variant = [len(s) for s in sequences]
 
@@ -102,14 +115,19 @@ class VariantAlleleToNodeMap:
     def lookup(self, variant_ids, alleles):
         return self.node_ids[variant_ids, alleles]
 
+    @property
+    def n_nodes(self):
+        return self.node_ids.max() + 1
+
     def get_variant_to_nodes(self):
         return VariantToNodes(self.biallelic_ref_nodes, self.biallelic_alt_nodes)
-
     def n_alleles_per_variant(self):
         return self.node_ids.shape[1]
-
     def haplotypes_to_node_ids(self, haplotypes):
         return self.node_ids[np.arange(len(self.node_ids)), haplotypes]
+    @property
+    def n_alleles_per_variant(self):
+        return self.node_ids.shape[1]
 
     @classmethod
     def from_n_alleles_per_variant(cls, n_alleles_per_variant: List[int]):

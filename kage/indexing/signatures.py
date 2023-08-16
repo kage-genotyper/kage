@@ -1,4 +1,5 @@
 import logging
+import time
 from dataclasses import dataclass
 import bionumpy as bnp
 from graph_kmer_index import KmerIndex
@@ -111,58 +112,103 @@ class MultiAllelicSignatureFinder(SignatureFinder):
         self._scorer = scorer
         self._k = k
         self._chosen_kmers = []  # n_variants x n_alleles x kmers at allele
+        t0 = time.perf_counter()
+        self._kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(self._paths.paths, self._k)
+        logging.info("Finding all kmers around variants took %.4f seconds" % (time.perf_counter() - t0))
+
 
     def run(self) -> Signatures:
-        kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(self._paths.paths, self._k)
+        kmers = self._kmers
         kmer_matrix = kmers.kmers
         # kmers is n_paths x n_variants x n_windows. Window size is variable
         variant_alleles = self._paths.variant_alleles
+        logging.info("Scoring kmers")
+        t0 = time.perf_counter()
+        kmer_scores = kmers.score_kmers(self._scorer)
+        logging.info("Scoring kmers took %.4f seconds" % (time.perf_counter() - t0))
 
-        # for each variant:
-        #  for each allele find the best scoring window position where no kmers are found in other alleles
-        for variant in range(kmers.n_variants):
-            # find all unique kmers, but only count kmer once if it is at the same window at the same allele
+
+        # for each allele find the best scoring window position where no kmers are found in other alleles
+        for i, variant in enumerate(range(kmers.n_variants)):
+            print("Variant", i)
+            # find all unique kmers, but only count kmer once if it is at the
+            # same window at the same allele
             alleles = variant_alleles[:,variant]
             unique_alleles = np.unique(alleles)
 
+            # Finding all unique kmers over all alleles
             all_unique_kmers = []
             for allele in unique_alleles:
                 rows = np.where(alleles == allele)[0]
                 n_windows = len(kmer_matrix[rows[0], variant])  # all should have same window size (same allele)
                 assert n_windows > 0
-                print("N WINDOWS", n_windows)
                 for window in range(n_windows):
                     all_unique_kmers.append(np.unique(kmer_matrix[rows, variant, window]))
 
             all_unique, all_counts = np.unique(np.concatenate(all_unique_kmers), return_counts=True)
 
             # for each allele, find windows where all kmers only exist once in all_unique
-
             kmers_found_at_variant = []
-
             for allele in range(np.max(unique_alleles)+1):
-                rows = np.where(alleles == allele)[0]
-                assert len(rows) > 0, "No paths with allele %d" % allele
-                paths = np.where(alleles == allele)[0]
-                n_windows = len(kmer_matrix[rows[0], variant])  # all should have same window size (same allele)
+                paths = np.where(alleles == allele)[0] # which paths have this allele
+                assert len(paths) > 0, "No paths with allele %d" % allele
+                n_windows = len(kmer_matrix[paths[0], variant])  # all should have same window size (same allele)
                 assert n_windows > 0
                 best_score = -100000000000
                 best_kmers = []
-                for window in range(n_windows):
-                    potential = kmer_matrix[paths, variant, window]
-                    if all(all_counts[all_unique == kmer] == 1 for kmer in potential):
-                        potential = kmer_matrix[paths, variant, window]
-                        score = np.min(self._scorer.score_kmers(potential))  # worst score of all kmers
-                        if score > best_score:
-                            best_kmers = np.unique(potential)
-                            best_score = score
+                best_kmers = np.unique(kmer_matrix[paths, variant,
+                    np.argmax(np.min(kmer_scores[paths, variant], axis=1))])
+
+                #for window in range(min(n_windows, 5)):
+                #    potential = kmer_matrix[paths, variant, window]
+                #    if all(all_counts[all_unique == kmer] == 1 for kmer in potential):
+                #        #score = np.min(self._scorer.score_kmers(potential))  # worst score of all kmers
+                #        score = np.min(kmer_scores[paths, variant, window])
+                #        if score > best_score:
+                #            best_kmers = np.unique(potential)
+                #            best_score = score
 
                 kmers_found_at_variant.append(best_kmers)
 
             self._chosen_kmers.append(ak.Array(kmers_found_at_variant))
 
-        return MultialleleSignatures(ak.Array(self._chosen_kmers))
+        return MultiAllelicSignatures(ak.Array(self._chosen_kmers))
 
+
+class MultiAllelicSignatureFinderV2(SignatureFinder):
+    """
+    New version that uses MatrixVariantWindowKmers2 to get vectorized scoring
+    """
+    def __init__(self, variant_window_kmers: 'VariantWindowKmers2', scorer: Scorer, k=3):
+        self._scorer = scorer
+        self._k = k
+        self._chosen_kmers = []  # n_variants x n_alleles x kmers at allele
+        t0 = time.perf_counter()
+        #self._kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths, self._k)
+        #self._kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(self._kmers, paths.variant_alleles.matrix)
+        self._kmers = variant_window_kmers
+        logging.info("Finding all kmers around variants took %.4f seconds" % (time.perf_counter() - t0))
+
+    def run(self) -> MultiAllelicSignatures:
+        # idea is to first find the score for each window position at each allele at each variant
+        # as the wors window score
+        # Then, best window can be found using argmax over these scores
+        scores = self._kmers.score_kmers(self._scorer)
+        window_scores = np.min(scores, axis=2)
+        best_windows = np.argmax(window_scores, axis=-1)
+
+        # create structure of variant x allele x kmers
+        # todo: Should be possible to vectorize this
+        signatures = []
+        kmers = self._kmers.kmers
+        n_variants = len(kmers)
+        for variant in range(n_variants):
+            variant_kmers = []
+            for allele in range(len(kmers[variant])):
+                variant_kmers.append(np.unique(kmers[variant, allele, :, best_windows[variant, allele]]))
+            signatures.append(variant_kmers)
+
+        return MultiAllelicSignatures.from_list(signatures)
 
 
 class SignatureFinder2(SignatureFinder):
@@ -374,12 +420,51 @@ class SignatureFinder3(SignatureFinder):
 
 
 @dataclass
+class VariantWindowKmers2:
+    """
+    Similar to MatrixVariantWindowKmers, but paths is not a dimension, instead there can be multiple
+    entries per allele to represent the possibilities
+    """
+    kmers: ak.Array  # n_variants x n_alleles x n_paths_on_allele x n_windows
+
+    @property
+    def n_variants(self):
+        return len(self.kmers[0])
+
+    def score_kmers(self, scorer):
+        # returns an ak.Array of the same shape with kmer scores
+        # hackish way to flatten/unflatten since awkard array doesn't support unravel (only flatten/unflatten on single dimension)
+        flat = ak.flatten(ak.flatten(ak.flatten(self.kmers)))
+        scores = scorer.score_kmers(ak.to_numpy(flat))
+        a = self.kmers
+        scores = ak.unflatten(ak.unflatten(ak.unflatten(scores, ak.num(ak.flatten(ak.flatten(a)))), ak.num(ak.flatten(a))), ak.num(a))
+        return scores
+
+    @classmethod
+    def from_matrix_variant_window_kmers(cls, kmers: 'MatrixVariantWindowKmers', path_alleles: np.ndarray) -> 'MatrixVariantWindowKmers2':
+        new = []
+        # todo: This is probably slow and can be vectorized
+        n_alleles = np.max(path_alleles, axis=0) + 1
+        for variant in range(kmers.n_variants):
+            variant_kmers = []
+            #n_alleles = np.max(path_alleles[:,variant])+1
+            for allele in range(n_alleles[variant]):
+                paths_with_allele = path_alleles[:,variant] == allele
+                allele_kmers = kmers.kmers[paths_with_allele, variant]
+                variant_kmers.append(allele_kmers)
+
+            new.append(variant_kmers)
+
+        return cls(ak.Array(new))
+
+
+@dataclass
 class MatrixVariantWindowKmers:
     """
     Represents kmers around variants in a 3-dimensional matrix, possible when n kmers per variant allele is fixed
     """
-    kmers: Union[np.ndarray, ak.Array]  # n_paths, n variants x n_windows. Can be numpy matrix if even window sizes and fixed number of alleles
-    #variant_alleles: np.ndarray
+    kmers: Union[np.ndarray, ak.Array]  # n_paths, n variants x n_windows.
+    # Can be numpy matrix if even window sizes and fixed number of alleles
 
     @property
     def n_variants(self):
@@ -410,8 +495,6 @@ class MatrixVariantWindowKmers:
     @classmethod
     def from_paths_with_flexible_window_size(cls, path_sequences: PathSequences, k):
         # uses different windows for each variant, stores in an awkward array
-        n_variants = path_sequences.n_variants()
-        n_paths = len(path_sequences)
         kmers_found = []  # one RaggedArray for each path. Each element in ragged array represents a variant allele
 
         for i, path in enumerate(path_sequences.iter_path_sequences()):
@@ -456,3 +539,20 @@ class MatrixVariantWindowKmers:
         best_kmers = self.kmers[:, np.arange(self.kmers.shape[1]), best_windows]
         assert best_kmers.shape[0] == self.kmers.shape[0]
         return best_kmers
+
+    def score_kmers(self, scorer):
+        # Returns an ak array of same shape with scores
+        assert isinstance(self.kmers, ak.Array), "Only supported for ak array now"
+        new = []
+        for path_kmers in self.kmers:
+            flat = ak.to_numpy(ak.ravel(path_kmers))
+            scores = scorer.score_kmers(flat)
+            scores = ak.unflatten(scores, ak.num(path_kmers))
+            new.append(scores)
+
+        return ak.Array(new)
+
+
+
+def awkward_unravel_like(flat_array, like_array):
+    """ Utility function for unraveling a flattened ak.Array """

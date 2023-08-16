@@ -131,14 +131,19 @@ class PathKmers:
             assert np.sum(mask) == len(kmers)
         self.kmers = new
 
+
 class PathBasedMappingModelCreator(MappingModelCreator):
     def __init__(self, graph: Graph, kmer_index: KmerIndex,
                  haplotype_matrix: SparseHaplotypeMatrix, window, paths_allele_matrix = None,
-                 max_count=10, k=31, node_map: VariantAlleleToNodeMap = None):
+                 max_count=10, k=31, node_map: VariantAlleleToNodeMap = None, n_nodes: int = None):
         self._graph = graph
         self._kmer_index = kmer_index
         self._haplotype_matrix = haplotype_matrix
-        self._n_nodes = graph.n_nodes()
+        self._n_nodes = n_nodes
+        if n_nodes is None:
+            logging.warning("N nodes not specified. Getting from graph")
+            self._n_nodes = graph.n_nodes()
+
         self._counts = LimitedFrequencySamplingComboModel.create_empty(self._n_nodes, max_count)
         logging.info("Inited empty model")
         self._k = k
@@ -167,7 +172,6 @@ class PathBasedMappingModelCreator(MappingModelCreator):
             haplotype2_nodes = self._node_map.haplotypes_to_node_ids(haplotype2)
 
         node_counts = self._kmer_index.map_kmers(np.concatenate(all_kmers), self._n_nodes)
-
         self._add_node_counts(haplotype1_nodes, haplotype2_nodes, node_counts)
 
 

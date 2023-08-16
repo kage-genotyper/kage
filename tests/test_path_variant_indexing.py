@@ -5,7 +5,7 @@ from kage.indexing.path_variant_indexing import MappingModelCreator, \
     find_tricky_variants_from_signatures, find_tricky_variants_from_signatures2
 from kage.indexing.kmer_scoring import FastApproxCounter
 from kage.indexing.signatures import Signatures, SignatureFinder2, SignatureFinder3, \
-    MatrixVariantWindowKmers
+    MatrixVariantWindowKmers, VariantWindowKmers2, MultiAllelicSignatureFinderV2
 from kage.indexing.graph import GenomeBetweenVariants, Graph
 from kage.util import zip_sequences
 from kage.indexing.paths import Paths, PathCreator, PathSequences
@@ -15,6 +15,7 @@ import numpy as np
 import npstructures as nps
 from kage.indexing.path_based_count_model import PathBasedMappingModelCreator
 from kage.preprocessing.variants import Variants, VariantPadder, VariantAlleleSequences
+import awkward as ak
 
 
 @pytest.fixture
@@ -198,7 +199,6 @@ def test_path_windows(graph):
     print(windows)
 
 
-
 def test_matrix_variant_window_kmers(graph):
     creator = PathCreator(graph)
     paths = creator.run()
@@ -206,6 +206,60 @@ def test_matrix_variant_window_kmers(graph):
     print("kmers")
     print(kmers)
 
+
+@pytest.fixture
+def window_kmers():
+    window_kmers = MatrixVariantWindowKmers(
+        ak.Array([
+            [[1, 2], [3, 4], [5, 6]],
+            [[11, 12], [13], [14, 15]],
+            [[21, 22], [23], [24, 25]]
+        ])
+    )
+    return window_kmers
+
+
+@pytest.fixture
+def path_alleles():
+    path_alleles = np.array([
+            [0, 1, 0],
+            [1, 0, 1],
+            [1, 2, 0]
+        ])
+    return path_alleles
+
+
+@pytest.fixture
+def variant_window_kmers():
+    return VariantWindowKmers2(ak.Array([
+        # first variant
+        [
+            [[1, 2]], # first allele (one path)
+            [[11, 12], [21, 22]],  # second allele (two paths over that allele)
+        ],
+        # second variant
+        [
+            [[13]],
+            [[3, 4]],
+            [[23]]
+        ],
+        [
+            [[5, 6], [24, 25]],
+            [[14, 15]]
+        ]
+    ]))
+
+
+def test_window_variant_kmers2(window_kmers, path_alleles, variant_window_kmers):
+    correct = variant_window_kmers.kmers
+    kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(window_kmers, path_alleles)
+    assert np.all(kmers.kmers == correct)
+
+
+def test_multiallelic_signature_finderV2(variant_window_kmers):
+    finder = MultiAllelicSignatureFinderV2(variant_window_kmers, DummyScorer2(), k=3)
+    signatures = finder.run()
+    print(signatures.signatures)
 
 
 def test_tricky_variants_from_signatures():
@@ -229,9 +283,15 @@ def test_disc_backed_path(graph):
     print(paths.paths[0][0:1])
 
 
-class DummyScorer2():
+class DummyScorer2:
     def score_kmers(self, kmers):
         return np.zeros_like(kmers)
+
+
+def test_score_window_variant_kmers2(window_kmers, path_alleles):
+    kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(window_kmers, path_alleles)
+    scores = kmers.score_kmers(DummyScorer2())
+    assert np.all(scores == np.zeros_like(scores))
 
 
 @pytest.mark.xfail
