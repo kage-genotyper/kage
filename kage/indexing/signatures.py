@@ -442,6 +442,7 @@ class VariantWindowKmers2:
 
     @classmethod
     def from_matrix_variant_window_kmers(cls, kmers: 'MatrixVariantWindowKmers', path_alleles: np.ndarray) -> 'MatrixVariantWindowKmers2':
+        return cls.from_matrix_variant_window_kmers2(kmers, path_alleles)
         new = []
         # todo: This is probably slow and can be vectorized
         n_alleles = np.max(path_alleles, axis=0) + 1
@@ -456,6 +457,41 @@ class VariantWindowKmers2:
             new.append(variant_kmers)
 
         return cls(ak.Array(new))
+
+    @classmethod
+    def from_matrix_variant_window_kmers2(cls, kmers: 'MatrixVariantWindowKmers', path_alleles: np.ndarray) -> 'MatrixVariantWindowKmers2':
+        # make a flat data structure and unflatten it
+        kmers = kmers.kmers
+        n_paths = path_alleles.shape[0]
+        n_variants = path_alleles.shape[1]
+        flat_kmers = ak.to_numpy(ak.ravel(kmers))
+        flat = np.zeros(len(flat_kmers))  # flat array to put all kmers in new order into, before unflattening
+
+        # indexes to use when putting all kmers into new flat structure
+        # argsort trick: get correct order of kmers (sorted by allele)
+        sorted_alleles = np.argsort(path_alleles, axis=0)
+        # get indexes by sorted alleles columnwise
+        flat_indexes = sorted_alleles.T.ravel() + n_paths * (np.arange(n_paths*n_variants)//n_paths)  # increase by n_paths each time
+
+        #indexes in flat kmers should give kmers column wise from original data structure (columns are variants)
+        kmer_indexes = np.arange(0, n_paths*n_variants).reshape(n_paths, n_variants).T.ravel()
+        kmers_reshaped = ak.flatten(kmers)[kmer_indexes][flat_indexes]
+        window_structure = ak.num(kmers_reshaped)
+        kmers_reshaped_flat = ak.flatten(kmers_reshaped)
+        flat = kmers_reshaped_flat
+
+        # Unflatten back to correct structure (variants x alleles x n_paths on allele x window kmers)
+        grouped_by_window = ak.unflatten(flat, window_structure)
+
+        # group by allele
+        n_per_allele = ak.to_numpy(ak.ravel(ak.run_lengths(np.sort(path_alleles, axis=0).T)))
+        grouped_by_alleles = ak.unflatten(grouped_by_window, n_per_allele)
+
+        # group by variant
+        n_alleles_per_variant = np.max(path_alleles, axis=0) + 1
+        grouped_by_variants = ak.unflatten(grouped_by_alleles, n_alleles_per_variant)
+        return cls(grouped_by_variants)
+
 
 
 @dataclass
