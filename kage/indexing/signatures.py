@@ -13,6 +13,7 @@ from ..preprocessing.variants import Variants, VariantAlleleToNodeMap
 from typing import List, Union
 import awkward as ak
 from graph_kmer_index import FlatKmers
+import numba
 
 
 @dataclass
@@ -66,6 +67,41 @@ class MultiAllelicSignatures:
     @classmethod
     def from_list(cls, l) -> 'MultiAllelicSignatures':
        return cls(ak.Array(l))
+
+    def filter_nonunique_on_alleles(self):
+        # keeps only unique kmers per allele
+        signatures = self.signatures
+        signatures = np.sort(signatures, axis=2)
+        mask = np.ones_like(signatures, dtype=bool)
+        flat_mask = ak.to_numpy(ak.ravel(mask))
+        n_variants = len(signatures)
+
+        # todo: Vectorize loops
+        @numba.jit(nopython=True)
+        def create_mask(flat_mask, signatures):
+            i = 0
+            for variant in range(n_variants):
+                for allele in range(len(signatures[variant])):
+                    prev_kmer = -1
+                    for kmer in signatures[variant][allele]:
+                        if kmer == prev_kmer:
+                            flat_mask[i] = False
+                        prev_kmer = kmer  # signatures[variant, allele, kmer]
+                        i += 1
+
+        create_mask(flat_mask, signatures)
+
+        logging.info("Removed %d non-unique kmers" % np.sum(~mask))
+        # use mask to create a new data structure
+        keep = ak.ravel(signatures)[flat_mask]
+        # find number of kmers to keep per allele
+        mask_by_alleles = nps.RaggedArray(flat_mask, ak.to_numpy(ak.num(ak.flatten(signatures))))
+        n_per_allele = np.sum(mask_by_alleles, axis=1)
+        new = ak.unflatten(keep, n_per_allele)
+        n_alleles_per_variant = ak.num(signatures)
+        new = ak.unflatten(new, n_alleles_per_variant)
+        self.signatures = new
+
 
     def get_as_flat_kmers(self, node_mapping: VariantAlleleToNodeMap):
         signatures = self.signatures
@@ -177,7 +213,7 @@ class MultiAllelicSignatureFinder(SignatureFinder):
 
 class MultiAllelicSignatureFinderV2(SignatureFinder):
     """
-    New version that uses MatrixVariantWindowKmers2 to get vectorized scoring
+    New version that uses VariantWindowKmers2 to get vectorized scoring
     """
     def __init__(self, variant_window_kmers: 'VariantWindowKmers2', scorer: Scorer, k=3):
         self._scorer = scorer
@@ -187,18 +223,44 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         #self._kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths, self._k)
         #self._kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(self._kmers, paths.variant_alleles.matrix)
         self._kmers = variant_window_kmers
-        logging.info("Finding all kmers around variants took %.4f seconds" % (time.perf_counter() - t0))
 
     def run(self) -> MultiAllelicSignatures:
         # idea is to first find the score for each window position at each allele at each variant
-        # as the wors window score
+        # as the worst window score
         # Then, best window can be found using argmax over these scores
         scores = self._kmers.score_kmers(self._scorer)
         window_scores = np.min(scores, axis=2)
         best_windows = np.argmax(window_scores, axis=-1)
+        # create a best windows array with same length as number of paths on all alleles
+        kmers = self._kmers.kmers
+        lengths = ak.to_numpy(ak.num(ak.flatten(kmers)))
+        # hacky way to make mask: Create ragged array of the size we want, fill
+        best_windows_mask = nps.RaggedArray(np.ones(np.sum(lengths)), lengths)
+        best_windows_mask = best_windows_mask * ak.to_numpy(ak.flatten(best_windows)).data[:, None]
+        best_windows_mask_flat = best_windows_mask.ravel().astype(int)
 
-        # create structure of variant x allele x kmers
-        # todo: Should be possible to vectorize this
+        flat_kmers = ak.flatten(ak.flatten(kmers))
+        chosen_kmers_flat = flat_kmers[np.arange(len(flat_kmers)), best_windows_mask_flat]
+
+        # restructure into variant x allele x kmers
+        n_paths_per_allele = ak.num(ak.flatten(kmers))
+        chosen_kmers_by_allele = ak.unflatten(chosen_kmers_flat, n_paths_per_allele)
+
+        # restructure into variants
+        n_alleles_per_variant = ak.num(kmers)
+        chosen_kmers_by_variants = ak.unflatten(chosen_kmers_by_allele, n_alleles_per_variant)
+
+        signatures = MultiAllelicSignatures(chosen_kmers_by_variants)
+        logging.info("Removing nonunique")
+        t0 = time.perf_counter()
+        signatures.filter_nonunique_on_alleles()
+        logging.info("Removing nonunique took %.4f sec" % (time.perf_counter() - t0))
+
+        return signatures
+
+
+        """
+        # old non-vectorized
         signatures = []
         kmers = self._kmers.kmers
         n_variants = len(kmers)
@@ -208,7 +270,9 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
                 variant_kmers.append(np.unique(kmers[variant, allele, :, best_windows[variant, allele]]))
             signatures.append(variant_kmers)
 
+        
         return MultiAllelicSignatures.from_list(signatures)
+        """
 
 
 class SignatureFinder2(SignatureFinder):
@@ -481,6 +545,7 @@ class VariantWindowKmers2:
         flat = kmers_reshaped_flat
 
         # Unflatten back to correct structure (variants x alleles x n_paths on allele x window kmers)
+        # group by window
         grouped_by_window = ak.unflatten(flat, window_structure)
 
         # group by allele

@@ -5,7 +5,7 @@ from kage.indexing.path_variant_indexing import MappingModelCreator, \
     find_tricky_variants_from_signatures, find_tricky_variants_from_signatures2
 from kage.indexing.kmer_scoring import FastApproxCounter
 from kage.indexing.signatures import Signatures, SignatureFinder2, SignatureFinder3, \
-    MatrixVariantWindowKmers, VariantWindowKmers2, MultiAllelicSignatureFinderV2
+    MatrixVariantWindowKmers, VariantWindowKmers2, MultiAllelicSignatureFinderV2, MultiAllelicSignatures
 from kage.indexing.graph import GenomeBetweenVariants, Graph
 from kage.util import zip_sequences
 from kage.indexing.paths import Paths, PathCreator, PathSequences
@@ -231,6 +231,26 @@ def path_alleles():
 
 @pytest.fixture
 def variant_window_kmers():
+    """
+    return VariantWindowKmers2(ak.Array([
+        # first variant
+        [
+            [[1], [2]],  # first allele (one path, two windows)
+            [[11, 21], [12, 22]],  # second allele (two paths over that allele)
+        ],
+        # second variant
+        [
+            [[13]],
+            [[3], [4]],
+            [[23]]
+        ],
+        [
+            [[5, 24], [6, 25]],
+            [[14, 15]]
+        ]
+    ]))
+    """
+
     return VariantWindowKmers2(ak.Array([
         # first variant
         [
@@ -340,3 +360,33 @@ def test_signatures_with_overlapping_indels():
     print(signatures)
 
 
+
+
+def test_filter_nonunique_kmers():
+    signatures = MultiAllelicSignatures.from_list([
+        # variant 1
+        [
+            # allele 1
+            [3, 1, 2],
+            # Allele 2
+            [3, 1, 1]
+        ],
+        [
+            [1, 1],
+            [3],
+            [10, 11, 10]
+        ]
+    ])
+    signatures.filter_nonunique_on_alleles()
+    assert np.all(signatures.signatures ==
+                  ak.Array([
+                      [
+                          [1, 2, 3],
+                          [1, 3]
+                      ],
+                      [
+                          [1],
+                          [3],
+                          [10, 11]
+                      ]
+                  ]))
