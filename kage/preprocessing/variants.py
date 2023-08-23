@@ -80,7 +80,10 @@ class Variants:
                 if variant.position + len(ref_seq) == prev_pos + len(prev_ref_seq):
                     is_overlapping = True
                 else:
-                    assert len(prev_ref_seq) == 0, "Two variants are starting at same position, but not ending at same position. These are overlapping and should have been padded"
+                    if len(prev_ref_seq) != 0:
+                        logging.error(variant)
+                        logging.error("Two variants are starting at same position, but not ending at same position. These are overlapping and should have been padded")
+                        raise Exception("")
             
             #if variant.position == prev_pos and chrom == prev_chrom and variant.position + len(ref_seq):
             if is_overlapping:
@@ -181,9 +184,15 @@ class VariantPadder:
 
     def get_mask_of_consecutive_ref_bases(self, dir='right'):
         # returns number of ref-bases that go from base to next base within variants
+
         variants_start = self._variants.position
+        # variants_stop is the last base of each variant
         variants_stop = variants_start + self._variants.ref_seq.shape[1]-1
         highest_pos = np.max(variants_stop + 2)
+        # we don't need variant_starts and stops for insertions, as they don't go over any ref base pairs
+        variant_ref_lengths = self._variants.ref_seq.shape[1]
+        variants_start = variants_start[variant_ref_lengths > 0]
+        variants_stop = variants_stop[variant_ref_lengths > 0]
         # print("Highest pos", highest_pos)
 
         mask = np.zeros(highest_pos)

@@ -120,6 +120,50 @@ def test_variant_padder2(variants2, reference2):
     assert padded == correct
 
 
+def test_variant_padder_with_deletion():
+    ref = bnp.as_encoded_array("AAAAAGGGGGGAAAA")
+    variants = Variants.from_entry_tuples([
+        ("1", 5, "GGGGGG", ""),
+        ("1", 7, "G", "T")
+    ])
+    padder = VariantPadder(variants, ref)
+    padded = padder.run()
+
+    correct = Variants.from_entry_tuples([
+        ("1", 5, "GGGGGG", ""),
+        ("1", 5, "GGGGGG", "GGTGGG")
+    ])
+
+    print(padded)
+    assert padded == correct
+
+
+def test_variant_padder_case():
+    # checks previous bug with deletion that made hole in mask
+    seq = "ATAAAGAACGGAAGGGGTTTAATAGTTGTATGC"
+    ref = bnp.as_encoded_array("AAA" "A" + seq + "CCC")
+    variants = Variants.from_entry_tuples([
+        ("1", 4, seq, ""),
+        ("1", 12, "C", "G"),
+        ("1", 14, "", "CCGAGAT" )
+    ])
+    padder = VariantPadder(variants, ref)
+    #mask = padder.get_mask_of_consecutive_ref_bases(dir="right")
+    #print(padder.get_mask_of_consecutive_ref_bases(dir="left"))
+    #print(padder.get_distance_to_ref_mask(dir="left"))
+    correct = Variants.from_entry_tuples([
+        ("1", 4, seq, ""),
+        ("1", 4, seq, "ATAAAGAAGGGAAGGGGTTTAATAGTTGTATGC"),
+        ("1", 4, seq, "ATAAAGAACG" "CCGAGAT" "GAAGGGGTTTAATAGTTGTATGC"),
+    ])
+    #print(padder.get_distance_to_ref_mask(dir="right"))
+    padded = padder.run()
+
+    #print(padded)
+    print(padded.alt_seq[2].to_string())
+    assert padded == correct
+
+
 def test_pad_overlapping_variants():
     variants = Variants.from_entry_tuples([
         ("1", 4, "AAAAA", ""),

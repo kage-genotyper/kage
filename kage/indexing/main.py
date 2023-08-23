@@ -34,8 +34,8 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     #graph = Graph.from_variants_and_reference(reference_sequences, variants)
     # todo: Make multiallelic graph instead, get node mapping
     graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
-    to_file(node_mapping, "tmp_node_mapping")
-    assert False
+    #to_file(node_mapping, "tmp_node_mapping")
+    #assert False
     if len(graph.genome.sequence[-1]) < k:
         # pad genome
         logging.warning("Last variant is too close to end of the genome. Padding")
