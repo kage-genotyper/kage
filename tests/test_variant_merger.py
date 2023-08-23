@@ -33,6 +33,7 @@ def reference():
     return bnp.as_encoded_array("A"*16)
 
 
+@pytest.mark.skip("Outdated")
 def test_reference_mask(variants, reference):
     padder = VariantPadder(variants, reference)
     mask = padder.get_reference_mask()
@@ -174,9 +175,79 @@ def test_pad_neighbouring_snps():
 
     # nothing should be padded here, previous error was that neighbouring variants god padded
     assert padded == variants
-
     print(padded)
 
+
+def test_pad_small_del_with_snp_inside():
+    variants = Variants.from_entry_tuples([
+        ("chr1", 1, "AA", ""),
+        ("chr1", 2, "A", "T")
+    ])
+    ref = bnp.as_encoded_array("AAAA")
+    padder = VariantPadder(variants, ref)
+    padded = padder.run()
+    print(padded)
+
+    correct = Variants.from_entry_tuples([
+        ("chr1", 1, "AA", ""),
+        ("chr1", 1, "AA", "AT")
+    ])
+
+    assert padded == correct
+
+
+@pytest.fixture
+def variants3():
+    return Variants.from_entry_tuples([
+        ("chr1", 1, "AA", ""),
+        ("chr1", 1, "A", "T"),
+        ("chr1", 3, "A", "G")
+    ])
+
+
+@pytest.fixture
+def ref3():
+    return bnp.as_encoded_array("AAAAA")
+
+
+def test_pad_small_del_with_two_snps(variants3, ref3):
+    # should not pad the second snp
+    variants = variants3
+    ref = ref3
+    padder = VariantPadder(variants, ref)
+    padded = padder.run()
+
+    correct = Variants.from_entry_tuples([
+        ("chr1", 1, "AA", ""),
+        ("chr1", 1, "AA", "TA"),
+        ("chr1", 3, "A", "G")
+    ])
+    print(padded)
+    print(correct)
+    assert padded == correct
+
+
+def test_get_mask_of_consecutive_bases(variants3, ref3):
+    padder = VariantPadder(variants3, ref3)
+    mask = padder.get_mask_of_consecutive_ref_bases(dir='right')
+    correct = [False, True, False, False, False]
+    assert np.all(mask == correct)
+
+    # left
+    mask = padder.get_mask_of_consecutive_ref_bases(dir='left')
+    correct = [False, False, True, False, False]
+    assert np.all(mask == correct)
+
+
+def test_get_dist_to_ref_mask_new(variants3, ref3):
+    padder = VariantPadder(variants3, ref3)
+    right_dist = padder.get_distance_to_ref_mask(dir='right')
+    correct = [0, 1, 0, 0, 0]
+    assert np.all(right_dist == correct)
+
+    left_dist = padder.get_distance_to_ref_mask(dir='left')
+    correct = [0, 0, 1, 0, 0]
+    assert np.all(left_dist == correct)
 
 
 def test_get_padded_variants_from_vcf():

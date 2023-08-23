@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import npstructures as nps
 import awkward as ak
 import bionumpy as bnp
+import numba
 import numpy as np
 from bionumpy.bnpdataclass import bnpdataclass
 from bionumpy import EncodedRaggedArray, Interval
@@ -166,48 +167,76 @@ class VariantPadder:
         assert np.all(variants.position[1:] >= variants.position[:-1]), "Variants must be sorted by position"
         self._reference = reference
 
-    def get_reference_mask(self):
+    def get_reference_mask(self, threshold=1):
         variants_start = self._variants.position
         variants_stop = variants_start + self._variants.ref_seq.shape[1]
-        highest_pos = np.max(variants_stop+1)
+        highest_pos = np.max(variants_stop+2)
         #print("Highest pos", highest_pos)
 
         mask = np.zeros(highest_pos)
         mask += np.bincount(variants_start, minlength=highest_pos)
         mask -= np.bincount(variants_stop, minlength=highest_pos)
-        mask = np.cumsum(mask) > 0
+        mask = np.cumsum(mask) >= threshold
         return mask
+
+    def get_mask_of_consecutive_ref_bases(self, dir='right'):
+        # returns number of ref-bases that go from base to next base within variants
+        variants_start = self._variants.position
+        variants_stop = variants_start + self._variants.ref_seq.shape[1]-1
+        highest_pos = np.max(variants_stop + 2)
+        # print("Highest pos", highest_pos)
+
+        mask = np.zeros(highest_pos)
+
+        if dir == 'left':
+            mask += np.bincount(variants_stop, minlength=highest_pos)
+            mask -= np.bincount(variants_start, minlength=highest_pos)
+            return (np.cumsum(mask[::-1]) > 0)[::-1]
+        else:
+            mask += np.bincount(variants_start, minlength=highest_pos)
+            mask -= np.bincount(variants_stop, minlength=highest_pos)
+            return np.cumsum(mask) > 0
 
     def get_distance_to_ref_mask(self, dir="left"):
         # for every pos, find number of bases to the end of the region (how much to pad to the side)
-        mask = self.get_reference_mask().astype(int)
-        if dir == "right":
+        #mask = self.get_reference_mask().astype(int)
+        mask = self.get_mask_of_consecutive_ref_bases(dir).astype(int)
+        if dir == "left":
             mask = mask[::-1]
 
-        #print("Original mask")
-        #print(mask)
+        @numba.jit(nopython=True)
+        def compute(mask):
+            # return a dist-array where each element is number of bases to next
+            # 0 in mask
+            dist = np.zeros_like(mask)
+            # count backwards and reverse
+            mask = mask[::-1]
+            prev_zero = 0
+            for i in range(len(mask)):
+                if mask[i] != 0:
+                    dist[i] = i - prev_zero
+                if mask[i] == 0:
+                    prev_zero = i
+
+            return dist[::-1]
+
+        dist = compute(mask)
+        if dir == "left":
+            return dist[::-1]
+
+        return dist
 
         starts = np.ediff1d(mask, to_begin=[0]) == 1
-        #print(np.nonzero(starts))
         cumsum = np.cumsum(mask)
-        #print("CUMSUM")
-        #print(cumsum)
+        cumsum[cumsum >= 1] += 1
         assert np.all(cumsum >= 0)
         mask2 = mask.copy()
 
         # idea is to subtract the difference of the cumsum at this variant and the previous (what the previous variant increased)
         subtract = cumsum[np.nonzero(starts)]-cumsum[np.insert(np.nonzero(starts), 0, 0)[:-1]]
-        #print("Starts")
-        #print(np.nonzero(starts))
-        #print("SUbtract")
-        #print(subtract)
-        #print(cumsum[starts])
+
         mask2[starts] -= (subtract)
-        #print("MASK 2 after minus")
-        #print(mask2)
         dists = np.cumsum(mask2)
-        #print("Dists after cumsum of mask2")
-        #print(dists)
 
         if not np.all(dists >= 0):
             print("SIDE", dir)
@@ -216,9 +245,6 @@ class VariantPadder:
             print(np.where(dists <0), dists[dists < 0])
             assert False
         dists[mask == 0] = 0
-
-        #print("Final dists")
-        #print(dists)
 
         if dir == "right":
             return dists[::-1]
@@ -231,18 +257,13 @@ class VariantPadder:
         """
         # find variants that need to be padded
         pad_left = self.get_distance_to_ref_mask(dir="left")
-        #print()
-        #print("DISTS left")
-        #print(pad_left)
         assert np.all(pad_left >= 0), pad_left[pad_left < 0]
 
         pad_right = self.get_distance_to_ref_mask(dir="right")
-        #print()
-        #print("DISTS RIGHT")
-        #print(pad_right)
         assert np.all(pad_right >= 0)
 
         # left padding
+        #at_least_two_variants_at_pos = self.get_reference_mask(threshold=2)
         to_pad = pad_left[self._variants.position] > 0
         start_of_padding = self._variants.position[to_pad] - pad_left[self._variants.position[to_pad]]
         end_of_padding = self._variants.position[to_pad]
@@ -258,20 +279,13 @@ class VariantPadder:
         new_positions -= lengths_left.astype(int)
 
         # right padding
-        to_pad = pad_right[self._variants.position + self._variants.ref_seq.shape[1] - 1] >= 1
-
-        #print("TO pad right")
-        #print(to_pad)
-        #print(self._variants.position + self._variants.ref_seq.shape[1])
+        #at_least_two_variants_at_pos = self.get_reference_mask(threshold=2)
+        end_pos = self._variants.position + self._variants.ref_seq.shape[1] - 1
+        to_pad = (pad_right[end_pos] >= 1) #& (at_least_two_variants_at_pos[end_pos] > 0)
 
         subset = self._variants[to_pad]
-        #print("Subset position")
-        #print(subset.position)
         start_of_padding = subset.position + subset.ref_seq.shape[1] + 0
-        #print("Start of padding")
-        #print(start_of_padding)
         end_of_padding = start_of_padding + pad_right[start_of_padding] + 1
-        #print(start_of_padding, end_of_padding)
         right_padding = bnp.ragged_slice(self._reference, start_of_padding, end_of_padding)
 
 
@@ -281,22 +295,10 @@ class VariantPadder:
         lengths_right[to_pad] = right_padding.shape[1]
         right_padding = EncodedRaggedArray(right_padding.ravel(), lengths_right)
 
-        #print("Left padding")
-        #print(left_padding[left_padding.shape[1] > 0])
-
-        #print("Right padding")
-        #print(right_padding[right_padding.shape[1] > 0])
 
         logging.info(f"{np.sum(right_padding.shape[1] > 0)} variants were padded to the right")
         logging.info(f"{np.sum(left_padding.shape[1] > 0)} variants were padded to the left")
 
-
-        #print("Padding left")
-        #print(left_padding)
-        #print("Padding right")
-        #print(right_padding)
-
-        #print(right_padding.raw())
         ref_merged = np.concatenate([left_padding.raw(), self._variants.ref_seq.raw(), right_padding.raw()], axis=1)
         alt_merged = np.concatenate([left_padding.raw(), self._variants.alt_seq.raw(), right_padding.raw()], axis=1)
         new_ref_sequences = bnp.EncodedRaggedArray(bnp.EncodedArray(ref_merged.ravel(), bnp.BaseEncoding), ref_merged.shape)
