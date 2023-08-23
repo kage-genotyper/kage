@@ -241,6 +241,9 @@ class SparseObservedCounts:
     #row_lens: np.ndarray  # how many nonzero elements on each row
     max_counts: int
 
+    def describe_node(self, node):
+        return ", ".join("")
+
     @classmethod
     def from_nonsparse(cls, model_counts: np.ndarray):
         logging.info("Making sparse from nonsparse")
@@ -325,6 +328,13 @@ class SparseLimitedFrequencySamplingComboModel(Model):
         return cls([
             SparseObservedCounts.from_nonsparse(c) for c in model.diplotype_counts
         ])
+
+    def describe_node(self, variant_id):
+        description = ""
+        for count in range(3):
+            description += "Having %d copies: " % count
+            description += ', '.join("%d: %.3f" % (i, self._counts[count].frequencies[variant_id, i]) for i in np.nonzero(self._counts[count].frequencies[variant_id])[0])
+            description += "\n"
 
 
 @dataclass

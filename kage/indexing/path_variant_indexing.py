@@ -7,12 +7,13 @@ from graph_kmer_index import KmerIndex
 import tqdm
 from kage.indexing.graph import Graph
 from kage.indexing.kmer_scoring import FastApproxCounter
-from kage.indexing.signatures import Signatures
+from kage.indexing.signatures import Signatures, MultiAllelicSignatures
 
 from .paths import Paths
 from .sparse_haplotype_matrix import SparseHaplotypeMatrix
 from ..models.mapping_model import LimitedFrequencySamplingComboModel
 from .tricky_variants import TrickyVariants
+from ..preprocessing.variants import VariantAlleleToNodeMap
 
 """
 Module for simple variant signature finding by using static predetermined paths through the "graph".
@@ -190,4 +191,41 @@ def find_tricky_variants_with_count_model(signatures: Signatures, model):
     return TrickyVariants(tricky)
 
 
+def find_tricky_variants_from_multiallelic_signatures(signatures: MultiAllelicSignatures,
+                                                      node_mapping: VariantAlleleToNodeMap, model) -> TrickyVariants:
+    n_variants = node_mapping.n_biallelic_variants
+    tricky = np.zeros(n_variants, dtype=bool)
+    n_tricky_no_signature = 0
+    n_tricky_shared_kmers = 0
+    n_missing_model = 0
+
+    variant_id = 0
+    signatures = signatures.signatures
+    for multiallelic_variant in signatures:
+        ref_kmers = multiallelic_variant[0]
+        for allele in range(1, len(multiallelic_variant)):
+            alt_kmers = multiallelic_variant[allele]
+            assert len(np.unique(alt_kmers)) == len(alt_kmers), "All kmers should be unique"
+
+            if len(ref_kmers) == 0 or len(alt_kmers) == 0:
+                tricky[variant_id] = True
+                n_tricky_no_signature += 1
+            elif len(set(ref_kmers).intersection(alt_kmers)) > 0:
+                tricky[variant_id] = True
+                n_tricky_shared_kmers += 1
+
+            # check for missing data in model
+            ref_node = node_mapping.get_ref_node(variant_id)
+            alt_node = node_mapping.get_alt_node(variant_id)
+            if model.has_no_data(ref_node, threshold=3) or model.has_no_data(alt_node, threshold=3):
+                tricky[variant_id] = True
+                n_missing_model += 1
+
+            variant_id += 1
+
+    logging.info("N tricky variants because no kmers: %d " % n_tricky_no_signature)
+    logging.info("N tricky variants because shared kmers between ref/alt: %d" % n_tricky_shared_kmers)
+    logging.info("N tricky variants because missing data in model: %d" % n_missing_model)
+
+    return TrickyVariants(tricky)
 

@@ -152,14 +152,16 @@ class PathBasedMappingModelCreator(MappingModelCreator):
         self._path_kmers = PathKmers.from_graph_and_paths(graph, paths_allele_matrix, k=k)
         self._path_kmers.prune(kmer_index)
         self._node_map = node_map
+        self._window = window
 
     def _process_individual(self, i):
         haplotype1 = self._haplotype_matrix.get_haplotype(i * 2)
         haplotype2 = self._haplotype_matrix.get_haplotype(i * 2 + 1)
 
         all_kmers = []
-        for haplotype in [haplotype1, haplotype2]:
-            as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles_multiallelic(haplotype, self._path_allele_matrix, window=3)
+        for haplotype_id, haplotype in enumerate([haplotype1, haplotype2]):
+            as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles_multiallelic(haplotype, self._path_allele_matrix, window=self._window)
+            #print("Individual %d, haplotype %s as paths: %s" % (i, haplotype, as_paths))
             all_kmers.append(self._path_kmers.get_for_haplotype(as_paths).raw().ravel().astype(np.uint64))
 
         # todo for multiallelic: use variant_to_nodes

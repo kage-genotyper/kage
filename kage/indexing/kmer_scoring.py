@@ -7,7 +7,7 @@ import tqdm
 from kage.indexing.graph import Graph
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 from kage.util import log_memory_usage_now
-
+from graph_kmer_index.kmer_hashing import kmer_hashes_to_reverse_complement_hash
 
 class FastApproxCounter:
     """ Fast counter that uses modulo and allows collisions"""
@@ -20,7 +20,9 @@ class FastApproxCounter:
         return cls(np.zeros(modulo, dtype=np.int16), modulo)
 
     def add(self, values):
-        self._array[values % self._modulo] += 1
+        value_hashes = values % self._modulo
+        add_counts = np.bincount(value_hashes.astype(int), minlength=self._modulo).astype(np.int16)
+        self._array += add_counts
 
     @classmethod
     def from_keys_and_values(cls, keys, values, modulo):
@@ -45,6 +47,7 @@ def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: Spar
     counter = FastApproxCounter.empty(modulo)
     chosen_haplotypes = np.random.choice(np.arange(haplotype_matrix.n_haplotypes), n_haplotypes, replace=False)
     logging.info("Picked random haplotypes to make kmer scorer: %s" % chosen_haplotypes)
+    print("Chosen haplotypes", chosen_haplotypes)
     haplotype_nodes = (haplotype_matrix.get_haplotype(haplotype) for haplotype in chosen_haplotypes)
 
     # also add the reference and a haplotype with all variants
@@ -53,12 +56,18 @@ def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: Spar
                                         np.ones(haplotype_matrix.n_variants, dtype=np.uint8)])
 
     for i, nodes in tqdm.tqdm(enumerate(haplotype_nodes), desc="Estimating global kmer counts", total=len(chosen_haplotypes), unit="haplotype"):
+        print("I", i)
         #haplotype_nodes = haplotype_matrix.get_haplotype(haplotype)
         log_memory_usage_now("Memory after getting nodes")
         kmers = graph.get_haplotype_kmers(nodes, k=k, stream=True)
         log_memory_usage_now("Memory after kmers")
         for subkmers in kmers:
+            print(subkmers)
             counter.add(subkmers)
+            # also add reverse complement
+            subkmers_revcomp = kmer_hashes_to_reverse_complement_hash(subkmers, k)
+            counter.add(subkmers_revcomp)
+
         log_memory_usage_now("After adding haplotype %d" % i)
 
     # also add the reference and a haplotype with all variants

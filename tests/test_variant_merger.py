@@ -78,7 +78,13 @@ def test_variant_padder_with_insertion():
     reference = bnp.as_encoded_array("A"*16)
     padder = VariantPadder(variants, reference)
     padded = padder.run()
+    correct = Variants.from_entry_tuples([
+        ("chr1", 5, "", "ACGT"),
+        ("chr1", 5, "AA", "TT")
+    ])
+    assert correct == padded
     print(padded)
+
 
 @pytest.fixture
 def variants2():
@@ -126,7 +132,19 @@ def test_pad_overlapping_variants():
     ref = bnp.as_encoded_array("A"*50)
     padder = VariantPadder(variants, ref)
     padded = padder.run()
+    correct = Variants.from_entry_tuples(
+        [
+            ("1", 4, "A" * 9, "AAAA"),
+            ("1", 4, "A" * 9, "AAAA"),
+            ("1", 4, "A" * 9, "AAACCCCCCCAAAAAA"),
+            ("1", 4, "A" * 9, "AAAA"),
+            ("1", 14, "A" * 9, "AAAA"),
+            ("1", 14, "A" * 9, "AAAA"),
+            ("1", 14, "A" * 9, "AAAA"),
+        ]
+    )
     print(padded)
+    assert padded == correct
 
 
 def test_pad_large_variants():
@@ -142,6 +160,23 @@ def test_pad_large_variants():
     padder = VariantPadder(variants, ref)
     padded = padder.run()
     print(padded)
+
+
+def test_pad_neighbouring_snps():
+    # neighbouring snps should not be joined
+    variants = Variants.from_entry_tuples([
+        ("chr1", 4, "A", "C"),
+        ("chr1", 5, "A", "T")
+    ])
+    ref = bnp.as_encoded_array("A" * 10)
+    padder = VariantPadder(variants, ref)
+    padded = padder.run()
+
+    # nothing should be padded here, previous error was that neighbouring variants god padded
+    assert padded == variants
+
+    print(padded)
+
 
 
 def test_get_padded_variants_from_vcf():

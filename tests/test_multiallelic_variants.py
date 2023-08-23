@@ -3,6 +3,9 @@ import npstructures
 import pytest
 from bionumpy import Interval
 from kage.indexing.graph import Graph, GenomeBetweenVariants
+from kage.indexing.kmer_scoring import make_kmer_scorer_from_random_haplotypes
+from kage.indexing.path_variant_indexing import find_tricky_variants_from_multiallelic_signatures
+from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 from kage.preprocessing.variants import VariantAlleleSequences, MultiAllelicVariantSequences, Variants, VariantAlleleToNodeMap
 from kage.indexing.paths import PathCreator, PathSequences
 import bionumpy as bnp
@@ -13,7 +16,8 @@ from kage.indexing.paths import PathCombinationMatrix, Paths
 from kage.indexing.signatures import MultiAllelicSignatureFinder
 import awkward as ak
 from kage.indexing.graph import make_multiallelic_graph
-
+from graph_kmer_index import sequence_to_kmer_hash
+from kage.indexing.path_based_count_model import PathBasedMappingModelCreator
 
 @pytest.fixture
 def variant_alleles():
@@ -120,6 +124,222 @@ def test_multiallelic_signature_finder():
     assert len(s[1][1]) == 1
 
 
+def test_multiallelic_signature_finder_on_three_following_snps():
+    # testing all the way from ref + variants
+    window = 4
+    k = 6
+    reference_sequences = bnp.datatypes.SequenceEntry.from_entry_tuples([
+        ("chr1", "CCCC" "ACTG" "GGGGAGGGG")
+    ])
+    variants = Variants.from_entry_tuples([
+        ("chr1", 4, "A", "C"),
+        ("chr1", 5, "C", "G"),
+        ("chr1", 6, "T", "A"),
+        ("chr1", 7, "G", "A"),
+    ])
+    graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
+    n_alleles_per_variant = node_mapping.n_alleles_per_variant
+    paths = PathCreator(graph,
+                        window=window,  # bigger windows to get more paths when multiallelic
+                        make_disc_backed=False,
+                        disc_backed_file_base_name="test.tmp").run(n_alleles_per_variant)
+
+    print(paths.variant_alleles)
+    print(paths)
+    variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
+    variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers, paths.variant_alleles.matrix)
+    variant_window_kmers.describe(k)
+
+    kmers_to_avoid = ["tagggg", "ctgggg", "aagggg"]
+    kmers_to_avoid = [sequence_to_kmer_hash(kmer) for kmer in kmers_to_avoid]
+
+    class Scorer(DummyScorer2):
+        def score_kmers(self, kmers):
+            return np.array([-100 if kmer in kmers_to_avoid else 0 for kmer in kmers])
+
+    signatures = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=Scorer(), k=k).run()
+    signatures.describe(k)
+    s = signatures.to_list_of_sequences(k)
+
+    # variant 3 should have at least 4 kmers if things are correct
+    assert len(s[2][0]) >= 4
+    assert len(s[2][1]) >= 4
+
+
+def test_multiallelic_signature_finder_special_case():
+    # case that seems weird on real data
+    window = 6
+    k = 31
+    reference_sequences = bnp.datatypes.SequenceEntry.from_entry_tuples([
+        ("chr1", "ccattcgag" "tccagtccat" "tccattcc" "a" "a" "t" "acatttcgttccattccattccattccatt" "c"*30)
+    ])
+    variants = Variants.from_entry_tuples([
+        ("chr1", 9, "", "TCCAGTCCAT"),
+        ("chr1", 27, "A", "T"),
+        ("chr1", 28, "A", "G"),
+        ("chr1", 29, "T", "A"),
+        ("chr1", 40, "C", "A"),
+    ])
+    graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
+    n_alleles_per_variant = node_mapping.n_alleles_per_variant
+    paths = PathCreator(graph,
+                        window=window,  # bigger windows to get more paths when multiallelic
+                        make_disc_backed=False,
+                        disc_backed_file_base_name="test.tmp").run(n_alleles_per_variant)
+
+    variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
+    variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers, paths.variant_alleles.matrix)
+    #variant_window_kmers.describe(k)
+
+    signatures = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=DummyScorer2(), k=k).run(add_dummy_count_to_index=1)
+    signatures.describe(k)
+    s = signatures.to_list_of_sequences(k)
+    # allele at variant 4 should have 2**3 kmers since all combinations of previous variants should be included
+    assert len(s[3][0]) == 8
+    assert len(s[3][1]) == 8
+    assert "ccagtccattccagtccattccattcctata" in s[3][0]
+
+
+def test_that_ref_sequence_is_always_in_signature():
+    k = 31
+    window = 5
+    reference_sequences = bnp.datatypes.SequenceEntry.from_entry_tuples([
+        ("chr1", "T" * 100)
+    ])
+    variants = Variants.from_entry_tuples([
+        ("chr1", i, "T", "A") for i in range(10, 50, 4)
+    ])
+
+
+    graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
+    n_alleles_per_variant = node_mapping.n_alleles_per_variant
+    paths = PathCreator(graph,
+                        window=window,  # bigger windows to get more paths when multiallelic
+                        make_disc_backed=False,
+                        disc_backed_file_base_name="test.tmp").run(n_alleles_per_variant)
+
+    variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
+    variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers,
+                                                                                paths.variant_alleles.matrix)
+
+    variant_window_kmers.describe(k)
+    signatures = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=DummyScorer2(), k=k).run(add_dummy_count_to_index=1)
+    signatures.describe(k)
+    s = signatures.to_list_of_sequences(k)
+
+    for variant_id in range(len(variants)):
+        assert "t"*31 in s[variant_id][0]
+
+@pytest.fixture
+def bnp_reference_sequences():
+    reference_sequences = bnp.datatypes.SequenceEntry.from_entry_tuples([
+        ("chr1", "CCTG" + "ACTG" * 2 + "CCCC" * 2)
+    ])
+    return reference_sequences
+
+
+@pytest.fixture
+def bnp_variants():
+    variants = Variants.from_entry_tuples([
+        ("chr1", 3, "G", "T"),
+        ("chr1", 7, "G", "T"),
+        ("chr1", 7, "G", "A"),
+        ("chr1", 8, "ACTG", ""),
+        ("chr1", 16, "", "GG")
+    ])
+    return variants
+
+
+def test_integration_from_variants_to_signatures(bnp_reference_sequences, bnp_variants):
+    k = 4
+    window = 3
+    graph, node_mapping = make_multiallelic_graph(bnp_reference_sequences, bnp_variants)
+    n_alleles_per_variant = node_mapping.n_alleles_per_variant
+    paths = PathCreator(graph,
+                        window=window,  # bigger windows to get more paths when multiallelic
+                        make_disc_backed=False,
+                        disc_backed_file_base_name="test.tmp").run(n_alleles_per_variant)
+
+    variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
+    variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers, paths.variant_alleles.matrix)
+    variant_window_kmers.describe(k)
+
+    # scorer = DummyScorer2()
+    # haplotype matrix
+    biallelic_haplotype_matrix = SparseHaplotypeMatrix.from_variants_and_haplotypes(
+        np.array([0, 1, 2, 3, 4,
+                  0, 1, 2, 3, 4,
+                  0, 1, 2, 3, 4,
+                  0, 1, 2, 3, 4]),
+        np.array([1, 1, 1, 1, 1,
+                  2, 3, 2, 3, 2,
+                  6, 6, 6, 6, 6,
+                  7, 7, 7, 7, 7]),
+        n_variants=5,
+        n_haplotypes=8
+    )
+
+    n_alleles_per_variant = node_mapping.n_alleles_per_variant
+    haplotype_matrix = biallelic_haplotype_matrix.to_multiallelic(n_alleles_per_variant)
+
+    scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=8, modulo=2000003)
+    assert scorer.score_kmers(sequence_to_kmer_hash("cgcg")) == 0  # does not exist in graph
+    assert scorer.score_kmers(sequence_to_kmer_hash("cctg")) < 0  # should exist, score is negative frequency
+    assert scorer.score_kmers(sequence_to_kmer_hash("cctg")) > scorer.score_kmers(sequence_to_kmer_hash("actg"))  # cctg less frequent than actg
+    assert scorer.score_kmers(sequence_to_kmer_hash("acta") > scorer.score_kmers(sequence_to_kmer_hash("aact"))) - scorer.score_kmers(sequence_to_kmer_hash("accc"))
+
+    signatures = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=scorer, k=k).run()
+    signatures.describe(k)
+    s = signatures.to_list_of_sequences(k)
+
+    # least frequenct kmer should be chosen, last kmer on a tie
+    assert s[0][0] == ["cctg"]  # cctg should be preferred over gact because lower freq
+    assert s[0][1] == ["tact"]  # all have same freq, tact is the last
+
+    # variant 2 (multiallelic)
+    assert s[1][1] == ["actt"]
+
+    # variant 3 (deletion)
+    assert set(s[2][0]) == set(["ctgc"])
+    assert "gccc" not in s[2][1]
+
+    # variant 4 (insertion)
+    assert s[3][0] == ["cccc"]
+    assert "gccc" not in s[3][1]
+
+    # check parts of kmer index
+    kmer_index = signatures.get_as_kmer_index(node_mapping=node_mapping, modulo=123, k=k)
+    assert node_mapping.get_alt_node(0) in kmer_index.get_nodes(sequence_to_kmer_hash("tact"))
+    assert node_mapping.get_alt_node(1) in kmer_index.get_nodes(sequence_to_kmer_hash("actt"))
+
+    print(biallelic_haplotype_matrix.to_matrix())
+    print(haplotype_matrix.to_matrix())
+
+
+    model_creator = PathBasedMappingModelCreator(graph, kmer_index,
+                                                 haplotype_matrix,
+                                                 k=k,
+                                                 paths_allele_matrix=paths.variant_alleles,
+                                                 window=window-1,  # use lower window for better matching of haplotypes to paths
+                                                 max_count=20,
+                                                 node_map=node_mapping,
+                                                 n_nodes=5*2)
+    count_model = model_creator.run()
+
+    for variant_id in range(5):
+        ref_node = node_mapping.get_ref_node(variant_id)
+        var_node = node_mapping.get_alt_node(variant_id)
+        print("Variant ", variant_id, "nodes:", ref_node, var_node)
+        print(count_model.describe_node(ref_node))
+        print(count_model.describe_node(var_node))
+
+
+    # check tricky variants, variant ID 3 should be tricky because shared kmers
+    tricky_variants = find_tricky_variants_from_multiallelic_signatures(signatures, node_mapping, count_model)
+
+    assert tricky_variants.tricky_variants[3] == True
+
+
 @pytest.fixture
 def paths():
     return Paths(
@@ -169,15 +389,25 @@ def test_multiallelic_signatures_as_kmer_index():
 
 def test_multialellic_signature_finderv2(paths):
     k = 3
-    old = MultiAllelicSignatureFinder(paths, scorer=DummyScorer2(), k=k).run()
-    print(old.signatures)
+    #old = MultiAllelicSignatureFinder(paths, scorer=DummyScorer2(), k=k).run()
+    #print(old.describe(k))
 
     variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
     variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers, paths.variant_alleles.matrix)
     new = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=DummyScorer2(), k=k).run()
 
-    print(new.signatures)
-    assert np.all(old.signatures == new.signatures)
+    print(new.describe(k))
+    s = new.to_list_of_sequences(k)
+
+    # first variant, will pick last kmer in window
+    assert s[0][0] == ["cgt"]
+    assert s[0][1] == ["ggc"]
+
+    # second variant
+    assert s[1][0] == ["caa"]
+    assert s[1][1] == ["taa"]
+
+    #assert np.all(old.signatures == new.signatures)
 
 
 

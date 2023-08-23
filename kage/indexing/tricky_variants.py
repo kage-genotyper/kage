@@ -19,6 +19,9 @@ class TrickyVariants:
     def to_file(self, file_name):
         np.save(file_name, self.tricky_variants)
 
+    def is_tricky(self, id):
+        return self.tricky_variants[id] == 1
+
 
 def find_variants_with_nonunique_kmers(args):
     output = np.zeros(len(args.variant_to_nodes.ref_nodes), dtype=np.uint8)

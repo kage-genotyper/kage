@@ -116,8 +116,18 @@ class VariantAlleleToNodeMap:
         return self.node_ids[variant_ids, alleles]
 
     @property
+    def n_biallelic_variants(self):
+        return len(self.biallelic_ref_nodes)
+
+    @property
     def n_nodes(self):
         return self.node_ids.max() + 1
+
+    def get_ref_node(self, variant_id):
+        return self.biallelic_ref_nodes[variant_id]
+
+    def get_alt_node(self, variant_id):
+        return self.biallelic_alt_nodes[variant_id]
 
     def get_variant_to_nodes(self):
         return VariantToNodes(self.biallelic_ref_nodes, self.biallelic_alt_nodes)

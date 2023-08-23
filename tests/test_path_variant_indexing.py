@@ -191,6 +191,7 @@ def test_graph_from_padded_overlapping_variants():
     assert [s for s in graph.genome.sequence.tolist()] == \
            ["CCCC", "", "T"*10]
 
+
 def test_path_windows(graph):
     creator = PathCreator(graph)
     paths = creator.run()
@@ -360,8 +361,6 @@ def test_signatures_with_overlapping_indels():
     print(signatures)
 
 
-
-
 def test_filter_nonunique_kmers():
     signatures = MultiAllelicSignatures.from_list([
         # variant 1
@@ -390,3 +389,41 @@ def test_filter_nonunique_kmers():
                           [10, 11]
                       ]
                   ]))
+
+def test_filter_nonunique_kmers2():
+    signatures = MultiAllelicSignatures.from_list([
+        # variant 1
+        [
+            # allele 1
+            [3, 1, 2, 1, 123, 123123],
+            # Allele 2
+            [3, 1, 1, 1, 1, 3],
+            [50, 60, 4, 3, 2, 50],
+        ]
+    ])
+    print(repr(signatures.signatures))
+    signatures.filter_nonunique_on_alleles()
+    assert np.all(signatures.signatures ==
+                  ak.Array([
+                      [
+                          [1, 2, 3, 123, 123123],
+                          [1, 3],
+                          [2, 3, 4, 50, 60],
+                      ]
+                  ])
+                )
+
+
+@pytest.mark.xfail
+def test_filter_nonunique_kmers_check_overflow():
+    s = ak.unflatten(ak.unflatten(ak.unflatten(np.array([18446744073709551614, 18446744073709551613], dtype=np.uint64),
+                                  np.array([2])), np.array([1])), np.array([1]))
+    print(s)
+    s = ak.values_astype(ak.Array([[np.array([18446744073709551614, 18446744073709551613], dtype=np.uint64)]]), np.uint64)
+    print(s)
+    signatures = MultiAllelicSignatures(
+        s
+    )
+
+    signatures.filter_nonunique_on_alleles()
+    print(ak.to_numpy(signatures.signatures[0][0]))

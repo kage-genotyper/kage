@@ -46,7 +46,6 @@ class SparseHaplotypeMatrix:
                 h, how="encoding")
             columns.append(new_column)
 
-        print(columns)
         return SparseHaplotypeMatrix.from_nonsparse_matrix(np.array(columns).T)
 
     @classmethod

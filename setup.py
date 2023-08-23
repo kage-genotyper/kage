@@ -19,6 +19,7 @@ setup(name='kage-genotyper',
                         'bionumpy>=0.2.21',
                         'npstructures>=0.2.9',
                         'awkward',
+                        'numba',
                         ],
       include_dirs=["."],
       classifiers=[
