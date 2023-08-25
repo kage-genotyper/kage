@@ -128,12 +128,32 @@ class MultiAllelicSignatures:
                 assert len(allele) == len(np.unique(allele)), "Nonunique kmers found"
         self.signatures = new
 
-
     def get_as_flat_kmers(self, node_mapping: VariantAlleleToNodeMap):
         signatures = self.signatures
 
         all_kmers = []
         all_node_ids = []
+
+        flat_kmers = ak.to_numpy(ak.ravel(signatures)).astype(np.uint64)
+        assert flat_kmers.dtype == np.uint64
+        flat_node_ids = np.zeros_like(flat_kmers)
+        node_mapping = node_mapping.node_ids.ravel()  # ragged array of variants x alleles
+
+        @numba.jit(nopython=True)
+        def get_node_ids(signatures, flat_node_ids, node_mapping):
+            allele_number = 0  # index in flat node_mapping array, increases for each allele
+            i = 0
+            for variant in range(len(signatures)):
+                for allele in range(len(signatures[variant])):
+                    for kmer in range(len(signatures[variant][allele])):
+                        node_id = node_mapping[allele_number]
+                        flat_node_ids[i] = node_id
+                        i += 1
+                    allele_number += 1
+
+        get_node_ids(signatures, flat_node_ids, node_mapping)
+        return FlatKmers(flat_kmers, flat_node_ids)
+
 
         # todo: vectorize
         for variant in range(len(signatures)):

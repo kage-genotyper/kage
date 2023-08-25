@@ -56,25 +56,17 @@ def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: Spar
                                         np.ones(haplotype_matrix.n_variants, dtype=np.uint8)])
 
     for i, nodes in tqdm.tqdm(enumerate(haplotype_nodes), desc="Estimating global kmer counts", total=len(chosen_haplotypes), unit="haplotype"):
-        print("I", i)
         #haplotype_nodes = haplotype_matrix.get_haplotype(haplotype)
         log_memory_usage_now("Memory after getting nodes")
         kmers = graph.get_haplotype_kmers(nodes, k=k, stream=True)
         log_memory_usage_now("Memory after kmers")
         for subkmers in kmers:
-            print(subkmers)
             counter.add(subkmers)
             # also add reverse complement
             subkmers_revcomp = kmer_hashes_to_reverse_complement_hash(subkmers, k)
             counter.add(subkmers_revcomp)
 
         log_memory_usage_now("After adding haplotype %d" % i)
-
-    # also add the reference and a haplotype with all variants
-    #kmers = graph.get_haplotype_kmers(np.zeros(haplotype_matrix.n_variants, dtype=np.uint8), k=k, stream=False)
-    #print(kmers)
-    #counter.add(kmers)
-    #counter.add(graph.get_haplotype_kmers(np.ones(haplotype_matrix.n_variants, dtype=np.uint8), k=k))
 
     return counter
 
