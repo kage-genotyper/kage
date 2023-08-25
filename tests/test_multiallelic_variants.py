@@ -340,6 +340,12 @@ def test_integration_from_variants_to_signatures(bnp_reference_sequences, bnp_va
     assert tricky_variants.tricky_variants[3] == True
 
 
+def test_that_fewer_signatures_are_preferred_integration():
+    # check that window giving fewer signatures are preferred
+    # when sum of scores on a window is used for scoring
+    pass
+
+
 @pytest.fixture
 def paths():
     return Paths(
@@ -450,6 +456,68 @@ def test_make_multiallelic_graph(reference_sequence, variants):
     graph, node_mapping = make_multiallelic_graph(reference_sequence, variants)
     assert graph.genome.to_list() == ["C", "CCCCCCCC", "CCCCGGGGGGGGGG", "GGG"]
     assert graph.variants.to_list() == [["A", "C"], ["ACTG", "ATTG", ""], ["A", "C"]]
+
+
+
+def test_replace_nonunique_variant_window_kmers():
+    kmers = VariantWindowKmers2.from_list(
+        # variant
+        [
+        [
+           # allele
+           [
+               # path
+               [1, 2, 3, 4, 5],
+               [1, 5, 4, 3, 2],
+               [8, 5, 1, 1, 2],
+           ],
+            # allele 2
+            [
+               [100, 200],
+               [101, 10],
+               [10, 200]
+           ]
+        ],
+        # variant 2
+        [
+            [
+                [1, 2],
+                [10, 12],
+                [10, 2]
+            ]
+        ]
+    ])
+
+    correct = VariantWindowKmers2.from_list([
+        # variant
+        [
+            # allele
+            [
+                # path
+                [1, 2, 1, 1, 2],
+                [0, 5, 3, 3, 0],
+                [8, 0, 4, 4, 5],
+            ],
+            # allele 2
+            [
+                [10, 10],
+                [100, 200],
+                [101, 0]
+            ]
+        ],
+        # variant 2
+        [
+            [
+                [1, 2],
+                [10, 0],
+                [0, 12]
+            ]
+        ]
+    ])
+
+    kmers.replace_nonunique_kmers(0)
+
+    assert kmers == correct
 
 
 

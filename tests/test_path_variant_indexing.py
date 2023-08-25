@@ -273,7 +273,7 @@ def variant_window_kmers():
 
 def test_window_variant_kmers2(window_kmers, path_alleles, variant_window_kmers):
     correct = variant_window_kmers.kmers
-    kmers = VariantWindowKmers2.from_matrix_variant_window_kmers2(window_kmers, path_alleles)
+    kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(window_kmers, path_alleles)
     assert np.all(kmers.kmers == correct)
 
 
@@ -389,6 +389,7 @@ def test_filter_nonunique_kmers():
                           [10, 11]
                       ]
                   ]))
+
 
 def test_filter_nonunique_kmers2():
     signatures = MultiAllelicSignatures.from_list([
