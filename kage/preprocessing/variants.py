@@ -27,7 +27,7 @@ class Variants:
     ref_seq: str  # position + len(ref_seq) will always give first ref base after the variant is finished
     alt_seq: str
 
-    @clasmethod
+    @classmethod
     def from_multiallelic_vcf_entry(cls, variants: bnp.datatypes.VCFEntry):
         """ Create a Variants object from a multiallelic vcf entry where no variants are overlapping (variants are padded)"""
         # find variants with multiple alleles, split these into multiple variants
