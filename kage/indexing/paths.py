@@ -88,6 +88,8 @@ class Paths:
             starts = path._shape.starts[1::2]
             window_starts = starts - k + 1
             window_ends = np.minimum(starts + k, path.size)
+            print("Dtype of window ends: %s" % window_ends.dtype)
+            assert np.all(window_ends >= window_starts)
             windows = bnp.ragged_slice(path.ravel(), window_starts, window_ends)
             windowed_paths.append(
                 bnp.get_kmers(windows, k=k)

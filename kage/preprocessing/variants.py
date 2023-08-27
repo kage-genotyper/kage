@@ -27,6 +27,13 @@ class Variants:
     ref_seq: str  # position + len(ref_seq) will always give first ref base after the variant is finished
     alt_seq: str
 
+    @clasmethod
+    def from_multiallelic_vcf_entry(cls, variants: bnp.datatypes.VCFEntry):
+        """ Create a Variants object from a multiallelic vcf entry where no variants are overlapping (variants are padded)"""
+        # find variants with multiple alleles, split these into multiple variants
+        # then call from_vcf_entry
+        pass
+
     @classmethod
     def from_vcf_entry(cls, variants: bnp.datatypes.VCFEntry):
         # find indels to remove padding
@@ -47,6 +54,8 @@ class Variants:
         mask = np.ones_like(variant_alt_sequences.raw(), dtype=bool)
         mask[is_indel, 0] = False
         variant_alt_sequences = bnp.EncodedRaggedArray(variant_alt_sequences[mask], mask.sum(axis=1))
+
+        #assert np.all(variants_start[1:] >= variants_start[:-1]), "Variants in vcf must be sorted by position within each chromosome, %s" % variants
 
         return cls(variants.chromosome, variants_start, variant_ref_sequences, variant_alt_sequences)
 
@@ -145,7 +154,7 @@ class VariantAlleleToNodeMap:
 
     @classmethod
     def from_n_alleles_per_variant(cls, n_alleles_per_variant: List[int]):
-        data = np.arange(np.sum(n_alleles_per_variant))
+        data = np.arange(np.sum(n_alleles_per_variant), dtype=np.int32)
         row_lengths = np.array(n_alleles_per_variant)
         node_ids = nps.RaggedArray(data, row_lengths)
 

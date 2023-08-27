@@ -71,8 +71,10 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
 
     # New: Using FinderV2 which is faster
     #logging.info("Finding kmers around variants")
+    log_memory_usage_now("Before MatrixVariantWindowKmers")
     variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
     logging.info("Converting variant window kmers to new data structure")
+    log_memory_usage_now("Before variant window kmers2")
     variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers, paths.variant_alleles.matrix)
     logging.info("Finding best signatures for variants")
 

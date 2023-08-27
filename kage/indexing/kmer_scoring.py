@@ -44,10 +44,10 @@ def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: Spar
     """
     Estimates counts from random individuals
     """
+    log_memory_usage_now("Memory before making kmer scorer")
     counter = FastApproxCounter.empty(modulo)
     chosen_haplotypes = np.random.choice(np.arange(haplotype_matrix.n_haplotypes), n_haplotypes, replace=False)
     logging.info("Picked random haplotypes to make kmer scorer: %s" % chosen_haplotypes)
-    print("Chosen haplotypes", chosen_haplotypes)
     haplotype_nodes = (haplotype_matrix.get_haplotype(haplotype) for haplotype in chosen_haplotypes)
 
     # also add the reference and a haplotype with all variants
@@ -56,7 +56,6 @@ def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: Spar
                                         np.ones(haplotype_matrix.n_variants, dtype=np.uint8)])
 
     for i, nodes in tqdm.tqdm(enumerate(haplotype_nodes), desc="Estimating global kmer counts", total=len(chosen_haplotypes), unit="haplotype"):
-        #haplotype_nodes = haplotype_matrix.get_haplotype(haplotype)
         log_memory_usage_now("Memory after getting nodes")
         kmers = graph.get_haplotype_kmers(nodes, k=k, stream=True)
         log_memory_usage_now("Memory after kmers")

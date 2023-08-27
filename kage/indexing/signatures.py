@@ -104,7 +104,7 @@ class MultiAllelicSignatures:
                     prev_kmer = np.uint64(0)
                     j = 0
                     for kmer in signatures[variant][allele]:
-                        if (kmer == prev_kmer and j > 0) or also_remove >= 0 and kmer == also_remove:
+                        if (kmer == prev_kmer and j > 0) or (also_remove >= 0 and kmer == also_remove):
                             flat_mask[i] = False
                         j += 1
                         prev_kmer = kmer  # signatures[variant, allele, kmer]
@@ -121,11 +121,7 @@ class MultiAllelicSignatures:
         new = ak.unflatten(keep, n_per_allele)
         n_alleles_per_variant = ak.num(signatures)
         new = ak.unflatten(new, n_alleles_per_variant)
-
-        # check that all are unique
-        for variant in new:
-            for allele in variant:
-                assert len(allele) == len(np.unique(allele)), "Nonunique kmers found"
+        logging.info("Done filtering")
         self.signatures = new
 
     def get_as_flat_kmers(self, node_mapping: VariantAlleleToNodeMap):
@@ -136,7 +132,7 @@ class MultiAllelicSignatures:
 
         flat_kmers = ak.to_numpy(ak.ravel(signatures)).astype(np.uint64)
         assert flat_kmers.dtype == np.uint64
-        flat_node_ids = np.zeros_like(flat_kmers)
+        flat_node_ids = np.zeros_like(flat_kmers, dtype=np.int32)
         node_mapping = node_mapping.node_ids.ravel()  # ragged array of variants x alleles
 
         @numba.jit(nopython=True)
@@ -271,8 +267,8 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         #self._kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(self._kmers, paths.variant_alleles.matrix)
         self._kmers = variant_window_kmers
         # first replace nonuniqe kmers with something
-        self._replace_nonunique_with = 0
-        self._kmers.replace_nonunique_kmers(self._replace_nonunique_with)
+        self._replace_nonunique_with = -1
+        #self._kmers.replace_nonunique_kmers(self._replace_nonunique_with)
 
     def run(self, add_dummy_count_to_index=-1) -> MultiAllelicSignatures:
         # idea is to first find the score for each window position at each allele at each variant
@@ -283,19 +279,24 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         # add 1 in score to the last window, so that is preferred on a tie. Convert to RaggedArray to be able to add
         # hackish flatten and unflatten
 
-        window_scores_tmp = nps.RaggedArray(ak.to_numpy(ak.flatten(ak.flatten(window_scores))).astype(float), ak.to_numpy(ak.num(ak.flatten(window_scores))))
+        window_scores_tmp = nps.RaggedArray(ak.to_numpy(ak.flatten(ak.flatten(window_scores))).astype(float),
+                                            ak.to_numpy(ak.num(ak.flatten(window_scores))))
         window_scores_tmp[:, add_dummy_count_to_index] += 0.1
-        window_scores = ak.unflatten(ak.unflatten(window_scores_tmp.ravel(), ak.num(ak.flatten(window_scores))), ak.num(window_scores))
+        window_scores = ak.unflatten(ak.unflatten(window_scores_tmp.ravel(), ak.num(ak.flatten(window_scores))),
+                                     ak.num(window_scores))
 
         best_windows = np.argmax(window_scores, axis=-1)
         # create a best windows array with same length as number of paths on all alleles
         kmers = self._kmers.kmers
+        # number of paths per allele
         lengths = ak.to_numpy(ak.num(ak.flatten(kmers)))
         # hacky way to make mask: Create ragged array of the size we want, fill
-        best_windows_mask = nps.RaggedArray(np.ones(np.sum(lengths)), lengths)
-        best_windows_mask = best_windows_mask * ak.to_numpy(ak.flatten(best_windows)).data[:, None]
+        best_windows_mask_ones = nps.RaggedArray(np.ones(np.sum(lengths), dtype=int), lengths)
+        best_windows_mask = best_windows_mask_ones * ak.to_numpy(ak.flatten(best_windows)).data[:, None]
         best_windows_mask_flat = best_windows_mask.ravel().astype(int)
 
+        # flat kmers is structured by windows
+        # first all windows on allele 0, then allele 1, then next variant etc
         flat_kmers = ak.flatten(ak.flatten(kmers))
         chosen_kmers_flat = flat_kmers[np.arange(len(flat_kmers)), best_windows_mask_flat]
 
@@ -665,6 +666,13 @@ class MatrixVariantWindowKmers:
     kmers: Union[np.ndarray, ak.Array]  # n_paths, n variants x n_windows.
     # Can be numpy matrix if even window sizes and fixed number of alleles
 
+    def describe(self, k):
+        from graph_kmer_index import kmer_hash_to_sequence
+        for path_id, path in enumerate(self.kmers):
+            print("Path %d" % path_id)
+            for variant_id, variant in enumerate(path):
+                print("  Variant %d: %s" % (variant_id, ' '.join([kmer_hash_to_sequence(kmer, k) for kmer in variant])))
+
     @property
     def n_variants(self):
         if isinstance(self.kmers, ak.Array):
@@ -703,15 +711,22 @@ class MatrixVariantWindowKmers:
             variant_sizes = path[1::2].shape[1]
             window_sizes = variant_sizes + (k-1)*2
             n_kmers_in_each_window = window_sizes - k + 1
+            assert np.all(n_kmers_in_each_window > 0)
             # for each variant, find the kmers for this path and fill into the window
             starts = path._shape.starts[1::2]
             window_starts = starts - k + 1
             window_ends = window_starts + window_sizes
+            assert np.all(window_ends > window_starts)
+            assert np.all(window_ends <= len(path.ravel())), "Window end %d > length of path %d" % (np.max(window_ends), len(path.ravel()))
+            #logging.info("DTYPE window starts/ends: %s/%s" % (window_starts.dtype, window_ends.dtype))
             windows = bnp.ragged_slice(path.ravel(), window_starts, window_ends)
+            assert np.all(window_sizes == windows.shape[1]), "%s != %s" % (window_sizes, windows.shape[1])
             kmers = bnp.get_kmers(windows, k=k).ravel().raw().astype(np.uint64)
+            assert len(kmers) == np.sum(n_kmers_in_each_window)
+            assert np.all(n_kmers_in_each_window > 0)
 
             kmers = nps.RaggedArray(kmers, n_kmers_in_each_window)
-            inner_dimensions.append(kmers.shape[1])
+            inner_dimensions.append(n_kmers_in_each_window)  #kmers.shape[1])
             outer_dimension.append(len(kmers))
             kmers_found.append(
                 kmers.ravel()

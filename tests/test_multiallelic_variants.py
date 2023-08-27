@@ -6,7 +6,8 @@ from kage.indexing.graph import Graph, GenomeBetweenVariants
 from kage.indexing.kmer_scoring import make_kmer_scorer_from_random_haplotypes
 from kage.indexing.path_variant_indexing import find_tricky_variants_from_multiallelic_signatures
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
-from kage.preprocessing.variants import VariantAlleleSequences, MultiAllelicVariantSequences, Variants, VariantAlleleToNodeMap
+from kage.preprocessing.variants import VariantAlleleSequences, MultiAllelicVariantSequences, Variants, \
+    VariantAlleleToNodeMap, VariantPadder
 from kage.indexing.paths import PathCreator, PathSequences
 import bionumpy as bnp
 from kage.indexing.signatures import MatrixVariantWindowKmers, MultiAllelicSignatures, MultiAllelicSignatureFinderV2, \
@@ -16,7 +17,7 @@ from kage.indexing.paths import PathCombinationMatrix, Paths
 from kage.indexing.signatures import MultiAllelicSignatureFinder
 import awkward as ak
 from kage.indexing.graph import make_multiallelic_graph
-from graph_kmer_index import sequence_to_kmer_hash
+from graph_kmer_index import sequence_to_kmer_hash, kmer_hash_to_sequence
 from kage.indexing.path_based_count_model import PathBasedMappingModelCreator
 
 @pytest.fixture
@@ -416,6 +417,92 @@ def test_multialellic_signature_finderv2(paths):
     #assert np.all(old.signatures == new.signatures)
 
 
+def test_variant_window_kmers2_from_matrix_variant_window_kmers_many_alleles_on_same_variant():
+    n_alleles_on_variant = 10
+
+    some_path = [
+                # variant 1
+                [0, 1, 2, 3],
+                # variant 2
+                [4, 5, 6, 7],
+                # variant 3
+                [1, 2]
+            ]
+    kmers = [some_path] * n_alleles_on_variant + \
+            [
+                # a different path
+                [
+                    [0, 1, 2, 3],
+                    [10, 12],
+                    [1, 2]
+                ]
+            ]
+    print(kmers)
+    kmers = MatrixVariantWindowKmers(
+        ak.Array(kmers)
+    )
+
+    print(kmers.describe(5))
+
+    path_alleles_some_path = [0, 1, 0]
+    path_alleles = np.array(
+        [path_alleles_some_path] * n_alleles_on_variant +
+        [[0, 0, 0]]
+    )
+
+    kmers2 = VariantWindowKmers2.from_matrix_variant_window_kmers(kmers, path_alleles)
+
+    print(kmers2.describe(5))
+
+
+def test_signatures_on_graph_with_many_alleles_integration():
+    window = 5
+    k = 3
+    variants = Variants.from_entry_tuples(
+        [
+            # many variants which will be merged
+            ("chr1", 5, "ACTG", ""),
+            ("chr1", 5, "A", "C"),
+            ("chr1", 5, "A", "T"),
+            ("chr1", 5, "A", "G"),
+            ("chr1", 6, "C", "A"),
+            ("chr1", 6, "C", "T"),
+            ("chr1", 6, "C", "G"),
+            ("chr1", 7, "T", "G"),
+            ("chr1", 7, "T", "A"),
+            ("chr1", 7, "T", "C"),
+            # not overlapping
+            ("chr1", 10, "G", "T"),
+            ("chr1", 11, "G", "T"),
+            ("chr1", 12, "G", "T"),
+            ("chr1", 13, "G", "T"),
+        ]
+    )
+
+    reference = bnp.datatypes.SequenceEntry.from_entry_tuples([("chr1", "CCCCACTGGGGGGGGGGGGG")])
+    padder = VariantPadder(variants, reference.sequence[0])
+    padded_variants = padder.run()
+    print(padded_variants)
+
+    graph, node_mapping = make_multiallelic_graph(reference, padded_variants)
+    n_alleles_per_variant = node_mapping.n_alleles_per_variant
+
+    paths = PathCreator(graph,
+                        window=window,  # bigger windows to get more paths when multiallelic
+                        make_disc_backed=False,
+                        disc_backed_file_base_name="test.tmp").run(n_alleles_per_variant)
+
+    variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
+    variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers,
+                                                                                paths.variant_alleles.matrix)
+    variant_window_kmers.describe(k)
+    kmers = variant_window_kmers.kmers
+
+    # first kmer in allele 0 variant 0 should be common on alle paths
+    k = kmers[0, 0, :, 0]
+    print(k)
+    assert len(np.unique(kmers[0, 0, :, 0])) == 1
+
 
 @pytest.fixture
 def variants():
@@ -520,6 +607,17 @@ def test_replace_nonunique_variant_window_kmers():
     assert kmers == correct
 
 
+def test_window_kmers_from_paths_with_flexible_window_size_many_variants():
+    # test that things don't break with many variants
+    n_sequences = 50001  # must be odd number
+    n_paths = 10
+    path_sequences = [
+        ["AACCTTAACCTTAACCTTAACCTTAACCTTAACCTT"] + ["ACTG"] * n_sequences + ["GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"]
+        for i in range(n_paths)
+    ]
+    path_sequences = PathSequences.from_list(path_sequences)
+    kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(path_sequences, k=31)
 
-
+    for kmer in kmers.kmers[:, 0, 0]:
+        assert kmer == path_sequences[0][0:31]
 
