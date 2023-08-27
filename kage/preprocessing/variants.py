@@ -8,13 +8,21 @@ import numpy as np
 from bionumpy.bnpdataclass import bnpdataclass
 from bionumpy import EncodedRaggedArray, Interval
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 
 @dataclass
 class VariantToNodes:
     ref_nodes: np.ndarray
     var_nodes: np.ndarray
+
+
+@bnpdataclass
+class SimpleVcfEntry:
+    chromosome: str
+    position: int
+    ref_seq: str
+    alt_seq: str
 
 
 @bnpdataclass
@@ -28,11 +36,36 @@ class Variants:
     alt_seq: str
 
     @classmethod
-    def from_multiallelic_vcf_entry(cls, variants: bnp.datatypes.VCFEntry):
+    def from_multiallelic_vcf_entry(cls, variants: Union[bnp.datatypes.VCFEntry, SimpleVcfEntry]):
         """ Create a Variants object from a multiallelic vcf entry where no variants are overlapping (variants are padded)"""
+
+        if isinstance(variants, bnp.datatypes.VCFEntry):
+            variants = SimpleVcfEntry(variants.chromosome, variants.position, variants.ref_seq, variants.alt_seq)
+
         # find variants with multiple alleles, split these into multiple variants
         # then call from_vcf_entry
-        pass
+        n_alleles_per_variant = np.sum(variants.alt_seq == ",", axis=1) + 1
+        is_multiallelic = n_alleles_per_variant > 1
+        logging.info("%d variants are multiallelic" % np.sum(is_multiallelic))
+
+        new = []
+        prev_variant = 0
+        for i, multiallelic_variant_start in enumerate(np.where(is_multiallelic)[0]):
+            variant = variants[multiallelic_variant_start]
+            alt_sequences = variant.alt_seq.to_string().split(",")
+            biallelic_variants = SimpleVcfEntry.from_entry_tuples([
+                (variant.chromosome.to_string(), variant.position, variant.ref_seq.to_string(), alt_sequence)
+                for alt_sequence in alt_sequences
+            ])
+            # add all variants before this
+            new.append(variants[prev_variant:multiallelic_variant_start])
+            # add the new biallelic created
+            new.append(biallelic_variants)
+            prev_variant = multiallelic_variant_start + 1
+
+        new.append(variants[prev_variant:])
+        merged = np.concatenate(new)
+        return cls.from_vcf_entry(merged)
 
     @classmethod
     def from_vcf_entry(cls, variants: bnp.datatypes.VCFEntry):
