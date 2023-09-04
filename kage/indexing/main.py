@@ -5,7 +5,8 @@ import numpy as np
 from kage.indexing.index_bundle import IndexBundle
 from kage.indexing.path_variant_indexing import find_tricky_variants_from_signatures, \
     find_tricky_variants_from_signatures2, find_tricky_variants_with_count_model, \
-    MappingModelCreator, find_tricky_variants_from_multiallelic_signatures
+    MappingModelCreator, find_tricky_variants_from_multiallelic_signatures, \
+    find_tricky_ref_and_var_alleles_from_count_model
 from kage.indexing.kmer_scoring import make_kmer_scorer_from_random_haplotypes
 from kage.indexing.signatures import SignatureFinder3, MultiAllelicSignatureFinder, MultiAllelicSignatureFinderV2, \
     MatrixVariantWindowKmers, VariantWindowKmers2
@@ -100,10 +101,12 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     # find tricky variants before count model is refined
     #tricky_variants = find_tricky_variants_with_count_model(signatures, count_model)
     tricky_variants = find_tricky_variants_from_multiallelic_signatures(signatures, node_mapping, count_model)
+    tricky_alleles = find_tricky_ref_and_var_alleles_from_count_model(count_model, node_mapping)
 
     from ..models.mapping_model import refine_sampling_model_noncli
     count_model = refine_sampling_model_noncli(count_model, variant_to_nodes)
-    #convert_model_to_sparse(count_model)
+    logging.info("Converting to sparse model")
+    convert_model_to_sparse(count_model)
 
     numpy_variants = NumpyVariants.from_vcf(vcf_no_genotypes_file_name)
     indexes = {
@@ -111,7 +114,8 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
             "count_model": count_model,
             "kmer_index": kmer_index,
             "numpy_variants": numpy_variants,
-            "tricky_variants": tricky_variants
+            "tricky_variants": tricky_variants,
+            "tricky_alleles": tricky_alleles
         }
     # helper model
     if make_helper_model:

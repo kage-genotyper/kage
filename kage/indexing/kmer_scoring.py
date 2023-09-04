@@ -7,7 +7,9 @@ import tqdm
 from kage.indexing.graph import Graph
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 from kage.util import log_memory_usage_now
-from graph_kmer_index.kmer_hashing import kmer_hashes_to_reverse_complement_hash
+from graph_kmer_index.kmer_hashing import kmer_hashes_to_reverse_complement_hash, \
+    kmer_hashes_to_reverse_complement_hash_chunked
+
 
 class FastApproxCounter:
     """ Fast counter that uses modulo and allows collisions"""
@@ -57,13 +59,16 @@ def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: Spar
 
     for i, nodes in tqdm.tqdm(enumerate(haplotype_nodes), desc="Estimating global kmer counts", total=len(chosen_haplotypes), unit="haplotype"):
         log_memory_usage_now("Memory after getting nodes")
-        kmers = graph.get_haplotype_kmers(nodes, k=k, stream=True)
-        log_memory_usage_now("Memory after kmers")
-        for subkmers in kmers:
-            counter.add(subkmers)
-            # also add reverse complement
-            subkmers_revcomp = kmer_hashes_to_reverse_complement_hash(subkmers, k)
-            counter.add(subkmers_revcomp)
+
+        for reverse_complement in [False, True]:
+            logging.info("Reverse complement %s" % reverse_complement)
+            kmers = graph.get_haplotype_kmers(nodes, k=k, stream=True, reverse_complement=reverse_complement)
+            log_memory_usage_now("Memory after kmers")
+            for subkmers in kmers:
+                counter.add(subkmers)
+                # also add reverse complement
+                #subkmers_revcomp = kmer_hashes_to_reverse_complement_hash_chunked(subkmers, k, chunk_size=2000000)
+                #counter.add(subkmers_revcomp)
 
         log_memory_usage_now("After adding haplotype %d" % i)
 

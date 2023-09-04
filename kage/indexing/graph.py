@@ -83,7 +83,7 @@ class Graph:
     def n_nodes(self):
         return self.n_variants()*2
 
-    def sequence(self, haplotypes: np.ndarray, stream=False) -> bnp.EncodedArray:
+    def sequence(self, haplotypes: np.ndarray, stream=False, reverse_complement=False) -> bnp.EncodedArray:
         """
         Returns the sequence through the graph given haplotypes for all variants
         """
@@ -96,6 +96,10 @@ class Graph:
 
         # stitch these together
         result = zip_sequences(ref_sequence, variant_sequences)
+
+        if reverse_complement:
+            result = bnp.sequence.get_reverse_complement(result)[::-1]  # reverse rows so that ravel() will be correct
+
         assert np.all(result.shape[1] >= 0), result.shape[1]
         if not stream:
             return result
@@ -130,12 +134,12 @@ class Graph:
         assert np.all(sequence_lengths >= 0), sequence_lengths
         return bnp.EncodedRaggedArray(all_kmers.ravel(), sequence_lengths)
 
-    def get_haplotype_kmers(self, haplotype: np.array, k, stream=False) -> np.ndarray:
+    def get_haplotype_kmers(self, haplotype: np.array, k, stream=False, reverse_complement=False) -> np.ndarray:
         if not stream:
-            sequence = self.sequence(haplotype).ravel()
+            sequence = self.sequence(haplotype, reverse_complement=reverse_complement).ravel()
             return bnp.get_kmers(sequence, k).ravel().raw().astype(np.uint64)
         else:
-            sequence = self.sequence(haplotype, stream=True)
+            sequence = self.sequence(haplotype, reverse_complement=reverse_complement, stream=True)
             return (bnp.get_kmers(subseq.ravel(), k).ravel().raw().astype(np.uint64) for subseq in sequence)
 
     @classmethod

@@ -1,5 +1,7 @@
 import logging
 import time
+from typing import List, Tuple
+
 import npstructures as nps
 import numpy as np
 import bionumpy as bnp
@@ -217,9 +219,9 @@ def find_tricky_variants_from_multiallelic_signatures(signatures: MultiAllelicSi
             # check for missing data in model
             ref_node = node_mapping.get_ref_node(variant_id)
             alt_node = node_mapping.get_alt_node(variant_id)
-            if model.has_no_data(ref_node, threshold=3) or model.has_no_data(alt_node, threshold=3):
-                tricky[variant_id] = True
-                n_missing_model += 1
+            #if model.has_no_data(ref_node, threshold=3) or model.has_no_data(alt_node, threshold=3):
+            #    tricky[variant_id] = True
+            #    n_missing_model += 1
 
             variant_id += 1
 
@@ -228,4 +230,21 @@ def find_tricky_variants_from_multiallelic_signatures(signatures: MultiAllelicSi
     logging.info("N tricky variants because missing data in model: %d" % n_missing_model)
 
     return TrickyVariants(tricky)
+
+
+def find_tricky_ref_and_var_alleles_from_count_model(count_model: LimitedFrequencySamplingComboModel,
+                                                     node_mapping: VariantAlleleToNodeMap, max_count=8) -> Tuple[TrickyVariants]:
+    """
+    Finds tricky variants for ref and alt alleles isolated.
+    """
+    ref_nodes = node_mapping.biallelic_ref_nodes
+    alt_nodes = node_mapping.biallelic_alt_nodes
+
+    sum_of_counts = count_model.diplotype_counts[0] + count_model.diplotype_counts[1] + count_model.diplotype_counts[2]
+    variant_counts = np.sum(sum_of_counts, axis=1)
+    variant_counts_high = np.sum(sum_of_counts[:, max_count:], axis=1)
+    tricky_ref = (variant_counts_high[ref_nodes] >= max_count) | (variant_counts[ref_nodes] == 0)
+    tricky_var = (variant_counts_high[alt_nodes] >= max_count) | (variant_counts[alt_nodes] == 0)
+    logging.info("Found %d tricky ref alleles and %d tricky var alleles" % (np.sum(tricky_ref), np.sum(tricky_var)))
+    return (TrickyVariants(tricky_ref), TrickyVariants(tricky_var))
 

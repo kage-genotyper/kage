@@ -46,6 +46,7 @@ class ComboModelBothAlleles(Model):
         self._model_alt = None
 
     def logpmf(self, k1, k2, genotype, base_lambda=1.0, gpu=False, n_threads=16):
+        """k1 and k2 are counts on ref and alt"""
         if genotype in self._logpmf_cache:
             return self._logpmf_cache[genotype]
 

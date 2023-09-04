@@ -315,11 +315,22 @@ class SparseObservedCounts:
 
 
 class SparseLimitedFrequencySamplingComboModel(Model):
-    def __init__(self, counts: List[SparseObservedCounts]):
+    def __init__(self, counts: List[SparseObservedCounts], tricky_alleles: np.ndarray = None):
         self._counts = counts
+        self._tricky_alleles = tricky_alleles
+
+    def set_tricky_alleles(self, tricky_alleles):
+        self._tricky_alleles = tricky_alleles
 
     def logpmf(self, observed_counts, genotype, base_lambda=1.0, error_rate=0.01, gpu=False, n_threads=16):
+        # todo:
+        # if there are less than one individual for all genotypes at a variant, we are not able to predict
+        # then set the prob to 1/3
         res = self._counts[genotype].logpmf(observed_counts, base_lambda, error_rate, n_threads)
+        if self._tricky_alleles is not None:
+            # if there are tricky alleles, we set the prob to 1/3
+            res[self._tricky_alleles] = np.log(1/3)
+
         assert len(res) == len(observed_counts), len(res)
         return res
 
@@ -331,6 +342,7 @@ class SparseLimitedFrequencySamplingComboModel(Model):
 
     def describe_node(self, variant_id):
         description = ""
+        return description
         for count in range(3):
             description += "Having %d copies: " % count
             description += ', '.join("%d: %.3f" % (i, self._counts[count].frequencies[variant_id, i]) for i in np.nonzero(self._counts[count].frequencies[variant_id])[0])

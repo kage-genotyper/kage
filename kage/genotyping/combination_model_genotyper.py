@@ -38,6 +38,12 @@ class CombinationModelGenotyper:
         self._node_counts = node_counts
 
         self._tricky_variants = index.tricky_variants.tricky_variants if hasattr(index, "tricky_variants") else None
+        self._tricky_alleles = index.tricky_alleles if hasattr(index, "tricky_alleles") else None
+        if self._tricky_variants is not None:
+            logging.info("Will use tricky alleles")
+            self.index.count_model[0].set_tricky_alleles(self._tricky_alleles[0].tricky_variants)
+            self.index.count_model[1].set_tricky_alleles(self._tricky_alleles[1].tricky_variants)
+
         self._predicted_genotypes = np.zeros(max_variant_id - min_variant_id + 1, dtype=np.uint8)
         self._prob_correct = np.zeros(max_variant_id - min_variant_id + 1, dtype=float)
         self._haplotype_coverage = self.config.avg_coverage / 2

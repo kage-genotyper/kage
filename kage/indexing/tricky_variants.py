@@ -1,4 +1,5 @@
 import logging
+from typing import List
 
 import numpy as np
 from graph_kmer_index import ReverseKmerIndex
@@ -111,4 +112,6 @@ def find_tricky_variants(args):
     TrickyVariants(tricky_variants).to_file(args.out_file_name)
     # np.save(args.out_file_name, tricky_variants)
     logging.info("Wrote tricky variants to file %s" % args.out_file_name)
+
+
 

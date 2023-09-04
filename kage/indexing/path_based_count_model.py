@@ -18,7 +18,7 @@ from ..models.mapping_model import LimitedFrequencySamplingComboModel
 import npstructures as nps
 from ..util import log_memory_usage_now
 from numpy.lib.stride_tricks import sliding_window_view
-
+from tqdm import tqdm
 
 @dataclass
 class HaplotypeAsPaths:
@@ -111,8 +111,8 @@ class PathKmers:
         """
         logging.info("Pruning")
         new = []
-        for i, kmers in enumerate(self.kmers):
-            logging.info("Pruning path %d", i)
+        for i, kmers in tqdm(enumerate(self.kmers), desc="Pruning kmers"):
+            #logging.info("Pruning path %d", i)
             assert np.all(kmers.shape[0] >= 0)
             encoding = kmers.encoding
             raw_kmers = kmers.raw().ravel().astype(np.uint64)
@@ -123,7 +123,7 @@ class PathKmers:
             assert len(mask.ravel()) == np.sum(mask.shape[1])
             assert len(mask.ravel()) == len(is_in)
             assert np.sum(mask.ravel()) == np.sum(is_in)
-            logging.info(f"Pruned away {np.sum(mask==False)}/{len(kmers)} kmers for path {i}")
+            #logging.info(f"Pruned away {np.sum(mask==False)}/{len(kmers)} kmers for path {i}")
             kmers = raw_kmers[mask.ravel()]
             shape = np.sum(mask, axis=1)
             assert np.sum(shape) == len(kmers), (np.sum(shape), len(kmers), np.sum(is_in), np.sum(is_in == True))
