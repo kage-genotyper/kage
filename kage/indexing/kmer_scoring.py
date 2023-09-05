@@ -19,16 +19,16 @@ class FastApproxCounter:
 
     @classmethod
     def empty(cls, modulo):
-        return cls(np.zeros(modulo, dtype=np.int16), modulo)
+        return cls(np.zeros(modulo, dtype=np.int32), modulo)
 
     def add(self, values):
         value_hashes = values % self._modulo
-        add_counts = np.bincount(value_hashes.astype(int), minlength=self._modulo).astype(np.int16)
+        add_counts = np.bincount(value_hashes.astype(int), minlength=self._modulo).astype(np.int32)
         self._array += add_counts
 
     @classmethod
     def from_keys_and_values(cls, keys, values, modulo):
-        array = np.zeros(modulo, dtype=np.int16)
+        array = np.zeros(modulo, dtype=np.int32)
         array[keys % modulo] = values
         return cls(array, modulo)
 
@@ -66,9 +66,6 @@ def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: Spar
             log_memory_usage_now("Memory after kmers")
             for subkmers in kmers:
                 counter.add(subkmers)
-                # also add reverse complement
-                #subkmers_revcomp = kmer_hashes_to_reverse_complement_hash_chunked(subkmers, k, chunk_size=2000000)
-                #counter.add(subkmers_revcomp)
 
         log_memory_usage_now("After adding haplotype %d" % i)
 

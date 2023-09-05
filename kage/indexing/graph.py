@@ -2,6 +2,7 @@ import logging
 from dataclasses import dataclass
 import bionumpy as bnp
 import numpy as np
+import shared_memory_wrapper.util
 from kage.preprocessing.variants import VariantAlleleSequences, MultiAllelicVariantSequences
 from kage.util import stream_ragged_array
 from ..preprocessing.variants import get_padded_variants_from_vcf, Variants
@@ -135,12 +136,15 @@ class Graph:
         return bnp.EncodedRaggedArray(all_kmers.ravel(), sequence_lengths)
 
     def get_haplotype_kmers(self, haplotype: np.array, k, stream=False, reverse_complement=False) -> np.ndarray:
+        sequence = self.sequence(haplotype, reverse_complement=reverse_complement).ravel()
         if not stream:
-            sequence = self.sequence(haplotype, reverse_complement=reverse_complement).ravel()
             return bnp.get_kmers(sequence, k).ravel().raw().astype(np.uint64)
         else:
-            sequence = self.sequence(haplotype, reverse_complement=reverse_complement, stream=True)
-            return (bnp.get_kmers(subseq.ravel(), k).ravel().raw().astype(np.uint64) for subseq in sequence)
+            n_chunks = 1 + len(sequence) // 10000000
+            intervals = shared_memory_wrapper.util.interval_chunks(0, len(sequence), n_chunks)
+            for start, end in intervals:
+                end = min(len(sequence), end + k - 1)
+                yield bnp.get_kmers(sequence.ravel()[start:end], k).ravel().raw().astype(np.uint64)
 
     @classmethod
     def from_vcf(cls, vcf_file_name, reference_file_name, pad_variants=False):

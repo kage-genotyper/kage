@@ -79,7 +79,7 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers, paths.variant_alleles.matrix)
     logging.info("Finding best signatures for variants")
 
-    scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=4, modulo=modulo)
+    scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=0, modulo=modulo)
     log_memory_usage_now("After scorer")
     signatures = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=scorer, k=k).run()
 

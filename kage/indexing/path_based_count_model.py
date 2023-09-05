@@ -104,7 +104,7 @@ class PathKmers:
         return bnp.EncodedArray(np.concatenate(kmers_found), encoding)
 
 
-    def prune(self, kmer_index):
+    def prune(self, kmer_index, n_threads=1):
         """
         Prunes away kmers that are not in kmer index.
         Prunes inplace.
@@ -112,10 +112,12 @@ class PathKmers:
         logging.info("Pruning")
         new = []
         for i, kmers in tqdm(enumerate(self.kmers), desc="Pruning kmers"):
-            #logging.info("Pruning path %d", i)
+            logging.info("Pruning path %d", i)
+            t0 = time.perf_counter()
             assert np.all(kmers.shape[0] >= 0)
             encoding = kmers.encoding
             raw_kmers = kmers.raw().ravel().astype(np.uint64)
+            #is_in = kmer_index.has_kmers_parallel(raw_kmers, n_threads)
             is_in = kmer_index.has_kmers(raw_kmers)
             assert len(is_in) == len(kmers.ravel()) == len(raw_kmers) == np.sum(kmers.shape[1])
             mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)
@@ -123,12 +125,15 @@ class PathKmers:
             assert len(mask.ravel()) == np.sum(mask.shape[1])
             assert len(mask.ravel()) == len(is_in)
             assert np.sum(mask.ravel()) == np.sum(is_in)
-            #logging.info(f"Pruned away {np.sum(mask==False)}/{len(kmers)} kmers for path {i}")
+            logging.info(f"Pruned away {np.sum(mask==False)}/{len(kmers)} kmers for path {i}")
             kmers = raw_kmers[mask.ravel()]
             shape = np.sum(mask, axis=1)
             assert np.sum(shape) == len(kmers), (np.sum(shape), len(kmers), np.sum(is_in), np.sum(is_in == True))
             new.append(bnp.EncodedRaggedArray(bnp.EncodedArray(kmers, encoding), shape))
             assert np.sum(mask) == len(kmers)
+            logging.info("Pruning took %.5f sec" % (time.perf_counter() - t0))
+            log_memory_usage_now("After pruning")
+
         self.kmers = new
 
 
@@ -150,7 +155,7 @@ class PathBasedMappingModelCreator(MappingModelCreator):
         self._max_count = max_count
         self._path_allele_matrix = paths_allele_matrix
         self._path_kmers = PathKmers.from_graph_and_paths(graph, paths_allele_matrix, k=k)
-        self._path_kmers.prune(kmer_index)
+        self._path_kmers.prune(kmer_index, n_threads=16)
         self._node_map = node_map
         self._window = window
 
