@@ -56,12 +56,17 @@ class SparseHaplotypeMatrix:
         return self.data.toarray()
 
     @classmethod
-    def from_variants_and_haplotypes(cls, variant_ids, haplotype_ids, n_variants, n_haplotypes):
+    def from_variants_and_haplotypes(cls, variant_ids, haplotype_ids, n_variants, n_haplotypes, values=None):
         """
         variant_ids: np.array of variant ids
         haplotype_ids: np.array of haplotype ids (which haplotypes have the variant allele)
+        values: If None, will be filled with ones
         """
-        data = scipy.sparse.csc_matrix((np.ones(len(variant_ids), dtype=np.uint8), (variant_ids, haplotype_ids)),
+        if values is None:
+            values = np.ones(len(variant_ids))
+        else:
+            assert len(values) == len(variant_ids)
+        data = scipy.sparse.csc_matrix((values, (variant_ids, haplotype_ids)),
                                        shape=(n_variants, n_haplotypes))
         return cls(data)
 
@@ -100,7 +105,31 @@ class SparseHaplotypeMatrix:
 
 
     @classmethod
+    def from_vcf2(cls, vcf_file_name) -> 'SparseHaplotypeMatrix':
+        # Uses haplotypeencoding
+        vcf = bnp.open(vcf_file_name, buffer_type=bnp.io.delimited_buffers.PhasedHaplotypeVCFMatrixBuffer)
+        matrix = SparseHaplotypeMatrix.empty()
+
+        for i, chunk in enumerate(vcf.read_chunks(min_chunk_size=500000000)):
+            genotypes = chunk.genotypes.raw()
+            n_haplotypes = genotypes.shape[1]
+            variant_ids, haplotypes = np.where(genotypes > 0)
+            haplotype_values = genotypes[variant_ids, haplotypes].ravel().astype(np.uint8)
+
+            submatrix = cls.from_variants_and_haplotypes(
+                variant_ids,
+                haplotypes,
+                n_variants=len(chunk),
+                n_haplotypes=n_haplotypes,
+                values=haplotype_values)
+            matrix.extend(submatrix)
+
+        return matrix
+
+    @classmethod
     def from_vcf(cls, vcf_file_name) -> 'SparseHaplotypeMatrix':
+        return cls.from_vcf2(vcf_file_name)
+        # this method can be removed
         vcf = bnp.open(vcf_file_name, buffer_type=bnp.io.delimited_buffers.PhasedVCFMatrixBuffer)
         all_variant_ids = NpList(dtype=np.uint32)
         all_haplotype_ids = NpList(dtype=np.uint16)
@@ -116,7 +145,7 @@ class SparseHaplotypeMatrix:
             log_memory_usage_now("Chunk %d" % i)
             genotypes = chunk.genotypes.raw()
             n_haplotypes = genotypes.shape[1] * 2
-            # encoding is 0: "0|0", 1: "0|1", 2: "1|0", 3: "1|1"
+            # encoding in BioNumPy is 0: "0|0", 1: "0|1", 2: "1|0", 3: "1|1"
 
             # 0 | 1 or 1 | 1
             variant_ids, individuals = np.where((genotypes == 1) | (genotypes == 3))

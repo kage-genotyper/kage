@@ -604,7 +604,7 @@ class VariantWindowKmers2:
         flat = ak.flatten(ak.flatten(ak.flatten(self.kmers)))
         scores = scorer.score_kmers(ak.to_numpy(flat))
         # always score 0 as 0, tmp hack
-        scores[flat == 0] = 0
+        #scores[flat == 0] = 0
         a = self.kmers
         scores = ak.unflatten(ak.unflatten(ak.unflatten(scores, ak.num(ak.flatten(ak.flatten(a)))), ak.num(ak.flatten(a))), ak.num(a))
         return scores

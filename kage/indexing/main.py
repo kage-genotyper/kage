@@ -33,7 +33,7 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     variants = get_padded_variants_from_vcf(vcf_file_name, reference_file_name)
     logging.info("N variants: %d" % len(variants))
     #graph = Graph.from_variants_and_reference(reference_sequences, variants)
-    # todo: Make multiallelic graph instead, get node mapping
+
     graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
     #to_file(node_mapping, "tmp_node_mapping")
     #assert False
@@ -51,8 +51,13 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
 
     log_memory_usage_now("After graph")
 
+    scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=0, modulo=modulo)
+    assert np.all(scorer.values >= 0)
+
+    to_file(scorer.copy(), out_base_name + "_scorer")
+    log_memory_usage_now("After scorer")
+
     logging.info("Making paths")
-    # todo: Run with n_alleles_per_variant to get multiallelic paths
     paths = PathCreator(graph,
                         window=variant_window,  # bigger windows to get more paths when multiallelic
                         make_disc_backed=True,
@@ -60,7 +65,6 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     #to_file(paths, "tmp_paths")
     logging.info("Made %d paths to cover variants" % (len(paths.paths)))
 
-    # todo: Get variant_to_nodes from node_mapping instead
     #variant_to_nodes = VariantToNodes(np.arange(graph.n_variants())*2, np.arange(graph.n_variants())*2+1)
     variant_to_nodes = node_mapping.get_variant_to_nodes()
 
@@ -79,8 +83,6 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers, paths.variant_alleles.matrix)
     logging.info("Finding best signatures for variants")
 
-    scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=0, modulo=modulo)
-    log_memory_usage_now("After scorer")
     signatures = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=scorer, k=k).run()
 
     # todo: Send in node_mapping to get kmer_index with correct node ids
@@ -134,6 +136,7 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
         indexes
     )
     index.to_file(out_base_name, compress=False)
+    paths.remove_tmp_files()
 
 
 def make_index_cli(args):

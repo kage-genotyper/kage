@@ -46,7 +46,7 @@ def main():
 
 def get_kmer_counts(kmer_index, k, reads_file_name, n_threads, gpu=False):
     logging.info("Will count kmers.")
-    # temp hack to call kmer_mapper by using the command line interface
+    # call kmer mapper
     return NodeCounts(map_bnp(Namespace(
         kmer_size=k, kmer_index=kmer_index, reads=reads_file_name, n_threads=n_threads, gpu=gpu, debug=False,
         chunk_size=10000000, map_reverse_complements=True if gpu else False, func=None, output_file=None

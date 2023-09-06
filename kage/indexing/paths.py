@@ -1,7 +1,8 @@
 import itertools
 import logging
+import os
 from dataclasses import dataclass
-from typing import List, Literal
+from typing import List, Literal, Union
 import bionumpy as bnp
 import numpy as np
 import tqdm
@@ -11,7 +12,7 @@ import npstructures as nps
 
 @dataclass
 class PathSequences:
-    sequences: List[bnp.EncodedRaggedArray]
+    sequences: List[Union[bnp.EncodedRaggedArray, 'DiscBackedPath']]
 
     def __getitem__(self, item):
         return self.sequences[item]
@@ -72,8 +73,6 @@ class Paths:
     # the allele present at each variant in each path
     variant_alleles: PathCombinationMatrix  # n_paths x n_variants
 
-
-
     def n_variants(self):
         return self.variant_alleles.shape[1]
 
@@ -123,6 +122,11 @@ class Paths:
             DiscBackedPath(to_file(path, f"{file_base_name}_path_{i}")) for i, path in enumerate(self.paths)
         ]
 
+    def remove_tmp_files(self):
+        logging.info("Removing tmp files")
+        for path in self.paths.sequences:
+            if isinstance(path, DiscBackedPath):
+                path.remove_file()
 
 @dataclass
 class DiscBackedPath:
@@ -143,6 +147,11 @@ class DiscBackedPath:
     def from_non_disc_backed(cls, path, file_name):
         return cls(to_file(path, file_name))
 
+    def remove_file(self):
+        if os.path.isfile(self.file + ".npz"):
+            os.remove(self.file + ".npz")
+        else:
+            logging.warning("Did not find file %s" % self.file)
 
 
 class PathCreator:

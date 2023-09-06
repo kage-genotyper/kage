@@ -17,6 +17,9 @@ class FastApproxCounter:
         self._array = array
         self._modulo = modulo
 
+    def copy(self):
+        return FastApproxCounter(self._array.copy(), self._modulo)
+
     @classmethod
     def empty(cls, modulo):
         return cls(np.zeros(modulo, dtype=np.int32), modulo)
@@ -25,6 +28,10 @@ class FastApproxCounter:
         value_hashes = values % self._modulo
         add_counts = np.bincount(value_hashes.astype(int), minlength=self._modulo).astype(np.int32)
         self._array += add_counts
+
+    @property
+    def values(self):
+        return self._array
 
     @classmethod
     def from_keys_and_values(cls, keys, values, modulo):

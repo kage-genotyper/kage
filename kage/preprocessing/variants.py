@@ -365,7 +365,7 @@ def get_padded_variants_from_vcf(vcf_file_name, reference_file_name):
     all_variants = []
 
     for chromosome, chromosome_variants in bnp.groupby(variants, "chromosome"):
-        chromosome_variants = Variants.from_vcf_entry(chromosome_variants)
+        chromosome_variants = Variants.from_multiallelic_vcf_entry(chromosome_variants)
         logging.info("Padding variants on chromosome " + chromosome)
         logging.info("%d variants" % len(chromosome_variants))
         padded_variants = VariantPadder(chromosome_variants, sequences[chromosome]).run()

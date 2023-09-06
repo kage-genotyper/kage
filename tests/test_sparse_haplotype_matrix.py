@@ -56,3 +56,32 @@ def test_convert_to_multiallelic():
     ]
 
     assert np.all(nonsparse.to_matrix() == np.array(correct))
+
+
+def test_sparse_haplotype_matrix_from_multiallelic_vcf():
+    matrix = SparseHaplotypeMatrix.from_vcf("multiallelic.vcf")
+    matrix = matrix.to_matrix()
+
+    correct = np.array([
+        [0, 0, 0, 1, 2, 0, 2, 0],
+        [0, 0, 0, 1, 1, 0, 1, 0],
+        [0, 0, 0, 1, 1, 0, 0, 2]
+    ])
+
+    assert np.all(correct == matrix)
+
+
+def test_sparse_haplotype_matrix_from_biallelic_vcf():
+    matrix = SparseHaplotypeMatrix.from_vcf("biallelic.vcf")
+    matrix = matrix.to_matrix()
+
+    correct = np.array([
+        [0, 0, 0, 1, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 1, 0],
+        [0, 0, 0, 1, 1, 0, 1, 0],
+        [0, 0, 0, 1, 1, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 1]
+    ])
+
+    assert np.all(correct == matrix)
+

@@ -7,7 +7,7 @@ from kage.preprocessing.variants import Variants, SimpleVcfEntry
 
 
 def test_variants_from_multialellic_vcf():
-    vcf = bnp.open("tests/multiallelic.vcf").read()
+    vcf = bnp.open("multiallelic.vcf").read()
     variants = Variants.from_multiallelic_vcf_entry(vcf)
     print(variants)
 
