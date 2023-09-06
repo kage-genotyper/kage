@@ -295,6 +295,6 @@ def test_get_dist_to_ref_mask_new(variants3, ref3):
 
 
 def test_get_padded_variants_from_vcf():
-    variants = get_padded_variants_from_vcf("example_data/few_variants_two_chromosomes.vcf", "example_data/small_reference_two_chromosomes.fa")
+    variants = get_padded_variants_from_vcf("../example_data/few_variants_two_chromosomes.vcf", "../example_data/small_reference_two_chromosomes.fa")
     print(variants)
 

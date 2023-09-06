@@ -159,7 +159,7 @@ def test_mapping_model_creator(graph, haplotype_matrix):
 
 
 def test_graph_from_vcf():
-    graph = Graph.from_vcf("example_data/few_variants_two_chromosomes.vcf", "example_data/small_reference_two_chromosomes.fa")
+    graph = Graph.from_vcf("../example_data/few_variants_two_chromosomes.vcf", "../example_data/small_reference_two_chromosomes.fa")
 
     assert graph.n_variants() == 4
     assert [s for s in graph.genome.sequence.tolist()] == \

@@ -63,8 +63,9 @@ class SparseHaplotypeMatrix:
         values: If None, will be filled with ones
         """
         if values is None:
-            values = np.ones(len(variant_ids))
+            values = np.ones(len(variant_ids), dtype=np.uint8)
         else:
+            values = values.astype(np.uint8)
             assert len(values) == len(variant_ids)
         data = scipy.sparse.csc_matrix((values, (variant_ids, haplotype_ids)),
                                        shape=(n_variants, n_haplotypes))
