@@ -51,7 +51,7 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
 
     log_memory_usage_now("After graph")
 
-    scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=0, modulo=modulo)
+    scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=0, modulo=modulo * 10)
     assert np.all(scorer.values >= 0)
 
     to_file(scorer.copy(), out_base_name + "_scorer")

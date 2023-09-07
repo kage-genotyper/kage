@@ -7,8 +7,6 @@ import tqdm
 from kage.indexing.graph import Graph
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 from kage.util import log_memory_usage_now
-from graph_kmer_index.kmer_hashing import kmer_hashes_to_reverse_complement_hash, \
-    kmer_hashes_to_reverse_complement_hash_chunked
 
 
 class FastApproxCounter:

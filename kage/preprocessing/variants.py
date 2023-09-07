@@ -37,7 +37,8 @@ class Variants:
 
     @classmethod
     def from_multiallelic_vcf_entry(cls, variants: Union[bnp.datatypes.VCFEntry, SimpleVcfEntry]):
-        """ Create a Variants object from a multiallelic vcf entry where no variants are overlapping (variants are padded)"""
+        """ Create a Variants object from a multiallelic vcf entry where no variants
+        are overlapping (variants are padded)"""
 
         if isinstance(variants, bnp.datatypes.VCFEntry):
             variants = SimpleVcfEntry(variants.chromosome, variants.position, variants.ref_seq, variants.alt_seq)

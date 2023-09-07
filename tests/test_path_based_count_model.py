@@ -102,6 +102,10 @@ class DummyKmerIndex():
         ])
         return out
 
+    def get_kmers(self):
+        return np.array([i for i in range(100) if i not in [0, 10]])
+
+
 def test_prune_path_kmers(graph, paths):
     path_kmers = PathKmers.from_graph_and_paths(graph, paths, k=2)
     print(path_kmers)

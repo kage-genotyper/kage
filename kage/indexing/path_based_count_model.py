@@ -104,11 +104,20 @@ class PathKmers:
         return bnp.EncodedArray(np.concatenate(kmers_found), encoding)
 
 
-    def prune(self, kmer_index, n_threads=1):
+    def prune(self, kmer_index, n_threads=1, modulo=400000033):
         """
         Prunes away kmers that are not in kmer index.
         Prunes inplace.
+        Modulo used when creating approx lookup
         """
+        # first creates an approx lookup of which kmers are in kmer_index
+        # then prunes away kmers that are not in kmer_index
+        logging.info("Making kmer lookup")
+        index_kmers = kmer_index.get_kmers()
+        lookup = np.zeros(modulo, dtype=np.bool)
+        lookup[index_kmers % modulo] = True
+        logging.info("Made kmer lookup")
+
         logging.info("Pruning")
         new = []
         for i, kmers in tqdm(enumerate(self.kmers), desc="Pruning kmers"):
@@ -118,7 +127,9 @@ class PathKmers:
             encoding = kmers.encoding
             raw_kmers = kmers.raw().ravel().astype(np.uint64)
             #is_in = kmer_index.has_kmers_parallel(raw_kmers, n_threads)
-            is_in = kmer_index.has_kmers(raw_kmers)
+            logging.info("Got raw kmers")
+            #is_in = kmer_index.has_kmers(raw_kmers)
+            is_in = lookup[raw_kmers % modulo]
             assert len(is_in) == len(kmers.ravel()) == len(raw_kmers) == np.sum(kmers.shape[1])
             mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)
 

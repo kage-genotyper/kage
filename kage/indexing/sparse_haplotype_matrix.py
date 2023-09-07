@@ -33,6 +33,20 @@ class SparseHaplotypeMatrix:
     def empty(cls):
         return cls(None)
 
+    def to_biallelic(self, n_alleles_per_variant) -> 'SparseHaplotypeMatrix':
+        """
+        Converts a multiallelic haplotype matrix to biallelic.
+        """
+        if np.all(n_alleles_per_variant) == 2:
+            # already biallelic
+            return self
+
+        # algorithm idea:
+        # create a matrix where rows with more than 2 alleles are duplicated
+        # each such row should have allele with modulo of rank where rank is 1, 2, 3 ... for the rows
+        # first make matrix with duplicate rows, then do modulo
+
+
     def to_multiallelic(self, n_alleles_per_variant) -> 'SparseHaplotypeMatrix':
         """
         Converts a biallelic haplotype matrix to multialellic. Assumes current matrix has two alleles,
@@ -106,10 +120,12 @@ class SparseHaplotypeMatrix:
 
 
     @classmethod
-    def from_vcf2(cls, vcf_file_name) -> 'SparseHaplotypeMatrix':
+    def from_vcf2(cls, vcf_file_name, convert_multiallelic_to_biallelic=False) -> 'SparseHaplotypeMatrix':
         # Uses haplotypeencoding
         vcf = bnp.open(vcf_file_name, buffer_type=bnp.io.delimited_buffers.PhasedHaplotypeVCFMatrixBuffer)
         matrix = SparseHaplotypeMatrix.empty()
+
+        n_alleles_per_variant = []
 
         for i, chunk in enumerate(vcf.read_chunks(min_chunk_size=500000000)):
             genotypes = chunk.genotypes.raw()
@@ -124,6 +140,11 @@ class SparseHaplotypeMatrix:
                 n_haplotypes=n_haplotypes,
                 values=haplotype_values)
             matrix.extend(submatrix)
+
+            if convert_multiallelic_to_biallelic:
+                n_alleles_per_variant = np.sum(chunk.alt_seq == ",", axis=1) + 1
+                matrix.to_biallelic(n_alleles_per_variant)
+
 
         return matrix
 
