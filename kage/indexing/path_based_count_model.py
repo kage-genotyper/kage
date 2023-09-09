@@ -114,7 +114,7 @@ class PathKmers:
         # then prunes away kmers that are not in kmer_index
         logging.info("Making kmer lookup")
         index_kmers = kmer_index.get_kmers()
-        lookup = np.zeros(modulo, dtype=np.bool)
+        lookup = np.zeros(modulo, dtype=bool)
         lookup[index_kmers % modulo] = True
         logging.info("Made kmer lookup")
 

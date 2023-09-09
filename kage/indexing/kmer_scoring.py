@@ -1,8 +1,13 @@
 import itertools
 import logging
+import time
+from typing import List
 
 import npstructures as nps
 import numpy as np
+import shared_memory_wrapper.util
+from shared_memory_wrapper.util import interval_chunks
+from shared_memory_wrapper.shared_array_map_reduce import additative_shared_array_map_reduce
 import tqdm
 from kage.indexing.graph import Graph
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
@@ -23,9 +28,28 @@ class FastApproxCounter:
         return cls(np.zeros(modulo, dtype=np.int32), modulo)
 
     def add(self, values):
-        value_hashes = values % self._modulo
-        add_counts = np.bincount(value_hashes.astype(int), minlength=self._modulo).astype(np.int32)
+        value_hashes = (values % self._modulo).astype(int)
+        t0 = time.perf_counter()
+        add_counts = np.bincount(value_hashes, minlength=self._modulo)
+        print("Addding %d kmers with modulo %d took %.5f sec" % (len(values), self._modulo, time.perf_counter() - t0))
         self._array += add_counts
+
+    def add_parallel(self, values, n_threads=16):
+        chunks = interval_chunks(0, len(values), n_threads*10)
+        result_array = np.zeros(self._modulo, dtype=np.int32)
+        data = (values, self._modulo)
+
+        def func(values, modulo, chunk):
+            # will process a chunk of the values
+            t0 = time.perf_counter()
+            values = values[chunk[0]:chunk[1]]
+            value_hashes = (values % modulo).astype(int)
+            add_counts = np.bincount(value_hashes, minlength=modulo)
+            print("  Counting %d values for chunk %d-%d, took %.5f sec" % (len(values), chunk[0], chunk[1], time.perf_counter()-t0))
+            return add_counts
+
+        counts = additative_shared_array_map_reduce(func, chunks, result_array, data, n_threads=n_threads, queue_size_factor=0.5)
+        self._array += counts
 
     @property
     def values(self):
@@ -67,10 +91,20 @@ def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: Spar
 
         for reverse_complement in [False, True]:
             logging.info("Reverse complement %s" % reverse_complement)
+            t0 = time.perf_counter()
             kmers = graph.get_haplotype_kmers(nodes, k=k, stream=True, reverse_complement=reverse_complement)
+            logging.info("Getting kmers took %.5f sec" % (time.perf_counter() - t0))
             log_memory_usage_now("Memory after kmers")
+            t0 = time.perf_counter()
+            t_add = 0
+            n_kmers = 0
             for subkmers in kmers:
+                t_add_start = time.perf_counter()
                 counter.add(subkmers)
+                t_add += time.perf_counter() - t_add_start
+                n_kmers += len(subkmers)
+            logging.info("Adding %d kmers to counter took %.5f sec" % (n_kmers, t_add))
+            logging.info("Tot time: %.5f" % (time.perf_counter() - t0))
 
         log_memory_usage_now("After adding haplotype %d" % i)
 
@@ -91,3 +125,33 @@ class KmerFrequencyScorer(Scorer):
 
     def score_kmers(self, kmers):
         return np.max(self._frequency_lookup[kmers])
+
+
+class MinCountBloomFilter:
+    def __init__(self, data: np.ndarray, modulos: List[int]):
+        # data is a RaggedArray where each row corresponds to a modulo
+        self._flat_data = data
+        self._modulos = np.array([[m] for m in modulos], dtype=np.uint32)
+        self._starts = np.array([[v] for v in np.cumsum([0] + modulos)[:-1]], dtype=np.uint32)
+
+    def hashes(self, keys):
+        # modulo with colum creates matrix, add cumsum of modulos to get index in flat RaggedArray
+        hashes = ((keys % self._modulos) + self._starts).ravel()
+        return hashes
+
+    def __getitem__(self, keys: np.ndarray) -> np.ndarray:
+        hashes = self.hashes(keys)
+        values = self._flat_data[hashes].reshape(-1, len(keys))
+        return np.min(values, axis=0)
+
+    def count(self, keys):
+        hashes = self.hashes(keys).astype(np.int64)
+        to_add = np.bincount(hashes, minlength=len(self._flat_data)).astype(np.uint32)
+        self._flat_data += to_add
+
+    @classmethod
+    def empty(cls, modulos):
+        size = sum(modulos)
+        print("Total size: %d" % size)
+        return cls(np.zeros(size, dtype=np.uint32), modulos)
+

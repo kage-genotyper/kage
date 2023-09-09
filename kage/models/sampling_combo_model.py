@@ -342,12 +342,21 @@ class SparseLimitedFrequencySamplingComboModel(Model):
 
     def describe_node(self, variant_id):
         description = ""
-        return description
+        #return description
         for count in range(3):
             description += "Having %d copies: " % count
-            description += ', '.join("%d: %.3f" % (i, self._counts[count].frequencies[variant_id, i]) for i in np.nonzero(self._counts[count].frequencies[variant_id])[0])
-            description += "\n"
+            variant_indexes = np.where(self._counts[count].indexes[0] == variant_id)[0]
+            counts = self._counts[count].indexes[1][variant_indexes]
+            if len(variant_indexes) == 0:
+                description += "No individuals"
+            else:
+                description += " ".join(
+                    "%d: %.3f" % (c, np.exp(self._counts[count].frequencies[i])) for i, c in zip(variant_indexes, counts)
+                )
 
+            #description += ', '.join("%d: %.3f" % (i, self._counts[count].frequencies[variant_id, i]) for i in np.nonzero(self._counts[count].frequencies[variant_id])[0])
+            description += "\n"
+        return description
 
 @dataclass
 class RaggedFrequencySamplingComboModel:

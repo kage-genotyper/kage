@@ -314,23 +314,11 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         signatures.filter_nonunique_on_alleles(also_remove=self._replace_nonunique_with)
         logging.info("Removing nonunique took %.4f sec" % (time.perf_counter() - t0))
 
+        # TODO:
+        # go through SVs manually, find better kmers if possible
+
         return signatures
 
-
-        """
-        # old non-vectorized
-        signatures = []
-        kmers = self._kmers.kmers
-        n_variants = len(kmers)
-        for variant in range(n_variants):
-            variant_kmers = []
-            for allele in range(len(kmers[variant])):
-                variant_kmers.append(np.unique(kmers[variant, allele, :, best_windows[variant, allele]]))
-            signatures.append(variant_kmers)
-
-        
-        return MultiAllelicSignatures.from_list(signatures)
-        """
 
 
 class SignatureFinder2(SignatureFinder):

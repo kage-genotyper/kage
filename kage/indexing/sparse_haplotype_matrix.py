@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass
 import bionumpy as bnp
+import numba
 import numpy as np
 import scipy
 import tqdm
@@ -41,10 +42,33 @@ class SparseHaplotypeMatrix:
             # already biallelic
             return self
 
+        n_alt_alleles_per_variant = n_alleles_per_variant - 1
+        assert len(n_alt_alleles_per_variant) == self.n_variants
+
         # algorithm idea:
         # create a matrix where rows with more than 2 alleles are duplicated
-        # each such row should have allele with modulo of rank where rank is 1, 2, 3 ... for the rows
+        # each such row should have 1 allele if it's allele matches the row rank,
+        # where rank is 1, 2, 3 ... for the rows
         # first make matrix with duplicate rows, then do modulo
+        matrix = self.to_matrix()
+
+        @numba.jit(nopython=True)
+        def make_row_indexes(n_alt_alleles_per_variant):
+            row_indexes = np.zeros(np.sum(n_alt_alleles_per_variant), dtype=np.int64)
+            allele_indexes = np.zeros_like(row_indexes)
+            i = 0
+            for variant in range(len(n_alt_alleles_per_variant)):
+                for alt_allele in range(n_alt_alleles_per_variant[variant]):
+                    row_indexes[i] = variant
+                    allele_indexes[i] = alt_allele+1
+                    i += 1
+            return row_indexes, allele_indexes
+
+        row_indexes, allele_indexes = make_row_indexes(n_alt_alleles_per_variant)
+        allele_indexes_matrix = np.tile(allele_indexes, (self.n_haplotypes, 1)).T
+        new_matrix = matrix[row_indexes, :]
+        new_matrix = (new_matrix == allele_indexes_matrix).astype(np.uint8)
+        return SparseHaplotypeMatrix.from_nonsparse_matrix(new_matrix)
 
 
     def to_multiallelic(self, n_alleles_per_variant) -> 'SparseHaplotypeMatrix':

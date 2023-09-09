@@ -85,3 +85,33 @@ def test_sparse_haplotype_matrix_from_biallelic_vcf():
 
     assert np.all(correct == matrix)
 
+
+def test_to_biallelic():
+    matrix = SparseHaplotypeMatrix.from_nonsparse_matrix(
+        [
+            [0, 1, 2, 1, 0],
+            [0, 3, 0, 0, 0],
+            [1, 0, 0, 0, 1],
+            [1, 0, 1, 0, 1]
+        ]
+    )
+
+    n_alleles_per_variant = np.array([3, 4, 2, 3])
+    biallelic = matrix.to_biallelic(n_alleles_per_variant)
+
+    correct = np.array([
+        [0, 1, 0, 1, 0],
+        [0, 0, 1, 0, 0],
+
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 0],
+
+        [1, 0, 0, 0, 1],
+
+        [1, 0, 1, 0, 1],
+        [0, 0, 0, 0, 0]
+    ])
+
+    assert np.all(biallelic.to_matrix() == correct)
+
