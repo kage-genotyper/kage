@@ -269,11 +269,9 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         # first replace nonuniqe kmers with something
         self._replace_nonunique_with = -1
         #self._kmers.replace_nonunique_kmers(self._replace_nonunique_with)
+        self._signatures_found = None
 
-    def run(self, add_dummy_count_to_index=-1) -> MultiAllelicSignatures:
-        # idea is to first find the score for each window position at each allele at each variant
-        # as the worst window score
-        # Then, best window can be found using argmax over these scores
+    def _score_signatures(self, add_dummy_count_to_index=-1):
         scores = self._kmers.score_kmers(self._scorer)
         window_scores = np.sum(scores, axis=2)  # or np.min?
         # add 1 in score to the last window, so that is preferred on a tie. Convert to RaggedArray to be able to add
@@ -282,10 +280,17 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         window_scores_tmp = nps.RaggedArray(ak.to_numpy(ak.flatten(ak.flatten(window_scores))).astype(float),
                                             ak.to_numpy(ak.num(ak.flatten(window_scores))))
         window_scores_tmp[:, add_dummy_count_to_index] += 0.1
-        window_scores = ak.unflatten(ak.unflatten(window_scores_tmp.ravel(), ak.num(ak.flatten(window_scores))),
+        self._window_scores = ak.unflatten(ak.unflatten(window_scores_tmp.ravel(), ak.num(ak.flatten(window_scores))),
                                      ak.num(window_scores))
 
-        best_windows = np.argmax(window_scores, axis=-1)
+    def run(self, add_dummy_count_to_index=-1) -> MultiAllelicSignatures:
+        # idea is to first find the score for each window position at each allele at each variant
+        # as the worst window score
+        # Then, best window can be found using argmax over these scores
+        self._score_signatures(add_dummy_count_to_index=add_dummy_count_to_index)
+
+
+        best_windows = np.argmax(self._window_scores, axis=-1)
         # create a best windows array with same length as number of paths on all alleles
         kmers = self._kmers.kmers
         # number of paths per allele
@@ -316,8 +321,18 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
 
         # TODO:
         # go through SVs manually, find better kmers if possible
+        self._signatures_found = signatures
+        self._manually_process_svs()
 
-        return signatures
+        return self._signatures_found
+
+    def _manually_process_svs(self):
+        kmers = self._kmers
+        signatures = self._signatures_found
+        scores = self._window_scores
+        is_sv = self._kmers.get_mask_of_svs()
+        logging.info("There are %d SVs" % np.sum(is_sv))
+
 
 
 
@@ -536,6 +551,10 @@ class VariantWindowKmers2:
     entries per allele to represent the possibilities
     """
     kmers: ak.Array  # n_variants x n_alleles x n_paths_on_allele x n_windows
+
+    def get_mask_of_svs(self, sv_min_window_size=40):
+        # svs are variants where any allele has a path with many windows
+        return ak.to_numpy(np.any(np.any(ak.num(self.kmers, axis=3) > sv_min_window_size, axis=-1), axis=-1))
 
 
     def __eq__(self, other):
