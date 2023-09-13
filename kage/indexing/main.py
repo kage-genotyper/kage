@@ -1,16 +1,12 @@
 import logging
-from obgraph.variant_to_nodes import VariantToNodes
 from obgraph.numpy_variants import NumpyVariants
 import numpy as np
 from kage.indexing.index_bundle import IndexBundle
-from kage.indexing.path_variant_indexing import find_tricky_variants_from_signatures, \
-    find_tricky_variants_from_signatures2, find_tricky_variants_with_count_model, \
-    MappingModelCreator, find_tricky_variants_from_multiallelic_signatures, \
+from kage.indexing.path_variant_indexing import find_tricky_variants_from_multiallelic_signatures, \
     find_tricky_ref_and_var_alleles_from_count_model
 from kage.indexing.kmer_scoring import make_kmer_scorer_from_random_haplotypes
-from kage.indexing.signatures import SignatureFinder3, MultiAllelicSignatureFinder, MultiAllelicSignatureFinderV2, \
-    MatrixVariantWindowKmers, VariantWindowKmers2
-from kage.indexing.graph import Graph, make_multiallelic_graph
+from kage.indexing.signatures import get_signatures
+from kage.indexing.graph import make_multiallelic_graph
 from shared_memory_wrapper import to_file
 
 from .paths import PathCreator
@@ -76,16 +72,7 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
 
     # New: Using FinderV2 which is faster
     #logging.info("Finding kmers around variants")
-    log_memory_usage_now("Before MatrixVariantWindowKmers")
-    variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
-    log_memory_usage_now("After MatrixVariantWindowKmers")
-    logging.info("Converting variant window kmers to new data structure")
-    log_memory_usage_now("Before variant window kmers2")
-    variant_window_kmers2 = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers, paths.variant_alleles.matrix)
-    log_memory_usage_now("After variant window kmers2")
-    logging.info("Finding best signatures for variants")
-
-    signatures = MultiAllelicSignatureFinderV2(variant_window_kmers2, scorer=scorer, k=k).run()
+    signatures = get_signatures(k, paths, scorer)
 
     # todo: Send in node_mapping to get kmer_index with correct node ids
     kmer_index = signatures.get_as_kmer_index(node_mapping=node_mapping, modulo=modulo, k=k)

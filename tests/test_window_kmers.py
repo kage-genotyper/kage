@@ -1,6 +1,6 @@
 import awkward as ak
 import numpy as np
-from kage.indexing.paths import PathSequences, DiscBackedPath
+from kage.indexing.paths import PathSequences, DiscBackedPathSequence
 from kage.indexing.signatures import MatrixVariantWindowKmers, VariantWindowKmers2
 import bionumpy as bnp
 
@@ -77,7 +77,7 @@ def test_benchmark_variant_window_kmers():
     sequences = []
     for i in range(n_paths):
         path_sequence = bnp.as_encoded_array(part * n_variants + ["ACGT" * 10], bnp.DNAEncoding)
-        sequence = DiscBackedPath.from_non_disc_backed(path_sequence, f"tmp_path_{i}")
+        sequence = DiscBackedPathSequence.from_non_disc_backed(path_sequence, f"tmp_path_{i}")
         sequences.append(sequence)
     print("Memory start", get_memory_usage())
 

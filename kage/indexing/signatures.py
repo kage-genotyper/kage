@@ -15,7 +15,7 @@ import awkward as ak
 from graph_kmer_index import FlatKmers
 import numba
 
-from ..util import get_memory_usage
+from ..util import get_memory_usage, log_memory_usage_now
 
 
 @dataclass
@@ -386,6 +386,7 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
                 logging.info("Changed kmers to %s" % str(new_variant_kmers))
                 logging.info("DTYPE of new kmers: %s" % to_add.type)
 
+        logging.info("Concatenating signatures")
         to_concatenate = []
         prev_id = 0
         for sv_id, sig in changed.items():
@@ -852,3 +853,18 @@ class MatrixVariantWindowKmers:
 
 def awkward_unravel_like(flat_array, like_array):
     """ Utility function for unraveling a flattened ak.Array """
+
+
+def get_signatures(k: int, paths: Paths, scorer):
+    """Wrapper function that finds multiallelic signatures from paths"""
+    log_memory_usage_now("Before MatrixVariantWindowKmers")
+    variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
+    log_memory_usage_now("After MatrixVariantWindowKmers")
+    logging.info("Converting variant window kmers to new data structure")
+    log_memory_usage_now("Before variant window kmers2")
+    variant_window_kmers2 = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers,
+                                                                                 paths.variant_alleles.matrix)
+    log_memory_usage_now("After variant window kmers2")
+    logging.info("Finding best signatures for variants")
+    signatures = MultiAllelicSignatureFinderV2(variant_window_kmers2, scorer=scorer, k=k).run()
+    return signatures

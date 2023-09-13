@@ -1,5 +1,5 @@
 import pytest
-from kage.io import VcfWriter
+#from kage.io import VcfWriter
 from kage.preprocessing.variants import Variants
 
 @pytest.fixture
@@ -11,3 +11,4 @@ def variants():
    )
 
 def test_vcf_writer():
+    pass

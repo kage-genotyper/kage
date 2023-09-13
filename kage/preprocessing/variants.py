@@ -47,17 +47,12 @@ class Variants:
         padded_sequence = reference_genome.get_interval_sequences(indel_padding_intervals).raw()
 
         new_ref = np.concatenate([padded_sequence, self.ref_seq.raw()], axis=1)
-        print(new_ref.ravel())
         new_ref = bnp.EncodedRaggedArray(bnp.EncodedArray(new_ref.ravel(), self.ref_seq.encoding), new_ref.shape)
 
         new_alt = np.concatenate([padded_sequence, self.alt_seq.raw()], axis=1)
         new_alt = bnp.EncodedRaggedArray(bnp.EncodedArray(new_alt.ravel(), self.alt_seq.encoding), new_alt.shape)
 
-        # indel position should be at the padded base
-        new_position = self.position.copy()
-        new_position[is_indel] -= 1
-
-        return SimpleVcfEntry(self.chromosome, new_position, new_ref, new_alt)
+        return SimpleVcfEntry(self.chromosome, self.position-pad_size, new_ref, new_alt)
 
     @classmethod
     def from_multiallelic_vcf_entry(cls, variants: Union[bnp.datatypes.VCFEntry, SimpleVcfEntry]):

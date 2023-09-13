@@ -12,7 +12,13 @@ import npstructures as nps
 
 @dataclass
 class PathSequences:
-    sequences: List[Union[bnp.EncodedRaggedArray, 'DiscBackedPath']]
+    sequences: List[Union['PathSequence', 'DiscBackedPathSequence']]
+
+    def __post_init__(self):
+        if isinstance(self.sequences[0], bnp.EncodedRaggedArray):
+            print("Converting")
+            # Wrap each encoded ragged array in PathSequence
+            self.sequences = [PathSequence(s) for s in self.sequences]
 
     def __getitem__(self, item):
         return self.sequences[item]
@@ -30,9 +36,28 @@ class PathSequences:
     def from_list(cls, sequences):
         return cls([bnp.as_encoded_array(s) for s in sequences])
 
+    def subset_on_variants(self, from_variant, to_variant, padding=0):
+        """
+        Subsets sequences on variants by including sequence before the first variant and after the last (noninclusive)
+        If padding > 0, will ensure that sequence before first and after last variant is at least padding long
+        """
+        if isinstance(self.sequences[0], DiscBackedPathSequence):
+            # load each and write to discbacked again
+            return PathSequences([
+                DiscBackedPathSequence.from_non_disc_backed(
+                    s.load().subset_on_variants(from_variant, to_variant, padding),
+                    f"{s.file}-{from_variant}-{to_variant}")
+                for s in self.sequences
+            ])
+        else:
+            return PathSequences(
+                [s.subset_on_variants(from_variant, to_variant, padding) for s in self.sequences]
+            )
+            #return PathSequences([s.sub[from_variant*2:to_variant*2+1] for s in self.iter_path_sequences()])
+
     def get_path_sequence(self, path_index):
         path_sequence = self.sequences[path_index]
-        if isinstance(path_sequence, DiscBackedPath):
+        if isinstance(path_sequence, DiscBackedPathSequence):
             return path_sequence.load()
         else:
             return path_sequence
@@ -40,6 +65,11 @@ class PathSequences:
     def iter_path_sequences(self):
         for i in range(len(self.sequences)):
             yield self.get_path_sequence(i)
+
+    def to_disc_backed(self, file_base_name):
+        return PathSequences([
+            DiscBackedPathSequence.from_non_disc_backed(path, f"{file_base_name}_path_{i}") for i, path in enumerate(self.sequences)
+        ])
 
 
 @dataclass
@@ -66,6 +96,7 @@ class PathCombinationMatrix:
     def __len__(self):
         return len(self.matrix)
 
+
 @dataclass
 class Paths:
     # the sequence for each path, as a ragged array (nodes)
@@ -75,6 +106,10 @@ class Paths:
 
     def n_variants(self):
         return self.variant_alleles.shape[1]
+
+    def subset_on_variants(self, from_id, to_id, padding):
+        return Paths(self.paths.subset_on_variants(from_id, to_id, padding),
+                     self.variant_alleles[:, from_id:to_id])
 
     def paths_for_allele_at_variant(self, allele, variant):
         relevant_paths = np.where(self.variant_alleles[:, variant] == allele)[0]
@@ -118,18 +153,64 @@ class Paths:
         return out
 
     def to_disc_backend(self, file_base_name):
-        self.paths = [
-            DiscBackedPath(to_file(path, f"{file_base_name}_path_{i}")) for i, path in enumerate(self.paths)
-        ]
+        self.paths = self.paths.to_disc_backed(file_base_name)
 
     def remove_tmp_files(self):
         logging.info("Removing tmp files")
         for path in self.paths.sequences:
-            if isinstance(path, DiscBackedPath):
+            if isinstance(path, DiscBackedPathSequence):
                 path.remove_file()
 
+
 @dataclass
-class DiscBackedPath:
+class PathSequence:
+    """Represents a single path sequence over variants. Basically a wrapper around an EncodedRaggedArray.
+    First and last element are always ref sequence before and after last variant.
+    Every other element is a variant/ref sequence.
+    """
+    sequence: bnp.EncodedRaggedArray
+
+    def __getitem__(self, item):
+        return self.sequence[item]
+
+    @property
+    def _shape(self):
+        return self.sequence._shape
+
+    def ravel(self):
+        return self.sequence.ravel()
+
+    @property
+    def shape(self):
+        return self.sequence.shape
+
+    @property
+    def size(self):
+        return self.sequence.size
+
+    def subset_on_variants(self, from_variant, to_variant, min_padding=0):
+        """Subsets on variant and ensures min padding before and after"""
+        variant_start_index = 2*from_variant + 1
+        variant_end_index = 2*to_variant
+        subset = self.sequence[variant_start_index:variant_end_index]
+
+        # Pad with sequence before first
+        flat_sequence = self.sequence.ravel()
+        start = self.sequence._shape.starts[variant_start_index]
+        padding_before = flat_sequence[max(0, start - min_padding):start]
+        padding_before = bnp.EncodedRaggedArray(padding_before, [len(padding_before)])
+
+        # padding after
+        end = self.sequence._shape.starts[variant_end_index]
+        padding_after = flat_sequence[end:min(end + min_padding, len(flat_sequence))]
+        padding_after = bnp.EncodedRaggedArray(padding_after, [len(padding_after)])
+
+        return PathSequence(np.concatenate([padding_before, subset, padding_after]))
+
+
+
+@dataclass
+class DiscBackedPathSequence:
     """
     Can be used as the paths property in Paths, stores sequences on disk and only allows iterating over them.
     """
@@ -185,7 +266,7 @@ class PathCreator:
             # make a new EncodedRaggedArray where every other row is ref/variant
             path = self._graph.sequence(alleles)
             if self._make_disc_backed:
-                path = DiscBackedPath.from_non_disc_backed(path, f"{self._disc_backed_file_base_name}_path_{i}")
+                path = DiscBackedPathSequence.from_non_disc_backed(path, f"{self._disc_backed_file_base_name}_path_{i}")
             paths.append(path)
 
         return Paths(PathSequences(paths), combinations)

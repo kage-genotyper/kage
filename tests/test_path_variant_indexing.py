@@ -301,7 +301,8 @@ def test_disc_backed_path(graph):
     creator = PathCreator(graph)
     paths = creator.run()
     paths.to_disc_backend("test_paths")
-    print(paths.paths[0][0:1])
+    print(paths.paths[0][0:2])
+
 
 
 class DummyScorer2:
