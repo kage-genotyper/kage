@@ -85,7 +85,8 @@ class MultiAllelicSignatures:
 
     @classmethod
     def from_list(cls, l) -> 'MultiAllelicSignatures':
-       return cls(ak.Array(l))
+        a = ak.Array(l)
+        return cls(a)
 
     def filter_nonunique_on_alleles(self, also_remove=-1):
         # keeps only unique kmers per allele
@@ -258,7 +259,7 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
     """
     New version that uses VariantWindowKmers2 to get vectorized scoring
     """
-    def __init__(self, variant_window_kmers: 'VariantWindowKmers2', scorer: Scorer, k=3):
+    def __init__(self, variant_window_kmers: 'VariantWindowKmers2', scorer: Scorer, k=3, sv_min_size=40):
         self._scorer = scorer
         self._k = k
         self._chosen_kmers = []  # n_variants x n_alleles x kmers at allele
@@ -270,6 +271,7 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         self._replace_nonunique_with = -1
         #self._kmers.replace_nonunique_kmers(self._replace_nonunique_with)
         self._signatures_found = None
+        self._sv_min_size = sv_min_size
 
     def _score_signatures(self, add_dummy_count_to_index=-1):
         scores = self._kmers.score_kmers(self._scorer)
@@ -288,8 +290,6 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         # as the worst window score
         # Then, best window can be found using argmax over these scores
         self._score_signatures(add_dummy_count_to_index=add_dummy_count_to_index)
-
-
         best_windows = np.argmax(self._window_scores, axis=-1)
         # create a best windows array with same length as number of paths on all alleles
         kmers = self._kmers.kmers
@@ -327,12 +327,73 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         return self._signatures_found
 
     def _manually_process_svs(self):
-        kmers = self._kmers
-        signatures = self._signatures_found
+        kmers = self._kmers.kmers
+        signatures = self._signatures_found.signatures
         scores = self._window_scores
-        is_sv = self._kmers.get_mask_of_svs()
+        is_sv = self._kmers.get_mask_of_svs(self._sv_min_size)
         logging.info("There are %d SVs" % np.sum(is_sv))
 
+        # make new MultiAllelicSignatures for single variants thare are to be changed
+        # concatenate results (since ak array is immutable)
+        changed = {}  # variant_id -> MultiAllelicSignatures
+        for sv_id in np.where(is_sv)[0]:
+            # check if sv has nonunique kmers
+            all_kmers = ak.to_numpy(ak.ravel(signatures[sv_id, :, :]))
+            if len(np.unique(all_kmers)) != len(all_kmers):
+                logging.info("SV %d has nonunique kmers: %s" % (sv_id, str(all_kmers)))
+
+                # for each allele, find the kmer with best score that is not
+                # in any other allele
+                n_alleles = len(signatures[sv_id])
+                new_variant_kmers = []
+                for allele in range(n_alleles):
+                    all_kmers_for_other_alleles = np.concatenate([ak.to_numpy(ak.ravel(kmers[sv_id, other_allele, :, :]))
+                                                                  for other_allele in range(n_alleles)
+                                                                  if other_allele != allele])
+                    allele_kmers = kmers[sv_id, allele]  # x n_paths x n_windows
+                    n_windows = len(allele_kmers[0])  # same windows on all paths
+                    best_window = 0
+                    best_score = -10000000000
+                    all_scores = []
+                    positions_with_nonunique = []
+                    for window in range(n_windows):
+                        window_kmers = ak.to_numpy(kmers[sv_id, allele, :, window])
+                        score = scores[sv_id, allele, window]
+                        all_scores.append(score)
+                        if set(window_kmers).intersection(all_kmers_for_other_alleles):
+                            positions_with_nonunique.append(window)
+                            continue
+                        if score > best_score:
+                            best_window = window
+                            best_score = score
+
+                    logging.info("Picked window %d with score %d, all scores: %s. Positions with nonunique kmers: %s" % (best_window, best_score, str(all_scores), positions_with_nonunique))
+                    chosen = np.unique(ak.to_numpy(kmers[sv_id, allele, :, best_window]))
+                    assert chosen.dtype == np.uint64
+                    new_variant_kmers.append(chosen)
+
+                # hacky way to build ak array to keep dtype
+                # awkard array changes dtype when making from list
+                flat = np.concatenate(new_variant_kmers)
+                shape = [len(n) for n in new_variant_kmers]
+                #print("FLAT", flat, shape)
+                to_add = ak.unflatten(ak.unflatten(flat, shape), [n_alleles])
+                #print(to_add)
+                #print("to add dtype", to_add.type)
+                changed[sv_id] = MultiAllelicSignatures(to_add)
+                logging.info("Changed kmers to %s" % str(new_variant_kmers))
+                logging.info("DTYPE of new kmers: %s" % to_add.type)
+
+        to_concatenate = []
+        prev_id = 0
+        for sv_id, sig in changed.items():
+            to_concatenate.append(signatures[prev_id:sv_id])
+            to_concatenate.append(sig.signatures)
+            prev_id = sv_id + 1
+        to_concatenate.append(signatures[prev_id:])
+        new = np.concatenate(to_concatenate)
+        assert len(new) == len(signatures)
+        self._signatures_found = MultiAllelicSignatures(new)
 
 
 
@@ -552,7 +613,7 @@ class VariantWindowKmers2:
     """
     kmers: ak.Array  # n_variants x n_alleles x n_paths_on_allele x n_windows
 
-    def get_mask_of_svs(self, sv_min_window_size=40):
+    def get_mask_of_svs(self, sv_min_window_size=10):
         # svs are variants where any allele has a path with many windows
         return ak.to_numpy(np.any(np.any(ak.num(self.kmers, axis=3) > sv_min_window_size, axis=-1), axis=-1))
 

@@ -207,7 +207,11 @@ def find_tricky_variants_from_multiallelic_signatures(signatures: MultiAllelicSi
         ref_kmers = multiallelic_variant[0]
         for allele in range(1, len(multiallelic_variant)):
             alt_kmers = multiallelic_variant[allele]
-            assert len(np.unique(alt_kmers)) == len(alt_kmers), "All kmers should be unique"
+
+            if len(np.unique(alt_kmers)) != len(alt_kmers):
+                logging.error("Variant id: %d" % variant_id)
+                logging.error(alt_kmers)
+                raise Exception("All kmers should be unique")
 
             if len(ref_kmers) == 0 or len(alt_kmers) == 0:
                 tricky[variant_id] = True

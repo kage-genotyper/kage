@@ -621,3 +621,67 @@ def test_window_kmers_from_paths_with_flexible_window_size_many_variants():
     for kmer in kmers.kmers[:, 0, 0]:
         assert kmer == path_sequences[0][0:31]
 
+
+
+
+
+@pytest.fixture
+def paths_with_sv():
+    sv_sequence = "C" * 10 + "G" + "C" * 10
+    return Paths(
+        PathSequences.from_list([
+            ["ATATATAT", sv_sequence, "GGGGG", "TT", "C" * 10],
+            ["ATATATAT", sv_sequence, "GGGGG", "TT", "C" * 10],
+            ["ATATATAT", "C", "GGGGG", "CC", "C" * 10],
+        ]),
+        PathCombinationMatrix([
+            [0, 1],
+            [0, 1],
+            [1, 0],
+        ]
+        )
+    )
+
+def test_manually_process_svs_multiallelic_signature_finder(paths_with_sv):
+    """
+    Initial kmer finder will pick "CGGGGG" since all kmers are equally
+    scored and that is the last kmers. Manually process will manage to find some other
+    kmers that are unique between the alleles
+    """
+    paths = paths_with_sv
+    k = 5
+    variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
+    variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers,
+                                                                                paths.variant_alleles.matrix)
+
+    # high sv min size
+    signatures = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=DummyScorer2(), k=k, sv_min_size=1000000).run()
+    print(signatures.signatures.type)
+    s = signatures.to_list_of_sequences(k)
+    assert s[0][0] == ["cgggg"]
+    assert s[0][1] == ["cgggg"]
+
+    print(signatures.describe(k))
+
+    # low sv min size will capture sv
+    signatures = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=DummyScorer2(), k=k,
+                                               sv_min_size=7).run()
+    print(signatures.signatures.type)
+    s = signatures.to_list_of_sequences(k)
+    assert "cgggg" not in s[0][0]
+    assert "cgggg" not in s[0][1]
+
+
+    print(signatures.describe(k))
+
+    # first variant, will pick last kmer in window
+    """
+    assert s[0][0] == ["cgt"]
+    assert s[0][1] == ["ggc"]
+
+    # second variant
+    assert s[1][0] == ["caa"]
+    assert s[1][1] == ["taa"]
+    """
+
+    # assert np.all(old.signatures == new.signatures)
