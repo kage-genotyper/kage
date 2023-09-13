@@ -35,6 +35,30 @@ class Variants:
     ref_seq: str  # position + len(ref_seq) will always give first ref base after the variant is finished
     alt_seq: str
 
+    def to_simple_vcf_entry_with_padded_indels(self, reference_genome: bnp.io.indexed_fasta.IndexedFasta):
+        """
+        Pads indels and adjusts positions (oposite of from_vcf_entry) and returns a SimpleVcfEntry object
+        """
+        is_indel = (self.ref_seq.shape[1] == 0) | (self.alt_seq.shape[1] == 0)
+        pad_size = np.zeros(len(self.position), dtype=int)
+        pad_size[is_indel] = 1
+        indel_padding_intervals = bnp.Interval(self.chromosome, self.position-1, self.position -1 + pad_size)
+
+        padded_sequence = reference_genome.get_interval_sequences(indel_padding_intervals).raw()
+
+        new_ref = np.concatenate([padded_sequence, self.ref_seq.raw()], axis=1)
+        print(new_ref.ravel())
+        new_ref = bnp.EncodedRaggedArray(bnp.EncodedArray(new_ref.ravel(), self.ref_seq.encoding), new_ref.shape)
+
+        new_alt = np.concatenate([padded_sequence, self.alt_seq.raw()], axis=1)
+        new_alt = bnp.EncodedRaggedArray(bnp.EncodedArray(new_alt.ravel(), self.alt_seq.encoding), new_alt.shape)
+
+        # indel position should be at the padded base
+        new_position = self.position.copy()
+        new_position[is_indel] -= 1
+
+        return SimpleVcfEntry(self.chromosome, new_position, new_ref, new_alt)
+
     @classmethod
     def from_multiallelic_vcf_entry(cls, variants: Union[bnp.datatypes.VCFEntry, SimpleVcfEntry]):
         """ Create a Variants object from a multiallelic vcf entry where no variants

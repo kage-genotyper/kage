@@ -5,8 +5,11 @@ import numpy as np
 from shared_memory_wrapper.util import interval_chunks
 
 
+def get_memory_usage():
+    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) / 1000000
+
 def log_memory_usage_now(logplace=""):
-    memory = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) / 1000000
+    memory = get_memory_usage()
     logging.info("Memory usage (%s): %.4f GB" % (logplace, memory))
 
 

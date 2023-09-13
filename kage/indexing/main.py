@@ -78,12 +78,14 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     #logging.info("Finding kmers around variants")
     log_memory_usage_now("Before MatrixVariantWindowKmers")
     variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
+    log_memory_usage_now("After MatrixVariantWindowKmers")
     logging.info("Converting variant window kmers to new data structure")
     log_memory_usage_now("Before variant window kmers2")
-    variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers, paths.variant_alleles.matrix)
+    variant_window_kmers2 = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers, paths.variant_alleles.matrix)
+    log_memory_usage_now("After variant window kmers2")
     logging.info("Finding best signatures for variants")
 
-    signatures = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=scorer, k=k).run()
+    signatures = MultiAllelicSignatureFinderV2(variant_window_kmers2, scorer=scorer, k=k).run()
 
     # todo: Send in node_mapping to get kmer_index with correct node ids
     kmer_index = signatures.get_as_kmer_index(node_mapping=node_mapping, modulo=modulo, k=k)

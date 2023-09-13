@@ -15,6 +15,8 @@ import awkward as ak
 from graph_kmer_index import FlatKmers
 import numba
 
+from ..util import get_memory_usage
+
 
 @dataclass
 class Signatures:
@@ -680,20 +682,21 @@ class VariantWindowKmers2:
     @classmethod
     def from_matrix_variant_window_kmers(cls, kmers: 'MatrixVariantWindowKmers', path_alleles: np.ndarray) -> 'MatrixVariantWindowKmers2':
         # make a flat data structure and unflatten it
+        print("Memory usage from_matrix_variant_window_kmer: %d" % get_memory_usage())
         kmers = kmers.kmers
         n_paths = path_alleles.shape[0]
         n_variants = path_alleles.shape[1]
-        flat_kmers = ak.to_numpy(ak.ravel(kmers))
-        flat = np.zeros(len(flat_kmers))  # flat array to put all kmers in new order into, before unflattening
 
         # indexes to use when putting all kmers into new flat structure
         # argsort trick: get correct order of kmers (sorted by allele)
         sorted_alleles = np.argsort(path_alleles, axis=0)
         # get indexes by sorted alleles columnwise
         flat_indexes = sorted_alleles.T.ravel() + n_paths * (np.arange(n_paths*n_variants)//n_paths)  # increase by n_paths each time
+        print("Flat indexes bytes: %d" % (flat_indexes.nbytes))
 
         #indexes in flat kmers should give kmers column wise from original data structure (columns are variants)
         kmer_indexes = np.arange(0, n_paths*n_variants).reshape(n_paths, n_variants).T.ravel()
+        print("Kmer iindexes bytes: %d" % (kmer_indexes.nbytes))
         kmers_reshaped = ak.flatten(kmers)[kmer_indexes][flat_indexes]
         window_structure = ak.num(kmers_reshaped)
         kmers_reshaped_flat = ak.flatten(kmers_reshaped)
@@ -702,6 +705,7 @@ class VariantWindowKmers2:
         # Unflatten back to correct structure (variants x alleles x n_paths on allele x window kmers)
         # group by window
         grouped_by_window = ak.unflatten(flat, window_structure)
+        print("Memory usage: %d" % get_memory_usage())
 
         # group by allele
         n_per_allele = ak.to_numpy(ak.ravel(ak.run_lengths(np.sort(path_alleles, axis=0).T)))

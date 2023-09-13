@@ -42,3 +42,32 @@ def test_variants_from_multiallelic_vcf_entry():
         ]
     )
     assert np.all(variants == correct)
+
+
+def test_variants_to_simple_vcf_entry():
+    ref = [
+        ">chr1",
+        "ACGTACAATTTTT",
+        ">chr2",
+        "ACGTACGT"
+    ]
+    with open("tmp.fasta", "w") as f:
+        f.writelines([line + "\n" for line in ref])
+        
+    fasta = bnp.open_indexed("tmp.fasta")
+    
+    variants = Variants.from_entry_tuples([
+        ("chr1", 4, "A", "T"),
+        ("chr1", 6, "AA", ""),
+        ("chr2", 3, "", "ACGT"),
+    ])
+    
+    padded = variants.to_simple_vcf_entry_with_padded_indels(fasta)
+
+    correct = SimpleVcfEntry.from_entry_tuples([
+        ("chr1", 4, "A", "T"),
+        ("chr1", 5, "CAA", "C"),
+        ("chr2", 2, "G", "GACGT")
+    ])
+
+    assert np.all(padded == correct)

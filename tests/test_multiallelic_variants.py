@@ -6,7 +6,7 @@ from kage.indexing.graph import Graph, GenomeBetweenVariants
 from kage.indexing.kmer_scoring import make_kmer_scorer_from_random_haplotypes
 from kage.indexing.path_variant_indexing import find_tricky_variants_from_multiallelic_signatures
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
-from kage.preprocessing.variants import VariantAlleleSequences, MultiAllelicVariantSequences, Variants, \
+from kage.preprocessing.variants import MultiAllelicVariantSequences, Variants, \
     VariantAlleleToNodeMap, VariantPadder
 from kage.indexing.paths import PathCreator, PathSequences
 import bionumpy as bnp
@@ -17,7 +17,7 @@ from kage.indexing.paths import PathCombinationMatrix, Paths
 from kage.indexing.signatures import MultiAllelicSignatureFinder
 import awkward as ak
 from kage.indexing.graph import make_multiallelic_graph
-from graph_kmer_index import sequence_to_kmer_hash, kmer_hash_to_sequence
+from graph_kmer_index import sequence_to_kmer_hash
 from kage.indexing.path_based_count_model import PathBasedMappingModelCreator
 
 @pytest.fixture
@@ -68,31 +68,6 @@ def test_convert_biallelic_path_to_multiallelic():
 
     correct = [0, 1, 2, 1, 3, 1]
     assert np.all(converted == correct)
-
-
-def test_matrix_window_kmers_flexible_window_size():
-    path_sequences = PathSequences([
-        bnp.as_encoded_array(["AAA", "CCC", "AAA", "GGG", "AAA"], bnp.DNAEncoding),
-        bnp.as_encoded_array(["AAA", "", "CCC", "T", "AAA"], bnp.DNAEncoding),
-    ])
-    path_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(path_sequences, k=3)
-
-    kmer_encoding = bnp.encodings.kmer_encodings.KmerEncoding(bnp.DNAEncoding, 3)
-    kmers = [[[kmer_encoding.to_string(k) for k in kmer] for kmer in path] for path in path_kmers.kmers]
-
-    correct = [
-        [["AAC", "ACC", "CCC", "CCA", "CAA"], ["AAG", "AGG", "GGG", "GGA", "GAA"]],
-        [["AAC", "ACC"], ["CCT", "CTA", "TAA"]]
-    ]
-
-    assert kmers == correct
-
-    variant_alleles = np.array([
-        [1, 0],
-        [0, 1]
-    ])
-
-    assert np.all(path_kmers.get_kmers(0, 1, variant_alleles) == path_kmers.kmers[0][0])
 
 
 class DummyScorer2():
@@ -415,44 +390,6 @@ def test_multialellic_signature_finderv2(paths):
     assert s[1][1] == ["taa"]
 
     #assert np.all(old.signatures == new.signatures)
-
-
-def test_variant_window_kmers2_from_matrix_variant_window_kmers_many_alleles_on_same_variant():
-    n_alleles_on_variant = 10
-
-    some_path = [
-                # variant 1
-                [0, 1, 2, 3],
-                # variant 2
-                [4, 5, 6, 7],
-                # variant 3
-                [1, 2]
-            ]
-    kmers = [some_path] * n_alleles_on_variant + \
-            [
-                # a different path
-                [
-                    [0, 1, 2, 3],
-                    [10, 12],
-                    [1, 2]
-                ]
-            ]
-    print(kmers)
-    kmers = MatrixVariantWindowKmers(
-        ak.Array(kmers)
-    )
-
-    print(kmers.describe(5))
-
-    path_alleles_some_path = [0, 1, 0]
-    path_alleles = np.array(
-        [path_alleles_some_path] * n_alleles_on_variant +
-        [[0, 0, 0]]
-    )
-
-    kmers2 = VariantWindowKmers2.from_matrix_variant_window_kmers(kmers, path_alleles)
-
-    print(kmers2.describe(5))
 
 
 def test_signatures_on_graph_with_many_alleles_integration():
