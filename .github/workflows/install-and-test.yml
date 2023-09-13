@@ -26,4 +26,5 @@ jobs:
       run: |
         pip install -e .
         conda install pytest
+        cd tests
         pytest
