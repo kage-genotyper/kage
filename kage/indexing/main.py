@@ -26,9 +26,20 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     """
     logging.info("Making graph")
     reference_sequences = bnp.open(reference_file_name).read()
-    variants = get_padded_variants_from_vcf(vcf_file_name, reference_file_name)
-    logging.info("N variants: %d" % len(variants))
-    #graph = Graph.from_variants_and_reference(reference_sequences, variants)
+    # vcf_variants are original vcf variants, needed when writing final vcf after genotyping
+    # n_alleles_per_variant lets us convert genotypes on variants (which are biallelic) to multiallelic where necessary
+    variants, vcf_variants, n_alleles_per_original_variant = get_padded_variants_from_vcf(vcf_file_name, reference_file_name, True)
+    print(n_alleles_per_original_variant)
+    assert len(variants) == np.sum(n_alleles_per_original_variant-1), f"{len(variants)} != {np.sum(n_alleles_per_original_variant-1)}"
+    assert len(vcf_variants) == len(n_alleles_per_original_variant), f"{len(vcf_variants)} != {len(n_alleles_per_original_variant)}"
+
+    #vcf_variants = variants.to_simple_vcf_entry_with_padded_indels(bnp.open_indexed(reference_file_name))
+
+    print("VCF variants")
+    #print(vcf_variants)
+
+    logging.info("N biallelic variants: %d" % len(variants))
+    logging.info("N original variants: %d" % len(vcf_variants))
 
     graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
     #to_file(node_mapping, "tmp_node_mapping")
@@ -58,20 +69,10 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
                         window=variant_window,  # bigger windows to get more paths when multiallelic
                         make_disc_backed=True,
                         disc_backed_file_base_name=out_base_name).run(n_alleles_per_variant)
-    #to_file(paths, "tmp_paths")
+
     logging.info("Made %d paths to cover variants" % (len(paths.paths)))
 
-    #variant_to_nodes = VariantToNodes(np.arange(graph.n_variants())*2, np.arange(graph.n_variants())*2+1)
     variant_to_nodes = node_mapping.get_variant_to_nodes()
-
-    # todo: Change to MultiAllelicSignatureFinder
-    #Old:
-    #signatures = SignatureFinder3(paths, scorer=scorer, k=k).run(variants)
-    # New multiallelic
-    #signatures = MultiAllelicSignatureFinder(paths, scorer=scorer, k=k).run()
-
-    # New: Using FinderV2 which is faster
-    #logging.info("Finding kmers around variants")
     signatures = get_signatures(k, paths, scorer)
 
     # todo: Send in node_mapping to get kmer_index with correct node ids
@@ -106,7 +107,10 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
             "kmer_index": kmer_index,
             "numpy_variants": numpy_variants,
             "tricky_variants": tricky_variants,
-            "tricky_alleles": tricky_alleles
+            "tricky_alleles": tricky_alleles,
+            "vcf_header": bnp.open(vcf_file_name).read_chunk().get_context("header"),
+            "vcf_variants": vcf_variants,
+            "n_alleles_per_variant": n_alleles_per_original_variant
         }
     # helper model
     if make_helper_model:

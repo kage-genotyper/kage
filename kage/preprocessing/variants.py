@@ -10,6 +10,8 @@ from bionumpy import EncodedRaggedArray, Interval
 import logging
 from typing import List, Tuple, Union
 
+from shared_memory_wrapper import to_file, from_file
+
 
 @dataclass
 class VariantToNodes:
@@ -23,6 +25,13 @@ class SimpleVcfEntry:
     position: int
     ref_seq: str
     alt_seq: str
+
+    def to_file(self, file_name):
+        return to_file((self.chromosome, self.position, self.ref_seq, self.alt_seq), file_name)
+
+    @classmethod
+    def from_file(cls, file_name):
+        return cls(*from_file(file_name))
 
 
 @bnpdataclass
@@ -57,7 +66,9 @@ class Variants:
     @classmethod
     def from_multiallelic_vcf_entry(cls, variants: Union[bnp.datatypes.VCFEntry, SimpleVcfEntry]):
         """ Create a Variants object from a multiallelic vcf entry where no variants
-        are overlapping (variants are padded)"""
+        are overlapping (variants are padded).
+        Converts all multiallelic variants to biallelic.
+        """
 
         if isinstance(variants, bnp.datatypes.VCFEntry):
             variants = SimpleVcfEntry(variants.chromosome, variants.position, variants.ref_seq, variants.alt_seq)
@@ -378,21 +389,31 @@ class VariantPadder:
         return Variants(self._variants.chromosome, new_positions, new_ref_sequences, new_alt_sequences)
 
 
-def get_padded_variants_from_vcf(vcf_file_name, reference_file_name):
+def get_padded_variants_from_vcf(vcf_file_name, reference_file_name, also_return_original_variants=False) -> Variants:
+    # todo: if also_return_original_variants, read original variants into SimpleVcfEntry and return that also
     variants = bnp.open(vcf_file_name).read_chunks()
     genome = bnp.open(reference_file_name).read()
     sequences = {str(sequence.name): sequence.sequence for sequence in genome}
     all_variants = []
+    all_vcf_variants = []
+    n_alleles_per_variant = []
 
-    for chromosome, chromosome_variants in bnp.groupby(variants, "chromosome"):
-        chromosome_variants = Variants.from_multiallelic_vcf_entry(chromosome_variants)
+    for chromosome, raw_chromosome_variants in bnp.groupby(variants, "chromosome"):
+        n_alleles_per_variant.append(np.sum(raw_chromosome_variants.alt_seq == ",", axis=1) + 2)
+        chromosome_variants = Variants.from_multiallelic_vcf_entry(raw_chromosome_variants)
         logging.info("Padding variants on chromosome " + chromosome)
         logging.info("%d variants" % len(chromosome_variants))
         padded_variants = VariantPadder(chromosome_variants, sequences[chromosome]).run()
         all_variants.append(padded_variants)
+        if also_return_original_variants:
+            r = raw_chromosome_variants
+            all_vcf_variants.append(SimpleVcfEntry(r.chromosome, r.position, r.ref_seq, r.alt_seq))
 
     all_variants = np.concatenate(all_variants)
     logging.info(f"In total {len(all_variants)} variants")
+    if also_return_original_variants:
+        return all_variants, np.concatenate(all_vcf_variants), np.concatenate(n_alleles_per_variant)
+
     return all_variants
 
 

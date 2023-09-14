@@ -1,4 +1,6 @@
 import logging
+
+import dill
 import numpy as np
 from obgraph.variant_to_nodes import VariantToNodes
 from obgraph.numpy_variants import NumpyVariants
@@ -41,10 +43,12 @@ class IndexBundle:
     def from_file(cls, file_name, skip=None):
         if skip is not None:
             logging.warning("SKip option does not work")
-        return from_file(file_name)
+        return dill.load(open(file_name, "rb"))
+        #return from_file(file_name)
 
     def to_file(self, file_name, compress=True):
-        return to_file(self, file_name, compress=compress)
+        return dill.dump(self, open(file_name, "wb"))
+        #return to_file(self, file_name, compress=compress)
 
     @property
     def indexes(self):

@@ -34,6 +34,7 @@ from .indexing.sparse_haplotype_matrix import make_sparse_haplotype_matrix_cli
 from kage.indexing.main import make_index_cli
 import gc
 from .analysis.debugging import debug_cli
+from kage.io import create_vcf_header_with_sample_name, write_multiallelic_vcf_with_biallelic_numeric_genotypes
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -106,23 +107,34 @@ def genotype(args):
     if args.debug:
         _write_genotype_debug_data(genotypes, numpy_genotypes, args.out_file_name, index.variant_to_nodes, probs, count_probs)
 
-    if args.variants is not None:
-        delattr(index, "index")  # release some memory
-        t = time.perf_counter()
-        numpy_variants = NumpyVariants.from_file(args.variants)
-        logging.info("Reading numpy variants took %.3f sec" % (time.perf_counter()-t))
+    if "vcf_variants" in index:
+        from kage.io import write_vcf
+        # new setup: Storing SimpleVcfEntry object in index, use this to write vcf
+        logging.info("Writing vcf using Vcf entry")
+        write_multiallelic_vcf_with_biallelic_numeric_genotypes(
+            index.vcf_variants, genotypes, args.out_file_name,
+            index.n_alleles_per_variant,
+            sample_name=config.sample_name_output,
+            header=create_vcf_header_with_sample_name(index.vcf_header, args.sample_name_output)
+        )
     else:
-        numpy_variants = index.numpy_variants
+        if args.variants is not None:
+            delattr(index, "index")  # release some memory
+            t = time.perf_counter()
+            numpy_variants = NumpyVariants.from_file(args.variants)
+            logging.info("Reading numpy variants took %.3f sec" % (time.perf_counter()-t))
+        else:
+            numpy_variants = index.numpy_variants
 
-    t = time.perf_counter()
-    numpy_variants.to_vcf_with_genotypes(
-        args.out_file_name,
-        config.sample_name_output,
-        numpy_genotypes,
-        add_header_lines=vcf_pl_and_gl_header_lines(),
-        ignore_homo_ref=config.ignore_homo_ref,
-        add_genotype_likelyhoods=probs if not config.do_not_write_genotype_likelihoods else None,
-    )
+        t = time.perf_counter()
+        numpy_variants.to_vcf_with_genotypes(
+            args.out_file_name,
+            config.sample_name_output,
+            numpy_genotypes,
+            add_header_lines=vcf_pl_and_gl_header_lines(),
+            ignore_homo_ref=config.ignore_homo_ref,
+            add_genotype_likelyhoods=probs if not config.do_not_write_genotype_likelihoods else None,
+        )
     logging.info("Writing to vcf took %.3f sec" % (time.perf_counter() - t))
 
     close_shared_pool()
