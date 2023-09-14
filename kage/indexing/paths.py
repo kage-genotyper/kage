@@ -109,7 +109,7 @@ class Paths:
 
     def subset_on_variants(self, from_id, to_id, padding):
         return Paths(self.paths.subset_on_variants(from_id, to_id, padding),
-                     self.variant_alleles[:, from_id:to_id])
+                     PathCombinationMatrix(self.variant_alleles[:, from_id:to_id]))
 
     def paths_for_allele_at_variant(self, allele, variant):
         relevant_paths = np.where(self.variant_alleles[:, variant] == allele)[0]

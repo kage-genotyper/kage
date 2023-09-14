@@ -7,6 +7,8 @@ import npstructures as nps
 import numpy as np
 import tqdm
 from graph_kmer_index import FlatKmers, CollisionFreeKmerIndex
+from shared_memory_wrapper.util import interval_chunks
+
 from .kmer_scoring import Scorer
 from .paths import Paths, PathSequences
 from ..preprocessing.variants import Variants, VariantAlleleToNodeMap
@@ -57,11 +59,6 @@ class Signatures:
 
 
 @dataclass
-class MultialleleSignatures:
-    signatures: ak.Array  # n_variants x n_alleles x signatures
-
-
-@dataclass
 class MultiAllelicSignatures:
     # there can be multiple signatures for one allele at a variant
     signatures: ak.Array  # n_variants x n_alleles x signatures
@@ -86,9 +83,18 @@ class MultiAllelicSignatures:
         return out
 
     @classmethod
+    def from_multiple(cls, signatures: List['MultiAllelicSignatures']):
+        """Merges by concatenating"""
+        signatures = [s.signatures for s in signatures]
+        return cls(np.concatenate(signatures))
+
+    @classmethod
     def from_list(cls, l) -> 'MultiAllelicSignatures':
         a = ak.Array(l)
         return cls(a)
+
+    def to_list(self):
+        return ak.to_list(self.signatures)
 
     def filter_nonunique_on_alleles(self, also_remove=-1):
         # keeps only unique kmers per allele
@@ -855,16 +861,28 @@ def awkward_unravel_like(flat_array, like_array):
     """ Utility function for unraveling a flattened ak.Array """
 
 
-def get_signatures(k: int, paths: Paths, scorer):
+def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000):
     """Wrapper function that finds multiallelic signatures from paths"""
     log_memory_usage_now("Before MatrixVariantWindowKmers")
-    variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
-    log_memory_usage_now("After MatrixVariantWindowKmers")
-    logging.info("Converting variant window kmers to new data structure")
-    log_memory_usage_now("Before variant window kmers2")
-    variant_window_kmers2 = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers,
-                                                                                 paths.variant_alleles.matrix)
-    log_memory_usage_now("After variant window kmers2")
-    logging.info("Finding best signatures for variants")
-    signatures = MultiAllelicSignatureFinderV2(variant_window_kmers2, scorer=scorer, k=k).run()
-    return signatures
+
+    # To keep max memory usage low, create signatures for chunks of variants, concatenate in the end
+    n_variants = paths.n_variants()
+    chunks = interval_chunks(0, n_variants, n_variants//chunk_size+1)
+    print("Chunks", chunks)
+    all_signatures = []
+    for from_variant, to_variant in tqdm.tqdm(chunks, desc="Finding signatures", unit="chunks", total=len(chunks)):
+        subpaths = paths.subset_on_variants(from_variant, to_variant, k)
+
+        variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(subpaths.paths, k)
+        log_memory_usage_now("After MatrixVariantWindowKmers")
+        logging.info("Converting variant window kmers to new data structure")
+        log_memory_usage_now("Before variant window kmers2")
+        variant_window_kmers2 = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers,
+                                                                                     subpaths.variant_alleles.matrix)
+        log_memory_usage_now("After variant window kmers2")
+        logging.info("Finding best signatures for variants")
+        signatures = MultiAllelicSignatureFinderV2(variant_window_kmers2, scorer=scorer, k=k).run()
+        all_signatures.append(signatures)
+
+    return MultiAllelicSignatures.from_multiple(all_signatures)
+

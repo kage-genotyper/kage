@@ -70,7 +70,7 @@ def test_subset_paths(path_sequences):
     )
 
     subset = paths.subset_on_variants(1, 2, 4)
-    assert np.all(subset.variant_alleles == [
+    assert np.all(subset.variant_alleles.matrix == [
         [1],
         [0]
     ])

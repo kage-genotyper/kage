@@ -11,7 +11,7 @@ from kage.preprocessing.variants import MultiAllelicVariantSequences, Variants, 
 from kage.indexing.paths import PathCreator, PathSequences
 import bionumpy as bnp
 from kage.indexing.signatures import MatrixVariantWindowKmers, MultiAllelicSignatures, MultiAllelicSignatureFinderV2, \
-    VariantWindowKmers2
+    VariantWindowKmers2, get_signatures
 import numpy as np
 from kage.indexing.paths import PathCombinationMatrix, Paths
 from kage.indexing.signatures import MultiAllelicSignatureFinder
@@ -101,9 +101,6 @@ def test_multiallelic_signature_finder_on_three_following_snps():
 
     print(paths.variant_alleles)
     print(paths)
-    variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
-    variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers, paths.variant_alleles.matrix)
-    variant_window_kmers.describe(k)
 
     kmers_to_avoid = ["tagggg", "ctgggg", "aagggg"]
     kmers_to_avoid = [sequence_to_kmer_hash(kmer) for kmer in kmers_to_avoid]
@@ -112,8 +109,12 @@ def test_multiallelic_signature_finder_on_three_following_snps():
         def score_kmers(self, kmers):
             return np.array([-100 if kmer in kmers_to_avoid else 0 for kmer in kmers])
 
-    signatures = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=Scorer(), k=k).run()
-    signatures.describe(k)
+    signatures = get_signatures(k, paths, Scorer(), chunk_size=1)
+    #variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
+    #variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers,
+    #                                                                            paths.variant_alleles.matrix)
+    #signatures = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=Scorer(), k=k).run()
+
     s = signatures.to_list_of_sequences(k)
 
     # variant 3 should have at least 4 kmers if things are correct
