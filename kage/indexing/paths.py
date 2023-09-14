@@ -122,7 +122,6 @@ class Paths:
             starts = path._shape.starts[1::2]
             window_starts = starts - k + 1
             window_ends = np.minimum(starts + k, path.size)
-            print("Dtype of window ends: %s" % window_ends.dtype)
             assert np.all(window_ends >= window_starts)
             windows = bnp.ragged_slice(path.ravel(), window_starts, window_ends)
             windowed_paths.append(
@@ -266,7 +265,7 @@ class PathCreator:
             # make a new EncodedRaggedArray where every other row is ref/variant
             path = self._graph.sequence(alleles)
             if self._make_disc_backed:
-                path = DiscBackedPathSequence.from_non_disc_backed(path, f"{self._disc_backed_file_base_name}_path_{i}")
+                path = DiscBackedPathSequence.from_non_disc_backed(PathSequence(path), f"{self._disc_backed_file_base_name}_path_{i}")
             paths.append(path)
 
         return Paths(PathSequences(paths), combinations)

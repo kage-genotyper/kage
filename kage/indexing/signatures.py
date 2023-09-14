@@ -348,7 +348,7 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
             # check if sv has nonunique kmers
             all_kmers = ak.to_numpy(ak.ravel(signatures[sv_id, :, :]))
             if len(np.unique(all_kmers)) != len(all_kmers):
-                logging.info("SV %d has nonunique kmers: %s" % (sv_id, str(all_kmers)))
+                #logging.info("SV %d has nonunique kmers: %s" % (sv_id, str(all_kmers)))
 
                 # for each allele, find the kmer with best score that is not
                 # in any other allele
@@ -375,7 +375,7 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
                             best_window = window
                             best_score = score
 
-                    logging.info("Picked window %d with score %d, all scores: %s. Positions with nonunique kmers: %s" % (best_window, best_score, str(all_scores), positions_with_nonunique))
+                    #logging.info("Picked window %d with score %d, all scores: %s. Positions with nonunique kmers: %s" % (best_window, best_score, str(all_scores), positions_with_nonunique))
                     chosen = np.unique(ak.to_numpy(kmers[sv_id, allele, :, best_window]))
                     assert chosen.dtype == np.uint64
                     new_variant_kmers.append(chosen)
@@ -389,8 +389,6 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
                 #print(to_add)
                 #print("to add dtype", to_add.type)
                 changed[sv_id] = MultiAllelicSignatures(to_add)
-                logging.info("Changed kmers to %s" % str(new_variant_kmers))
-                logging.info("DTYPE of new kmers: %s" % to_add.type)
 
         logging.info("Concatenating signatures")
         to_concatenate = []
@@ -481,8 +479,8 @@ class SignatureFinder3(SignatureFinder):
                     if is_snp:
                         n_snps_with_identical_kmers += 1
                     else:
-                        print("Indel with identical kmers, sequences:")
-                        print(variants.ref_seq[variant_id], variants.alt_seq[variant_id])
+                        #print("Indel with identical kmers, sequences:")
+                        #print(variants.ref_seq[variant_id], variants.alt_seq[variant_id])
                         n_indels_with_identical_kmers += 1
                         indels_with_identical_kmers.append(variant_id)
 
@@ -699,11 +697,9 @@ class VariantWindowKmers2:
         sorted_alleles = np.argsort(path_alleles, axis=0)
         # get indexes by sorted alleles columnwise
         flat_indexes = sorted_alleles.T.ravel() + n_paths * (np.arange(n_paths*n_variants)//n_paths)  # increase by n_paths each time
-        print("Flat indexes bytes: %d" % (flat_indexes.nbytes))
 
         #indexes in flat kmers should give kmers column wise from original data structure (columns are variants)
         kmer_indexes = np.arange(0, n_paths*n_variants).reshape(n_paths, n_variants).T.ravel()
-        print("Kmer iindexes bytes: %d" % (kmer_indexes.nbytes))
         kmers_reshaped = ak.flatten(kmers)[kmer_indexes][flat_indexes]
         window_structure = ak.num(kmers_reshaped)
         kmers_reshaped_flat = ak.flatten(kmers_reshaped)
@@ -712,7 +708,6 @@ class VariantWindowKmers2:
         # Unflatten back to correct structure (variants x alleles x n_paths on allele x window kmers)
         # group by window
         grouped_by_window = ak.unflatten(flat, window_structure)
-        print("Memory usage: %d" % get_memory_usage())
 
         # group by allele
         n_per_allele = ak.to_numpy(ak.ravel(ak.run_lengths(np.sort(path_alleles, axis=0).T)))
