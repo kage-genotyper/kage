@@ -856,7 +856,7 @@ def awkward_unravel_like(flat_array, like_array):
     """ Utility function for unraveling a flattened ak.Array """
 
 
-def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000):
+def get_signatures(k: int, paths: Paths, scorer, chunk_size=50000, add_dummy_count_to_index=-1):
     """Wrapper function that finds multiallelic signatures from paths"""
     log_memory_usage_now("Before MatrixVariantWindowKmers")
 
@@ -876,7 +876,7 @@ def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000):
                                                                                      subpaths.variant_alleles.matrix)
         log_memory_usage_now("After variant window kmers2")
         logging.info("Finding best signatures for variants")
-        signatures = MultiAllelicSignatureFinderV2(variant_window_kmers2, scorer=scorer, k=k).run()
+        signatures = MultiAllelicSignatureFinderV2(variant_window_kmers2, scorer=scorer, k=k).run(add_dummy_count_to_index)
         all_signatures.append(signatures)
 
     return MultiAllelicSignatures.from_multiple(all_signatures)

@@ -99,9 +99,6 @@ def test_multiallelic_signature_finder_on_three_following_snps():
                         make_disc_backed=False,
                         disc_backed_file_base_name="test.tmp").run(n_alleles_per_variant)
 
-    print(paths.variant_alleles)
-    print(paths)
-
     kmers_to_avoid = ["tagggg", "ctgggg", "aagggg"]
     kmers_to_avoid = [sequence_to_kmer_hash(kmer) for kmer in kmers_to_avoid]
 
@@ -110,11 +107,6 @@ def test_multiallelic_signature_finder_on_three_following_snps():
             return np.array([-100 if kmer in kmers_to_avoid else 0 for kmer in kmers])
 
     signatures = get_signatures(k, paths, Scorer(), chunk_size=1)
-    #variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
-    #variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers,
-    #                                                                            paths.variant_alleles.matrix)
-    #signatures = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=Scorer(), k=k).run()
-
     s = signatures.to_list_of_sequences(k)
 
     # variant 3 should have at least 4 kmers if things are correct
@@ -143,11 +135,7 @@ def test_multiallelic_signature_finder_special_case():
                         make_disc_backed=False,
                         disc_backed_file_base_name="test.tmp").run(n_alleles_per_variant)
 
-    variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
-    variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers, paths.variant_alleles.matrix)
-    #variant_window_kmers.describe(k)
-
-    signatures = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=DummyScorer2(), k=k).run(add_dummy_count_to_index=1)
+    signatures = get_signatures(k, paths, scorer=DummyScorer2(), add_dummy_count_to_index=1)
     signatures.describe(k)
     s = signatures.to_list_of_sequences(k)
     # allele at variant 4 should have 2**3 kmers since all combinations of previous variants should be included
@@ -174,12 +162,7 @@ def test_that_ref_sequence_is_always_in_signature():
                         make_disc_backed=False,
                         disc_backed_file_base_name="test.tmp").run(n_alleles_per_variant)
 
-    variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
-    variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers,
-                                                                                paths.variant_alleles.matrix)
-
-    variant_window_kmers.describe(k)
-    signatures = MultiAllelicSignatureFinderV2(variant_window_kmers, scorer=DummyScorer2(), k=k).run(add_dummy_count_to_index=1)
+    signatures = get_signatures(k, paths, scorer=DummyScorer2(), add_dummy_count_to_index=1)
     signatures.describe(k)
     s = signatures.to_list_of_sequences(k)
 
@@ -460,7 +443,6 @@ def test_make_multiallelic_graph(reference_sequence, variants):
     graph, node_mapping = make_multiallelic_graph(reference_sequence, variants)
     assert graph.genome.to_list() == ["C", "CCCCCCCC", "CCCCGGGGGGGGGG", "GGG"]
     assert graph.variants.to_list() == [["A", "C"], ["ACTG", "ATTG", ""], ["A", "C"]]
-
 
 
 def test_replace_nonunique_variant_window_kmers():
