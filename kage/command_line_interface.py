@@ -411,7 +411,6 @@ def run_argument_parser(args):
     subparser = subparsers.add_parser("index")
     subparser.add_argument("-r", "--reference", required=True)
     subparser.add_argument("-v", "--vcf", required=True)
-    subparser.add_argument("-V", "--vcf-no-genotypes", required=True)
     subparser.add_argument("-o", "--out-base-name", required=True)
     subparser.add_argument("-k", "--kmer-size", required=False, type=int, default=31)
     subparser.add_argument("-M", "--make-helper-model", required=False, type=bool, default=False)

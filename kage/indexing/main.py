@@ -19,7 +19,7 @@ import bionumpy as bnp
 from ..preprocessing.variants import get_padded_variants_from_vcf
 
 
-def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, out_base_name, k=31,
+def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
                modulo=20000033, variant_window=6, make_helper_model=False):
     """
     Makes all indexes and writes to an index bundle.
@@ -29,14 +29,8 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     # vcf_variants are original vcf variants, needed when writing final vcf after genotyping
     # n_alleles_per_variant lets us convert genotypes on variants (which are biallelic) to multiallelic where necessary
     variants, vcf_variants, n_alleles_per_original_variant = get_padded_variants_from_vcf(vcf_file_name, reference_file_name, True)
-    print(n_alleles_per_original_variant)
     assert len(variants) == np.sum(n_alleles_per_original_variant-1), f"{len(variants)} != {np.sum(n_alleles_per_original_variant-1)}"
     assert len(vcf_variants) == len(n_alleles_per_original_variant), f"{len(vcf_variants)} != {len(n_alleles_per_original_variant)}"
-
-    #vcf_variants = variants.to_simple_vcf_entry_with_padded_indels(bnp.open_indexed(reference_file_name))
-
-    print("VCF variants")
-    #print(vcf_variants)
 
     logging.info("N biallelic variants: %d" % len(variants))
     logging.info("N original variants: %d" % len(vcf_variants))
@@ -50,8 +44,13 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
         graph.genome.pad_at_end(k)
 
     logging.info("Making haplotype matrix")
-    biallelic_haplotype_matrix = SparseHaplotypeMatrix.from_vcf(vcf_file_name)
-    logging.info("N variants in haplotype matrix: %d" % biallelic_haplotype_matrix.data.shape[0])
+    haplotype_matrix_original_vcf = SparseHaplotypeMatrix.from_vcf(vcf_file_name)
+    logging.info("N variants in original haplotype matrix: %d" % haplotype_matrix_original_vcf.data.shape[0])
+    # this haplotype matrix may be multiallelic, convert to biallelic which will match "variants"
+    biallelic_haplotype_matrix = haplotype_matrix_original_vcf.to_biallelic(n_alleles_per_original_variant)
+    logging.info("N variants in biallelic haplotype matrix: %d" % biallelic_haplotype_matrix.data.shape[0])
+
+    # Convert biallelic haplotype matrix to multiallelic
     n_alleles_per_variant = node_mapping.n_alleles_per_variant
     haplotype_matrix = biallelic_haplotype_matrix.to_multiallelic(n_alleles_per_variant)
     logging.info(f"{haplotype_matrix.n_variants} variants after converting to multiallelic")
@@ -61,7 +60,6 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=0, modulo=modulo * 10)
     assert np.all(scorer.values >= 0)
 
-    to_file(scorer.copy(), out_base_name + "_scorer")
     log_memory_usage_now("After scorer")
 
     logging.info("Making paths")
@@ -100,12 +98,12 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
     logging.info("Converting to sparse model")
     convert_model_to_sparse(count_model)
 
-    numpy_variants = NumpyVariants.from_vcf(vcf_no_genotypes_file_name)
+    #numpy_variants = NumpyVariants.from_vcf(vcf_no_genotypes_file_name)
     indexes = {
             "variant_to_nodes": variant_to_nodes,
             "count_model": count_model,
             "kmer_index": kmer_index,
-            "numpy_variants": numpy_variants,
+            #"numpy_variants": numpy_variants,
             "tricky_variants": tricky_variants,
             "tricky_alleles": tricky_alleles,
             "vcf_header": bnp.open(vcf_file_name).read_chunk().get_context("header"),
@@ -133,6 +131,6 @@ def make_index(reference_file_name, vcf_file_name, vcf_no_genotypes_file_name, o
 
 
 def make_index_cli(args):
-    return make_index(args.reference, args.vcf, args.vcf_no_genotypes, args.out_base_name,
+    return make_index(args.reference, args.vcf, args.out_base_name,
                       args.kmer_size, make_helper_model=args.make_helper_model, modulo=args.modulo,
                       variant_window=args.variant_window)
