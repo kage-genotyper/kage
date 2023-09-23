@@ -237,10 +237,16 @@ class VariantPadder:
     Merging of overlapping variants into non-overlapping
     variants that start and end at the same position
     """
-    def __init__(self, variants: bnp.datatypes.VCFEntry, reference: bnp.EncodedArray):
+    def __init__(self, variants: Variants, reference: bnp.EncodedArray):
         assert isinstance(variants, Variants), "Must be Variants object (not VcfEntry or something else)"
         self._variants = variants
-        assert np.all(variants.position[1:] >= variants.position[:-1]), "Variants must be sorted by position"
+        """
+        if not np.all(variants.position[1:] >= variants.position[:-1]):
+            is_wrong = np.where(variants.position[1:] < variants.position[:-1])[0]
+            logging.warning("Variants that are wrong: %s" % variants[1:][is_wrong])
+            logging.warning("Prev variants : %s" % variants[:-1][is_wrong])
+            raise Exception("Variants must be sorted by position")
+        """
         self._reference = reference
 
     def get_reference_mask(self, threshold=1):

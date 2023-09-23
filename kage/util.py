@@ -68,3 +68,12 @@ def stream_ragged_array(a, chunk_size=100000):
     chunks = interval_chunks(0, len(a), 1+len(a) // chunk_size)
     for chunk in chunks:
         yield a[chunk[0]:chunk[1]]
+
+
+def n_unique_values_per_column(matrix: np.ndarray):
+    """
+    Finds number of unique values per columnn by sorting. Fast when n rows is small
+    """
+    sorted = np.sort(matrix, axis=0)
+    unique = np.sum(np.diff(sorted, axis=0) != 0, axis=0) + 1
+    return unique

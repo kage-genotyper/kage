@@ -2,10 +2,11 @@ import itertools
 import logging
 import os
 from dataclasses import dataclass
-from typing import List, Literal, Union
+from typing import List, Literal, Union, Tuple
 import bionumpy as bnp
 import numpy as np
 import tqdm
+from kage.util import n_unique_values_per_column
 from shared_memory_wrapper import to_file, from_file
 import npstructures as nps
 
@@ -15,7 +16,7 @@ class PathSequences:
     sequences: List[Union['PathSequence', 'DiscBackedPathSequence']]
 
     def __post_init__(self):
-        if isinstance(self.sequences[0], bnp.EncodedRaggedArray):
+        if len(self.sequences) > 0 and isinstance(self.sequences[0], bnp.EncodedRaggedArray):
             print("Converting")
             # Wrap each encoded ragged array in PathSequence
             self.sequences = [PathSequence(s) for s in self.sequences]
@@ -36,7 +37,7 @@ class PathSequences:
     def from_list(cls, sequences):
         return cls([bnp.as_encoded_array(s) for s in sequences])
 
-    def subset_on_variants(self, from_variant, to_variant, padding=0):
+    def subset_on_variants(self, from_variant, to_variant, padding=0) -> Union['PathSequence', 'DiscBackedPathSequence']:
         """
         Subsets sequences on variants by including sequence before the first variant and after the last (noninclusive)
         If padding > 0, will ensure that sequence before first and after last variant is at least padding long
@@ -110,6 +111,33 @@ class Paths:
     def subset_on_variants(self, from_id, to_id, padding):
         return Paths(self.paths.subset_on_variants(from_id, to_id, padding),
                      PathCombinationMatrix(self.variant_alleles[:, from_id:to_id]))
+
+    def chunk(self, from_to_intervals: List[Tuple[int, int]], padding):
+        """
+        Returns a list of Paths-objects, one for each interval.
+        Idea is to chunk each path at a time to avoid reading same paths from file multiple times
+        """
+        new_path_sequences = [PathSequences([]) for _ in range(len(from_to_intervals))]
+        for path_sequence in self.paths:
+            if isinstance(path_sequence, PathSequence):
+                for i, (from_id, to_id) in enumerate(from_to_intervals):
+                    new_path_sequences[i].sequences.append(path_sequence.subset_on_variants(from_id, to_id, padding))
+            else:
+                file = path_sequence.file
+                path_sequence = path_sequence.load()
+                for i, (from_id, to_id) in enumerate(from_to_intervals):
+                    new_file_name = file + "-" + str(from_id) + "-" + str(to_id)
+                    new_path_sequences[i].sequences.append(
+                        DiscBackedPathSequence.from_non_disc_backed(
+                            path_sequence.subset_on_variants(from_id, to_id, padding),
+                            new_file_name)
+                    )
+
+        new_variant_alleles = []
+        for i, (from_id, to_id) in enumerate(from_to_intervals):
+            new_variant_alleles.append(PathCombinationMatrix(self.variant_alleles[:, from_id:to_id]))
+
+        return [Paths(s, v) for s, v in zip(new_path_sequences, new_variant_alleles)]
 
     def paths_for_allele_at_variant(self, allele, variant):
         relevant_paths = np.where(self.variant_alleles[:, variant] == allele)[0]
@@ -187,7 +215,7 @@ class PathSequence:
     def size(self):
         return self.sequence.size
 
-    def subset_on_variants(self, from_variant, to_variant, min_padding=0):
+    def subset_on_variants(self, from_variant, to_variant, padding=0):
         """Subsets on variant and ensures min padding before and after"""
         variant_start_index = 2*from_variant + 1
         variant_end_index = 2*to_variant
@@ -196,12 +224,12 @@ class PathSequence:
         # Pad with sequence before first
         flat_sequence = self.sequence.ravel()
         start = self.sequence._shape.starts[variant_start_index]
-        padding_before = flat_sequence[max(0, start - min_padding):start]
+        padding_before = flat_sequence[max(0, start - padding):start]
         padding_before = bnp.EncodedRaggedArray(padding_before, [len(padding_before)])
 
         # padding after
         end = self.sequence._shape.starts[variant_end_index]
-        padding_after = flat_sequence[end:min(end + min_padding, len(flat_sequence))]
+        padding_after = flat_sequence[end:min(end + padding, len(flat_sequence))]
         padding_after = bnp.EncodedRaggedArray(padding_after, [len(padding_after)])
 
         return PathSequence(np.concatenate([padding_before, subset, padding_after]))
@@ -235,18 +263,19 @@ class DiscBackedPathSequence:
 
 
 class PathCreator:
-    def __init__(self, graph, window: int = 3, make_disc_backed=False, disc_backed_file_base_name=None):
+    def __init__(self, graph, window: int = 3, make_disc_backed=False, disc_backed_file_base_name=None, use_new_allele_matrix=False):
         self._graph = graph
         self._variants = graph.variants
         self._genome = graph.genome
         self._window = window
         self._make_disc_backed = make_disc_backed
+        self._use_new_allele_matrix = use_new_allele_matrix
         if self._make_disc_backed:
             logging.info("Will make disc backed paths")
             assert disc_backed_file_base_name is not None
             self._disc_backed_file_base_name = disc_backed_file_base_name
 
-    def run(self, n_alleles_at_each_variant=None):
+    def run(self, n_alleles_at_each_variant=None) -> Paths:
         if n_alleles_at_each_variant is None:
             logging.info("Assuming all variants are biallelic")
             alleles = [0, 1]  # possible alleles, assuming biallelic variants
@@ -254,7 +283,10 @@ class PathCreator:
             n_variants = self._variants.n_variants
             combinations = PathCreator.make_combination_matrix(alleles, n_variants, self._window)
         else:
-            combinations = PathCreator.make_combination_matrix_multi_allele(n_alleles_at_each_variant, self._window)
+            if self._use_new_allele_matrix:
+                combinations = PathCreator.make_combination_matrix_multi_allele_v3(n_alleles_at_each_variant, self._window)
+            else:
+                combinations = PathCreator.make_combination_matrix_multi_allele(n_alleles_at_each_variant, self._window)
             n_paths = len(combinations)
 
         paths = []
@@ -285,7 +317,34 @@ class PathCreator:
         for i, c in enumerate(combinations):
             combination_matrix[i] = np.array(list(c))
 
+
+
         return PathCombinationMatrix(combination_matrix)
+
+    def make_combination_matrix_multi_allele_v3(n_alleles: np.ndarray, window) -> PathCombinationMatrix:
+        """
+        First make a biallelic with same shape, then replace columns with more than two alleles
+        """
+        matrix = PathCreator.make_combination_matrix([0, 1], len(n_alleles), window).matrix
+        is_multiallelic = np.where(n_alleles > 2)[0]
+        n_paths = matrix.shape[0]
+        for multiallelic in is_multiallelic:
+            matrix[:, multiallelic] = np.arange(n_paths) % n_alleles[multiallelic]
+
+        return PathCombinationMatrix(matrix)
+
+    @staticmethod
+    def make_combination_matrix_multi_allele_v2(n_alleles: np.ndarray, window) -> PathCombinationMatrix:
+
+        def make(empty_matrix, n_alleles):
+            n_paths = empty_matrix.shape[0]
+            for variant in range(empty_matrix.shape[1]):
+                empty_matrix[:, variant] = (np.arange(n_paths) + (variant % n_paths)) % n_alleles[variant]
+
+        n_paths = 2**window
+        empty_matrix = np.zeros((n_paths, len(n_alleles)))
+        make(empty_matrix, n_alleles)
+        return PathCombinationMatrix(empty_matrix)
 
     @staticmethod
     def make_combination_matrix_multi_allele(n_alleles: np.ndarray, window) -> PathCombinationMatrix:
@@ -305,7 +364,29 @@ class PathCreator:
             grouped_by_variant = PathCreator.convert_biallelic_path_to_multiallelic(n_alleles, path)
             new.append(grouped_by_variant)
 
-        return PathCombinationMatrix(np.array(new))
+        new = np.array(new)
+
+        # find alleles that are not covered by paths
+        n_paths_per_variant = n_unique_values_per_column(new)
+        if not np.all(n_paths_per_variant == n_alleles):
+            print(new)
+            fix = np.where(n_paths_per_variant != n_alleles)[0]
+            print(f"{len(fix)} alleles are not covered by paths, fixing")
+            for f in fix:
+                print(n_paths_per_variant[f], new[:, f])
+            logging.warning("These paths might not work with indexing. Try increasing window size")
+
+        # all alleles should be represented by at least one path
+        if not np.all(np.max(new, axis=0) == n_alleles - 1):
+            logging.warning(n_alleles)
+            logging.warning(new)
+            logging.warning(np.max(new, axis=0))
+            logging.warning("Not enough paths to cover all alleles. Try increasing window size")
+            problematic = np.where(np.max(new, axis=0) != n_alleles - 1)[0]
+            logging.info("Problematic variants: %s" % problematic)
+            # there should be no gaps in the alleles, if some are missing it should be the last
+            logging.warning(new[:, problematic])
+        return PathCombinationMatrix(new)
 
     @staticmethod
     def convert_biallelic_path_to_multiallelic(n_alleles: np.ndarray, path: np.ndarray, how: Literal["path", "encoding"] = "path"):
@@ -353,3 +434,5 @@ class VariantWindowKmers:
         for i, path in enumerate(relevant_paths):
             out[i, :] = self.kmers[path][variant].raw()
         return out
+
+

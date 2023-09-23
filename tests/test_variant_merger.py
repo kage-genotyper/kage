@@ -298,3 +298,17 @@ def test_get_padded_variants_from_vcf():
     variants = get_padded_variants_from_vcf("../example_data/few_variants_two_chromosomes.vcf", "../example_data/small_reference_two_chromosomes.fa")
     print(variants)
 
+
+
+def test_variant_padder_with_indel_after_snp_same_pos():
+    variants = Variants.from_entry_tuples([
+        ("chr1", 4, "ACGT", ""),
+        ("chr1", 3, "A", "T"),
+        ("chr1", 9, "A", "T")
+    ])
+    ref = bnp.as_encoded_array("AAAAACGTAAA")
+    padder = VariantPadder(variants, ref)
+    padded = padder.run()
+    print(padded)
+
+    assert padded == variants

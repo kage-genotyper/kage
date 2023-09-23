@@ -5,6 +5,7 @@ from kage.indexing.signatures import MatrixVariantWindowKmers, VariantWindowKmer
 import bionumpy as bnp
 
 from kage.util import log_memory_usage_now, get_memory_usage
+import pytest
 
 
 def test_matrix_window_kmers_flexible_window_size():
@@ -52,22 +53,56 @@ def test_variant_window_kmers2_from_matrix_variant_window_kmers_many_alleles_on_
                     [1, 2]
                 ]
             ]
-    print(kmers)
     kmers = MatrixVariantWindowKmers(
         ak.Array(kmers)
     )
-
-    print(kmers.describe(5))
 
     path_alleles_some_path = [0, 1, 0]
     path_alleles = np.array(
         [path_alleles_some_path] * n_alleles_on_variant +
         [[0, 0, 0]]
     )
-
     kmers2 = VariantWindowKmers2.from_matrix_variant_window_kmers(kmers, path_alleles)
-
     print(kmers2.describe(5))
+
+
+# not fixed, but not critical
+@pytest.mark.xfail
+def test_variant_window_kmers2_from_matrix_variant_window_kmers_sparse_paths():
+    """
+    Some alleles are not covered by paths.
+    This should still work and not crash
+    """
+    path_alleles = np.array([
+        [0, 0, 0],
+        [0, 2, 0],  # allele 1 is not covered
+        [1, 2, 1]
+    ])
+    kmers = MatrixVariantWindowKmers(
+        ak.Array([
+            # path 1
+            [
+                # variant
+                [0, 1, 2],
+                # variant
+                [1, 2, 3],
+                [1, 2]
+            ],
+            # path 2
+            [
+                [1],
+                [10],
+                [20]
+            ],
+            [
+                [5],
+                [6],
+                [7]
+            ]
+        ])
+    )
+    kmers2 = VariantWindowKmers2.from_matrix_variant_window_kmers(kmers, path_alleles)
+    print(kmers2)
 
 
 def test_benchmark_variant_window_kmers():

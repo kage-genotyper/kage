@@ -316,6 +316,7 @@ def test_score_window_variant_kmers2(window_kmers, path_alleles):
     assert np.all(scores == np.zeros_like(scores))
 
 
+
 @pytest.mark.xfail
 def test_signature_finder_with_svs():
     variants = Variants.from_entry_tuples([

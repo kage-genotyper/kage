@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from kage.indexing.paths import PathCreator, PathSequences, Paths
 import bionumpy as bnp
+from kage.util import n_unique_values_per_column
 
 
 def test_multiallelic_paths():
@@ -80,3 +81,47 @@ def test_subset_paths(path_sequences):
         ["AGGG", "A", "TTTG"]
     ]).sequences
 
+
+def test_chunk_paths(path_sequences):
+    paths = Paths(path_sequences,
+                  np.array([
+                      [0, 1, 0],
+                      [1, 0, 0]
+                  ])
+    )
+    paths.to_disc_backend("testpath")
+    print(paths.paths)
+    print(paths)
+    chunked = paths.chunk([(0, 1), (1, 3)], padding=4)
+    print(chunked)
+    assert len(chunked) == 2
+    assert np.all(chunked[0].variant_alleles.matrix == [[0], [1]])
+
+    #assert chunked[0].paths.sequences[0].load() == path_sequences[0].subset_on_variants(0, 1, padding=4)
+
+
+def test_path_creator_many_alleles_few_paths():
+    # test that all alleles get covered
+    n_alleles_per_variant = np.array(np.random.randint(2, 8, 50))
+    print(n_alleles_per_variant)
+    combination_matrix = PathCreator.make_combination_matrix_multi_allele_v2(n_alleles_per_variant, window=3)
+    assert np.all(n_unique_values_per_column(combination_matrix.matrix) == n_alleles_per_variant)
+    print(combination_matrix)
+
+
+def test_path_combination_matrix_v2():
+    n_alleles_per_variant = np.array([2, 3, 2, 4, 2])
+    matrix = PathCreator.make_combination_matrix_multi_allele_v2(n_alleles_per_variant, window=3)
+    assert np.all(n_unique_values_per_column(matrix) == n_alleles_per_variant)
+
+
+    n_alleles_per_variant = np.array([2, 2, 2, 2, 2])
+    matrix = PathCreator.make_combination_matrix_multi_allele_v2(n_alleles_per_variant, window=3)
+    print(matrix)
+
+
+def test_path_combination_matrix_v3():
+    n_alleles_per_variant = np.array([2, 3, 2, 4, 2])
+    matrix = PathCreator.make_combination_matrix_multi_allele_v3(n_alleles_per_variant, window=3)
+    assert np.all(n_unique_values_per_column(matrix) == n_alleles_per_variant)
+    print(matrix)

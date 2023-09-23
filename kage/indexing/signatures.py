@@ -345,6 +345,7 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         # concatenate results (since ak array is immutable)
         changed = {}  # variant_id -> MultiAllelicSignatures
         for sv_id in np.where(is_sv)[0]:
+            print(sv_id, len(signatures[sv_id]))
             # check if sv has nonunique kmers
             all_kmers = ak.to_numpy(ak.ravel(signatures[sv_id, :, :]))
             if len(np.unique(all_kmers)) != len(all_kmers):
@@ -352,7 +353,8 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
 
                 # for each allele, find the kmer with best score that is not
                 # in any other allele
-                n_alleles = len(signatures[sv_id])
+                #sv_kmers = kmers[sv_id]
+                n_alleles = len(kmers[sv_id])
                 new_variant_kmers = []
                 for allele in range(n_alleles):
                     all_kmers_for_other_alleles = np.concatenate([ak.to_numpy(ak.ravel(kmers[sv_id, other_allele, :, :]))
@@ -385,12 +387,14 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
                 flat = np.concatenate(new_variant_kmers)
                 shape = [len(n) for n in new_variant_kmers]
                 #print("FLAT", flat, shape)
-                to_add = ak.unflatten(ak.unflatten(flat, shape), [n_alleles])
+                to_add = MultiAllelicSignatures(ak.unflatten(ak.unflatten(flat, shape), [n_alleles]))
+
                 #print(to_add)
                 #print("to add dtype", to_add.type)
-                changed[sv_id] = MultiAllelicSignatures(to_add)
+                changed[sv_id] = to_add
 
         logging.info("Concatenating signatures")
+        t0 = time.perf_counter()
         to_concatenate = []
         prev_id = 0
         for sv_id, sig in changed.items():
@@ -399,6 +403,7 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
             prev_id = sv_id + 1
         to_concatenate.append(signatures[prev_id:])
         new = np.concatenate(to_concatenate)
+        logging.info("Concatenation took %.4f sec" % (time.perf_counter() - t0))
         assert len(new) == len(signatures)
         self._signatures_found = MultiAllelicSignatures(new)
 
@@ -714,6 +719,7 @@ class VariantWindowKmers2:
         grouped_by_alleles = ak.unflatten(grouped_by_window, n_per_allele)
 
         # group by variant
+        # todo: This is wrong if some alleles are not covered by paths. This assume every allele is covered by at least one path
         n_alleles_per_variant = np.max(path_alleles, axis=0) + 1
         logging.info("Total alleles: %d" % np.sum(n_alleles_per_variant))
         logging.info("Max alleles on a variant: %d" % np.max(n_alleles_per_variant))
@@ -856,7 +862,7 @@ def awkward_unravel_like(flat_array, like_array):
     """ Utility function for unraveling a flattened ak.Array """
 
 
-def get_signatures(k: int, paths: Paths, scorer, chunk_size=50000, add_dummy_count_to_index=-1):
+def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_count_to_index=-1):
     """Wrapper function that finds multiallelic signatures from paths"""
     log_memory_usage_now("Before MatrixVariantWindowKmers")
 
@@ -865,9 +871,20 @@ def get_signatures(k: int, paths: Paths, scorer, chunk_size=50000, add_dummy_cou
     chunks = interval_chunks(0, n_variants, n_variants//chunk_size+1)
     print("Chunks", chunks)
     all_signatures = []
-    for from_variant, to_variant in tqdm.tqdm(chunks, desc="Finding signatures", unit="chunks", total=len(chunks)):
-        subpaths = paths.subset_on_variants(from_variant, to_variant, k)
 
+    #todo make all subpaths before loop to avoid reading paths multiple times
+    #all_subpaths = []
+    #for from_variant, to_variant in tqdm.tqdm(chunks, desc="Making subpaths", unit="chunks", total=len(chunks)):
+    #    all_subpaths.append(paths.subset_on_variants(from_variant, to_variant, k))
+
+    all_subpaths = paths.chunk(chunks, padding=k)
+
+    for i, (from_variant, to_variant) in enumerate(tqdm.tqdm(chunks, desc="Finding signatures", unit="chunks", total=len(chunks))):
+        logging.info("Subsetting paths on variants")
+        #subpaths = paths.subset_on_variants(from_variant, to_variant, k)
+        subpaths = all_subpaths[i]
+
+        logging.info("Making variant window kmers from paths (finding kmer candidates)")
         variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(subpaths.paths, k)
         log_memory_usage_now("After MatrixVariantWindowKmers")
         logging.info("Converting variant window kmers to new data structure")
