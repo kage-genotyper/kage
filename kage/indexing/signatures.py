@@ -9,7 +9,7 @@ import tqdm
 from graph_kmer_index import FlatKmers, CollisionFreeKmerIndex
 from shared_memory_wrapper.util import interval_chunks
 
-from .kmer_scoring import Scorer
+from .kmer_scoring import Scorer, FastApproxCounter
 from .paths import Paths, PathSequences
 from ..preprocessing.variants import Variants, VariantAlleleToNodeMap
 from typing import List, Union
@@ -345,49 +345,22 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         # concatenate results (since ak array is immutable)
         changed = {}  # variant_id -> MultiAllelicSignatures
         for sv_id in np.where(is_sv)[0]:
-            print(sv_id, len(signatures[sv_id]))
             # check if sv has nonunique kmers
-            all_kmers = ak.to_numpy(ak.ravel(signatures[sv_id, :, :]))
+            #all_kmers = ak.to_numpy(ak.ravel(signatures[sv_id, :, :]))
+            all_kmers = ak.ravel(signatures[sv_id, :, :])
             if len(np.unique(all_kmers)) != len(all_kmers):
                 #logging.info("SV %d has nonunique kmers: %s" % (sv_id, str(all_kmers)))
 
                 # for each allele, find the kmer with best score that is not
                 # in any other allele
-                #sv_kmers = kmers[sv_id]
-                n_alleles = len(kmers[sv_id])
-                new_variant_kmers = []
-                for allele in range(n_alleles):
-                    all_kmers_for_other_alleles = np.concatenate([ak.to_numpy(ak.ravel(kmers[sv_id, other_allele, :, :]))
-                                                                  for other_allele in range(n_alleles)
-                                                                  if other_allele != allele])
-                    allele_kmers = kmers[sv_id, allele]  # x n_paths x n_windows
-                    n_windows = len(allele_kmers[0])  # same windows on all paths
-                    best_window = 0
-                    best_score = -10000000000
-                    all_scores = []
-                    positions_with_nonunique = []
-                    for window in range(n_windows):
-                        window_kmers = ak.to_numpy(kmers[sv_id, allele, :, window])
-                        score = scores[sv_id, allele, window]
-                        all_scores.append(score)
-                        if set(window_kmers).intersection(all_kmers_for_other_alleles):
-                            positions_with_nonunique.append(window)
-                            continue
-                        if score > best_score:
-                            best_window = window
-                            best_score = score
+                sv_kmers = kmers[sv_id]
+                sv_scores = scores[sv_id]
 
-                    #logging.info("Picked window %d with score %d, all scores: %s. Positions with nonunique kmers: %s" % (best_window, best_score, str(all_scores), positions_with_nonunique))
-                    chosen = np.unique(ak.to_numpy(kmers[sv_id, allele, :, best_window]))
-                    assert chosen.dtype == np.uint64
-                    new_variant_kmers.append(chosen)
-
-                # hacky way to build ak array to keep dtype
-                # awkard array changes dtype when making from list
-                flat = np.concatenate(new_variant_kmers)
-                shape = [len(n) for n in new_variant_kmers]
-                #print("FLAT", flat, shape)
-                to_add = MultiAllelicSignatures(ak.unflatten(ak.unflatten(flat, shape), [n_alleles]))
+                t0 = time.perf_counter()
+                to_add = MultiAllelicSignatureFinderV2.manually_find_kmers(sv_kmers, sv_scores)
+                time_spent = time.perf_counter()-t0
+                if time_spent > 0.1:
+                    print(sv_id, len(signatures[sv_id]), len(sv_kmers[0][0]), time_spent)
 
                 #print(to_add)
                 #print("to add dtype", to_add.type)
@@ -407,6 +380,55 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         assert len(new) == len(signatures)
         self._signatures_found = MultiAllelicSignatures(new)
 
+    @staticmethod
+    def manually_find_kmers(kmers: ak.Array, scores: ak.Array) -> MultiAllelicSignatures:
+        """
+        Kmers and scores are ak.Arrays of shape n_alleles x n_paths x n_windows
+        """
+        n_alleles = len(kmers)
+        new_variant_kmers = []
+
+        # make a kmer scorer counting only kmers on this variant
+        # get scores for kmers, add those scores to the existing scores
+        # idea is to try to find unique kmers within this variant
+        local_modulo = 1000001
+        local_scorer = np.zeros(local_modulo, dtype=float)
+        all_variant_kmers = ak.to_numpy(ak.ravel(kmers))
+        local_scorer += np.bincount((all_variant_kmers % local_modulo).astype(int), minlength=local_modulo)
+
+
+        for allele in range(n_alleles):
+            t0 = time.perf_counter()
+            #all_kmers_for_other_alleles = set(np.concatenate([ak.to_numpy(ak.ravel(kmers[other_allele, :, :]))
+            #                                              for other_allele in range(n_alleles)
+            #                                              if other_allele != allele]))
+            #print("Getting all kmers for allele %d: %.5f" % (allele, time.perf_counter()-t0))
+            allele_kmers = kmers[allele]  # x n_paths x n_windows
+            n_windows = len(allele_kmers[0])  # same windows on all paths
+            # pick some windoe locations
+            window_locations = range(0, n_windows, max(1, n_windows // 10))
+            best_window = 0
+            best_score = -10000000000
+            t0 = time.perf_counter()
+            for window in window_locations:
+                window_kmers = kmers[allele, :, window]
+                score = scores[allele, window]
+                score -= np.max(local_scorer[window_kmers % local_modulo])
+                #if all_kmers_for_other_alleles.intersection(window_kmers):
+                #    continue
+                if score > best_score:
+                    best_window = window
+                    best_score = score
+            #print("Time allele %d: %.4f" % (allele, time.perf_counter()-t0))
+
+            chosen = np.unique(ak.to_numpy(kmers[allele, :, best_window]))
+            assert chosen.dtype == np.uint64
+            new_variant_kmers.append(chosen)
+        # hacky way to build ak array to keep dtype
+        # awkard array changes dtype when making from list
+        flat = np.concatenate(new_variant_kmers)
+        shape = [len(n) for n in new_variant_kmers]
+        return MultiAllelicSignatures(ak.unflatten(ak.unflatten(flat, shape), [n_alleles]))
 
 
 class SignatureFinder2(SignatureFinder):
