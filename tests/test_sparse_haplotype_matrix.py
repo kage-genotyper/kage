@@ -115,3 +115,29 @@ def test_to_biallelic():
 
     assert np.all(biallelic.to_matrix() == correct)
 
+
+def test_sparse_haplotype_matrix_with_missing_data():
+    # missing data is encoded as 9
+    missing_encoding = 127
+    e = missing_encoding
+    m = SparseHaplotypeMatrix.from_nonsparse_matrix(
+        np.array([
+            [0, e, 0, 2, 1, e],
+            [0, 1, 0, 1, 0, e],
+        ])
+    )
+    n_alleles_per_variant = np.array([3, 2])
+
+    biallelic = m.to_biallelic(n_alleles_per_variant, missing_data_encoding=missing_encoding)
+
+    correct = [
+        [0, e, 0, 0, 1, e],
+        [0, e, 0, 1, 0, e],
+        [0, 1, 0, 1, 0, e]
+    ]
+
+    print(biallelic.to_matrix())
+    assert np.all(biallelic.to_matrix() == correct)
+
+
+#def test_sparse_haplotype_matrix_to_biallelic_with_missing_data():

@@ -918,5 +918,8 @@ def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_cou
         signatures = MultiAllelicSignatureFinderV2(variant_window_kmers2, scorer=scorer, k=k).run(add_dummy_count_to_index)
         all_signatures.append(signatures)
 
+    for s in all_subpaths:
+        s.remove_tmp_files()
+
     return MultiAllelicSignatures.from_multiple(all_signatures)
 

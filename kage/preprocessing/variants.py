@@ -64,7 +64,7 @@ class Variants:
         return SimpleVcfEntry(self.chromosome, self.position-pad_size, new_ref, new_alt)
 
     @classmethod
-    def from_multiallelic_vcf_entry(cls, variants: Union[bnp.datatypes.VCFEntry, SimpleVcfEntry]):
+    def from_multiallelic_vcf_entry(cls, variants: Union[bnp.datatypes.VCFEntry, SimpleVcfEntry], return_n_alleles_per_variant=False):
         """ Create a Variants object from a multiallelic vcf entry where no variants
         are overlapping (variants are padded).
         Converts all multiallelic variants to biallelic.
@@ -96,7 +96,10 @@ class Variants:
 
         new.append(variants[prev_variant:])
         merged = np.concatenate(new)
-        return cls.from_vcf_entry(merged)
+        merged = cls.from_vcf_entry(merged)
+        if return_n_alleles_per_variant:
+            return merged, n_alleles_per_variant
+        return merged
 
     @classmethod
     def from_vcf_entry(cls, variants: bnp.datatypes.VCFEntry):

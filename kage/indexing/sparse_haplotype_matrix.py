@@ -34,7 +34,7 @@ class SparseHaplotypeMatrix:
     def empty(cls):
         return cls(None)
 
-    def to_biallelic(self, n_alleles_per_variant) -> 'SparseHaplotypeMatrix':
+    def to_biallelic(self, n_alleles_per_variant, missing_data_encoding=127) -> 'SparseHaplotypeMatrix':
         """
         Converts a multiallelic haplotype matrix to biallelic.
         """
@@ -49,7 +49,9 @@ class SparseHaplotypeMatrix:
         # create a matrix where rows with more than 2 alleles are duplicated
         # each such row should have 1 allele if it's allele matches the row rank,
         # where rank is 1, 2, 3 ... for the rows
-        # first make matrix with duplicate rows, then do modulo
+
+        # If missing data at an allele, all alleles in biallelic should also have missing data
+
         matrix = self.to_matrix()
 
         @numba.jit(nopython=True)
@@ -68,8 +70,21 @@ class SparseHaplotypeMatrix:
         allele_indexes_matrix = np.tile(allele_indexes, (self.n_haplotypes, 1)).T
         new_matrix = matrix[row_indexes, :]
         new_matrix = (new_matrix == allele_indexes_matrix).astype(np.uint8)
-        return SparseHaplotypeMatrix.from_nonsparse_matrix(new_matrix)
 
+        @numba.jit(nopython=True)
+        def fill_missing(multiallelic_matrix, biallelic_matrix, n_alleles_per_variant, missing_data_encoding):
+            # all alleles that were missing at multiallelic should be missing at all alleles in biallelic
+            for haplotype in range(biallelic_matrix.shape[1]):
+                i = 0
+                for variant in range(len(n_alleles_per_variant)):
+                    if multiallelic_matrix[variant, haplotype] == missing_data_encoding:
+                        for allele in range(n_alleles_per_variant[variant]-1):
+                            biallelic_matrix[i+allele, haplotype] = missing_data_encoding
+                    i += n_alleles_per_variant[variant]-1
+
+        fill_missing(matrix, new_matrix, n_alleles_per_variant, missing_data_encoding)
+
+        return SparseHaplotypeMatrix.from_nonsparse_matrix(new_matrix)
 
     def to_multiallelic(self, n_alleles_per_variant) -> 'SparseHaplotypeMatrix':
         """
@@ -88,6 +103,9 @@ class SparseHaplotypeMatrix:
 
     @classmethod
     def from_nonsparse_matrix(cls, matrix):
+        matrix = np.asarray(matrix)
+        assert np.all(matrix <= 128), "Too high values"
+        assert np.all(matrix >= 0), "Values below 0"
         return cls(scipy.sparse.csc_matrix(matrix))
 
     def to_matrix(self):
