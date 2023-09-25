@@ -1,11 +1,11 @@
 import logging
+from dataclasses import dataclass
 
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 from kage.preprocessing.variants import Variants
 
 logging.basicConfig(level=logging.INFO)
-from typing import Dict
-
+from typing import Dict, List, Tuple
 
 import bionumpy as bnp
 import numpy as np
@@ -70,22 +70,29 @@ class IndexedGenotypes:
         return cls(index)
 
     @classmethod
-    def from_multiallelic_vcf(cls, file_name):
+    def from_multiallelic_vcf(cls, file_name, convert_to_biallelic=True):
         """
         Also works for nonmultiallelic. Will split multiallelic entries into biallelic if there are any.
         """
+        logging.info("Redding vcf")
         vcf_entry = bnp.open(file_name, buffer_type=bnp.io.delimited_buffers.VCFBuffer).read()
         
         # read genotypes using VcfEntryWithSingleIndividualGenotypes
         # encode genotypes manually since bionumpy does not support many alleles
         # encode missing haplotype
+        logging.info("Reading genotypes")
         vcf_with_genotypes = bnp.open(file_name, buffer_type=VcfWithSingleIndividualBuffer).read()
+        logging.info("Processing genotypes")
         genotypes = vcf_with_genotypes.genotype.tolist()
         genotypes = (normalize_genotype(g) for g in genotypes)
         genotypes = normalized_genotypes_to_haplotype_matrix(genotypes)
+        logging.info("Making haplotype matrix")
         haplotype_matrix = SparseHaplotypeMatrix.from_nonsparse_matrix(genotypes)
         #haplotype_matrix = SparseHaplotypeMatrix.from_vcf(file_name)
-        return cls.from_multiallelic_variants_and_haplotype_matrix(vcf_entry, haplotype_matrix)
+        if convert_to_biallelic:
+            return cls.from_multiallelic_variants_and_haplotype_matrix(vcf_entry, haplotype_matrix)
+        else:
+            return cls.from_multiallelic_variants_and_haplotype_matrix_without_biallelic_converion(vcf_entry, haplotype_matrix)
 
     @classmethod
     def from_vcf(cls, file_name):
@@ -100,6 +107,37 @@ class IndexedGenotypes:
 
     def items(self):
         return self._index.items()
+
+    @classmethod
+    def from_multiallelic_variants_and_haplotype_matrix_without_biallelic_converion(cls, variants: VcfEntry, haplotype_matrix: SparseHaplotypeMatrix, missing_genotype_encoding=127):
+        """
+        Normalizes multiallelic variants by sorting on alternative allele. Converts genotypes according to sorting
+        so that the same multiallelic variants with different sorting can be compared.
+        """
+        index = {}
+        n_changed_order = 0
+        for variant, haplotypes in zip(variants, haplotype_matrix.to_matrix()):
+            alt_seqs = variant.alt_seq.to_string().split(",")
+            sorting = np.argsort(alt_seqs)
+            if not np.all(sorting == np.arange(len(sorting))):
+                n_changed_order += 1
+            new_alt_seqs = [alt_seqs[i] for i in sorting]
+            mapping = {sorting[i]+1: i+1 for i in range(len(sorting))}
+            # recode genotype to new sorting. 0 should be 0 and missing should be missing
+            alleles = sorted([mapping[haplotype] if haplotype != 0 and haplotype != missing_genotype_encoding else haplotype for haplotype in haplotypes])
+            key = f"{variant.chromosome.to_string()}-{variant.position}-{variant.ref_seq.to_string()}-{'-'.join(new_alt_seqs)}"
+
+            allele1 = str(alleles[0])
+            if allele1 == str(missing_genotype_encoding):
+                allele1 = "."
+            allele2 = str(alleles[1])
+            if allele2 == str(missing_genotype_encoding):
+                allele2 = "."
+            index[key] = f"{allele1}/{allele2}"
+
+        logging.info("Normalized %d multiallelic variants by changing order of alt alleles" % n_changed_order)
+
+        return cls(index)
 
     @classmethod
     def from_multiallelic_variants_and_haplotype_matrix(cls, variants: VcfEntry, haplotype_matrix: SparseHaplotypeMatrix, missing_genotype_encoding=127):
@@ -117,7 +155,6 @@ class IndexedGenotypes:
             assert "," not in variant.alt_seq.to_string()
             key = f"{variant.chromosome.to_string()}-{variant.position}-{variant.ref_seq.to_string()}-{variant.alt_seq.to_string()}"
             allele1 = str(alleles[0])
-            # missing is encoded as 10
             if allele1 == str(missing_genotype_encoding):
                 allele1 = "."
             allele2 = str(alleles[1])
@@ -151,11 +188,16 @@ class GenotypeAccuracy:
 
         truth = self._truth
         for i, (key, t) in enumerate(truth.items()):
+            if isinstance(t, MultiAllelicVariant):
+                t = t.genotype_string()
+
             if key not in self._sample:
                 # did not genotype, treat as 0/0
                 g = "0/0"
             else:
                 g = self._sample[key]
+                if isinstance(g, MultiAllelicVariant):
+                    g = g.genotype_string()
 
             if "." in t:
                 n_with_missing += 1
@@ -184,8 +226,14 @@ class GenotypeAccuracy:
         """
         for key, g in self._sample.items():
             if key not in self._truth:
-                raise Exception(f"Sample has genotype {g} for variant {key} not in truth")
+                logging.error(f"Sample has genotype {g} for variant {key[0:100]}... not in truth")
+                # try to find closest match for debugging
+                s = "-".join(key.split("-")[0:3])
+                matches = [k for k in self._truth._index if k.startswith(s)]
+                for match in matches:
+                    logging.error("   Match: %s" % match[0:100])
 
+                raise Exception("Sample has genotype not in truth. Something is probably wrong")
     @property
     def true_positive(self):
         return self._confusion_matrix["true_positive"]
@@ -223,4 +271,80 @@ class GenotypeAccuracy:
 
     def get_debug_report(self):
         return self._out_report
+
+
+@dataclass
+class MultiAllelicVariant:
+    """
+    Represents a multiallelic variant that can be uniquely identified
+    by chromosome, position and reference sequence (which works when multiallelic variants are not overlapping)
+    """
+    chromosome: str
+    position: int
+    reference_sequence: str
+    alt_sequences: List[str]
+    genotype: List[int]
+
+    def key(self):
+        return f"{self.chromosome}-{self.position}-{self.reference_sequence}"
+
+    def genotype_string(self, missing_genotype_encoding=127):
+        alleles = self.genotype
+        allele1 = str(alleles[0])
+        if allele1 == str(missing_genotype_encoding):
+            allele1 = "."
+        allele2 = str(alleles[1])
+        if allele2 == str(missing_genotype_encoding):
+            allele2 = "."
+        return f"{allele1}/{allele2}"
+
+    def normalize_using_reference_variant(self, reference_variant, missing_allele_encoding=127):
+        """
+        "Normalizes" using another  reference variant that is identical but that
+        may have different order of alternative sequences. Uses the reference
+        to reorder the alternative sequences and recode the genotype accordingly.
+        """
+        assert self.key() == reference_variant.key()
+        allele_mapping = {seq: i for i, seq in enumerate(reference_variant.alt_sequences)}
+        for seq in self.alt_sequences:
+            assert seq in allele_mapping, f"Allele {seq} not in reference variant"
+
+        new_alt_sequences = reference_variant.alt_sequences  # [self.alt_sequences[allele_mapping[seq]] for seq in self.alt_sequences]
+        new_alleles = sorted([allele_mapping[self.alt_sequences[allele-1]]+1 if allele != 0 and allele != missing_allele_encoding
+                       else allele for allele in self.genotype])
+
+        self.alt_sequences = new_alt_sequences
+        self.genotype = new_alleles
+
+
+
+class IndexedGenotypes2(IndexedGenotypes):
+    """Similar to IndexGenotypes but represents variants using MultiAllelicVariant object.
+    Makes it easier to normalize variants that have different order of alternative alleles.
+    """
+    def __init__(self, index: Dict[str, MultiAllelicVariant]):
+        self._index = index
+
+    @classmethod
+    def from_multiallelic_variants_and_haplotype_matrix_without_biallelic_converion(cls, variants: VcfEntry,
+                                                                                    haplotype_matrix: SparseHaplotypeMatrix,
+                                                                                    missing_genotype_encoding=127):
+        """
+        Normalizes multiallelic variants by sorting on alternative allele. Converts genotypes according to sorting
+        so that the same multiallelic variants with different sorting can be compared.
+        """
+        index = {}
+        n_changed_order = 0
+        for variant, haplotypes in zip(variants, haplotype_matrix.to_matrix()):
+            v = MultiAllelicVariant(variant.chromosome.to_string(), variant.position, variant.ref_seq.to_string(),
+                                    variant.alt_seq.to_string().split(","), list(haplotypes))
+            index[v.key()] = v
+
+        return cls(index)
+
+    def normalize_against_reference_variants(self, reference_variants: 'IndexedGenotypes2'):
+        for key, variant in self.items():
+            assert key in reference_variants, f"Variant {key} not in reference variants"
+            reference_variant = reference_variants[key]
+            variant.normalize_using_reference_variant(reference_variant)
 

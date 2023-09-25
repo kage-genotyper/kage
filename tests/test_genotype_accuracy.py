@@ -1,5 +1,5 @@
 from kage.analysis.genotype_accuracy import GenotypeAccuracy, read_vcf_with_genotypes, normalize_genotype, \
-    IndexedGenotypes, normalized_genotypes_to_haplotype_matrix
+    IndexedGenotypes, normalized_genotypes_to_haplotype_matrix, MultiAllelicVariant, IndexedGenotypes2
 import bionumpy as bnp
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 from kage.preprocessing.variants import SimpleVcfEntry
@@ -72,6 +72,16 @@ def test_indexed_genotypes_from_multiallelic():
     assert indexed_genotypes["chr1-30-A-T"] == "1/."  # 127 is encoding for missing
     print(indexed_genotypes)
 
+    indexed_genotypes_multiallelic = IndexedGenotypes.from_multiallelic_variants_and_haplotype_matrix_without_biallelic_converion(variants, haplotype_matrix)
+    assert indexed_genotypes_multiallelic["chr1-6-A-T"] == "0/1"
+    assert indexed_genotypes_multiallelic["chr1-10-A-C-G-T"] == "2/3"
+    assert indexed_genotypes_multiallelic["chr1-30-A-T"] == "1/."  # 127 is encoding for missing
+
+    # test v2
+    indexed_genotypes2 = IndexedGenotypes2.from_multiallelic_variants_and_haplotype_matrix_without_biallelic_converion(variants, haplotype_matrix)
+    print(indexed_genotypes2._index)
+    assert indexed_genotypes2["chr1-10-A"] == MultiAllelicVariant("chr1", 10, "A", ["T", "C", "G"], [1, 3])
+
 
 def test_normalized_genotypes_to_haplotype_matrix():
     missing_genotype_encoding = 127
@@ -87,3 +97,25 @@ def test_normalized_genotypes_to_haplotype_matrix():
     matrix = normalized_genotypes_to_haplotype_matrix(genotypes, encode_missing_as=missing_genotype_encoding)
     assert np.all(matrix == correct)
 
+
+
+def test_multiallelic_variant():
+    ref = MultiAllelicVariant("chr1", 10, "A", ["T", "C", "G"], (0, 1))
+    other = MultiAllelicVariant("chr1", 10, "A", ["C", "G"], (0, 1))
+
+    other.normalize_using_reference_variant(ref)
+    assert other.genotype == [0, 2]
+
+    other = MultiAllelicVariant("chr1", 10, "A", ["C", "G"], (127, 1))
+    other.normalize_using_reference_variant(ref)
+    assert other.genotype == [2, 127]
+
+    other = MultiAllelicVariant("chr1", 10, "A", ["C", "G"], (127, 2))
+    other.normalize_using_reference_variant(ref)
+    assert other.genotype == [3, 127]
+
+    ref = MultiAllelicVariant("chr2", 4, "A", ["ACTACTACACT", "AAAA", "T"], (0, 0))
+    other = MultiAllelicVariant("chr2", 4, "A", ["T"], (1, 0))
+    other.normalize_using_reference_variant(ref)
+    assert other.alt_sequences == ref.alt_sequences
+    assert other.genotype == [0, 3]
