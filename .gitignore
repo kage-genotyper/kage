@@ -1,6 +1,7 @@
 .cache/
 .idea/
 alignment_free_graph_genotyper.egg-info/
+__pycache__
 kage/__pycache__/
 kage/cython_chain_genotyper.c
 kage/cython_chain_genotyper.html
@@ -13,7 +14,9 @@ tests/__pycache__/
 *.npy
 *.npz
 *.fa
+*.fai
 *.fa.fai
+*.prof
 *.fasta
 *.vcf.gz
 *.vcf
