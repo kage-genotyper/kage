@@ -487,9 +487,14 @@ class MultiAllelicVariantSequences(VariantAlleleSequences):
     def from_list(cls, variant_sequences: List[List]):
         return cls(ak.Array(variant_sequences))
 
-    def get_haplotype_sequence(self, haplotypes: np.ndarray) -> bnp.EncodedRaggedArray:
+    def get_haplotype_sequence(self, haplotypes: np.ndarray, from_variant: int = None, to_variant: int = None) -> bnp.EncodedRaggedArray:
         assert len(haplotypes) == self.n_variants
-        allele_sequences = self._data[np.arange(self.n_variants), haplotypes]
+        if from_variant is None:
+            from_variant = 0
+        if to_variant is None:
+            to_variant = len(haplotypes)
+
+        allele_sequences = self._data[np.arange(from_variant, to_variant), haplotypes[from_variant:to_variant]]
         shape = ak.to_numpy(ak.num(allele_sequences))
         # flatten, and encode
         bytes = ak.to_numpy(ak.flatten(ak.without_parameters(allele_sequences)))

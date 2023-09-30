@@ -89,15 +89,25 @@ class Graph:
         """
         Returns the sequence through the graph given haplotypes for all variants
         """
-        assert len(haplotypes) == self.n_variants(), (len(haplotypes), self.n_variants())
-        ref_sequence = self.genome.sequence
-        variant_sequences = self.variants.get_haplotype_sequence(haplotypes)
+        if from_to_variant is None:
+            # whole graph sequence
+            assert len(haplotypes) == self.n_variants(), (len(haplotypes), self.n_variants())
+            ref_sequence = self.genome.sequence
+            variant_sequences = self.variants.get_haplotype_sequence(haplotypes)
 
-        assert np.all(ref_sequence.shape[1] >= 0), ref_sequence.shape[1]
-        assert np.all(variant_sequences.shape[1] >= 0)
+            assert np.all(ref_sequence.shape[1] >= 0), ref_sequence.shape[1]
+            assert np.all(variant_sequences.shape[1] >= 0)
+            # stitch these together
+            result = zip_sequences(ref_sequence, variant_sequences)
 
-        # stitch these together
-        result = zip_sequences(ref_sequence, variant_sequences)
+        else:
+            # sequence should start with sequence of start variant and end with sequence of end_variant-1 (exclusive end)
+            # inbetween there should be ref sequence
+            start, end = from_to_variant
+            ref_sequence = self.genome.sequence[start+1:end]
+            variant_sequences = self.variants.get_haplotype_sequence(haplotypes, start, end)
+            # stitch these together
+            result = zip_sequences(variant_sequences, ref_sequence)
 
         if reverse_complement:
             result = bnp.sequence.get_reverse_complement(result)[::-1]  # reverse rows so that ravel() will be correct

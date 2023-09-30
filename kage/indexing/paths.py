@@ -289,8 +289,17 @@ class GraphBackedPathSequence:
             # not a chunk
             return self.graph.sequence(self.alleles)
         else:
-            return
-            return PathSequence(np.concatenate([padding_before, subset, padding_after]))
+            assert self.padding is not None
+            assert self.end_variant is not None
+            assert self.end_variant > self.start_variant
+            # Get sequences from start variant to end variant
+            # and add padded sequence before and after
+            sequence_before = self.graph.get_bases_before_variant(self.start_variant, self.alleles, self.padding)
+            sequence_after = self.graph.get_bases_after_variant(self.end_variant-1, self.alleles, self.padding)
+
+            sequence = self.graph.sequence(self.alleles, from_to_variant=(self.start_variant, self.end_variant))
+
+            return PathSequence(np.concatenate([sequence_before, sequence, sequence_after]))
 
     def subset_on_variants(self, from_variant, to_variant, padding=0):
         """Subsets on variant and ensures min padding before and after"""

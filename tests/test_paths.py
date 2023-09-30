@@ -176,3 +176,17 @@ def test_sequence_before_variant_at_graph(graph):
     seq = graph.get_bases_before_variant(3, np.array([0, 2, 0, 0]), n_bases=8)
     assert seq.to_string() == "AA" + "T" + "" + "AA" + "GGG"
 
+
+def test_get_graph_sequence_from_to_variant(graph):
+    haplotype = np.array([0, 2, 1, 0])
+    seq = graph.sequence(haplotype, from_to_variant=(0, 4))
+    assert seq.tolist() == ["A", "AAA", "T", "", "CC", "GGG", "G"]
+
+    seq = graph.sequence(haplotype, from_to_variant=(1, 4))
+    assert seq.tolist() == ["T", "", "CC", "GGG", "G"]
+
+    seq = graph.sequence(haplotype, from_to_variant=(1, 2))
+    assert seq.tolist() == ["T"]
+
+    seq = graph.sequence(haplotype, from_to_variant=(0, 3))
+    assert seq.tolist() == ["A", "AAA", "T", "", "CC"]
