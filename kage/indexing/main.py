@@ -73,7 +73,10 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     logging.info("Made %d paths to cover variants" % (len(paths.paths)))
 
     variant_to_nodes = node_mapping.get_variant_to_nodes()
-    signatures = get_signatures(k, paths, scorer)
+    signatures_chunk_size = 10000
+    if len(variants) > 1000000:
+        signatures_chunk_size = 100000
+    signatures = get_signatures(k, paths, scorer, chunk_size=signatures_chunk_size)
 
     # todo: Send in node_mapping to get kmer_index with correct node ids
     kmer_index = signatures.get_as_kmer_index(node_mapping=node_mapping, modulo=modulo, k=k)

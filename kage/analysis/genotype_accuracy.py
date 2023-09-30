@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 from kage.preprocessing.variants import Variants
+import tqdm
 
 logging.basicConfig(level=logging.INFO)
 from typing import Dict, List, Tuple
@@ -88,7 +89,6 @@ class IndexedGenotypes:
         genotypes = normalized_genotypes_to_haplotype_matrix(genotypes)
         logging.info("Making haplotype matrix")
         haplotype_matrix = SparseHaplotypeMatrix.from_nonsparse_matrix(genotypes)
-        #haplotype_matrix = SparseHaplotypeMatrix.from_vcf(file_name)
         if convert_to_biallelic:
             return cls.from_multiallelic_variants_and_haplotype_matrix(vcf_entry, haplotype_matrix)
         else:
@@ -177,31 +177,61 @@ class GenotypeAccuracy:
         self._preprocess()
         self._validate()
 
+    @property
+    def confusion_matrix(self):
+        return self._confusion_matrix
+
     def _preprocess(self):
         n_with_missing = 0
+        n_not_found_in_sample = 0
         self._confusion_matrix = {
             "true_positive": 0,
             "true_negative": 0,
             "false_positive": 0,
-            "false_negative": 0
+            "false_negative": 0,
+            "hetero": 0,
+            "hetero_correct": 0,
+            "homo_ref": 0,
+            "homo_ref_correct": 0,
+            "homo_alt": 0,
+            "homo_alt_correct": 0,
+            "missing": 0,
+            "missing_correct": 0
         }
 
         truth = self._truth
-        for i, (key, t) in enumerate(truth.items()):
-            if isinstance(t, MultiAllelicVariant):
+        for i, (key, t) in tqdm.tqdm(enumerate(truth.items()), desc="Running comparison", total=len(truth.items())):
+            if isinstance(t, BiallelicVariant):
                 t = t.genotype_string()
 
             if key not in self._sample:
+                n_not_found_in_sample += 1
                 # did not genotype, treat as 0/0
                 g = "0/0"
             else:
                 g = self._sample[key]
-                if isinstance(g, MultiAllelicVariant):
+                if isinstance(g, BiallelicVariant):
                     g = g.genotype_string()
 
             if "." in t:
                 n_with_missing += 1
-                continue
+                #continue
+                self._confusion_matrix["missing"] += 1
+                if "." in g:
+                    # if any allele is missing, this is "correct" (same way PanGenie defines correct missing)
+                    self._confusion_matrix["missing_correct"] += 1
+            elif t == "0/0":
+                self._confusion_matrix["homo_ref"] += 1
+                if g == "0/0":
+                    self._confusion_matrix["homo_ref_correct"] += 1
+            elif t.startswith("0/"):
+                self._confusion_matrix["hetero"] += 1
+                if g == t:
+                    self._confusion_matrix["hetero_correct"] += 1
+            else:
+                self._confusion_matrix["homo_alt"] += 1
+                if g == t:
+                    self._confusion_matrix["homo_alt_correct"] += 1
 
             if t == g and t != "0/0":
                 self._confusion_matrix["true_positive"] += 1
@@ -217,6 +247,7 @@ class GenotypeAccuracy:
                 assert False, (t, g)
 
         logging.info(f"{n_with_missing} truth genotypes contained missing allele(s)")
+        logging.info(f"{n_not_found_in_sample} truth genotypes not found in sample. These were set to 0/0")
         logging.info("Confusion matrix: %s" % self._confusion_matrix)
 
     def _validate(self):
@@ -224,7 +255,8 @@ class GenotypeAccuracy:
         Look for problems that can make the comparison invalid
         If the smaple has genotypes that the truth doesn't have, something is wrong
         """
-        for key, g in self._sample.items():
+        logging.info("Validating...")
+        for key, g in tqdm.tqdm(self._sample.items()):
             if key not in self._truth:
                 logging.error(f"Sample has genotype {g} for variant {key[0:100]}... not in truth")
                 # try to find closest match for debugging
@@ -245,6 +277,22 @@ class GenotypeAccuracy:
     @property
     def false_positive(self):
         return self._confusion_matrix["false_positive"]
+
+    @property
+    def concordance_hetero(self):
+        return self._confusion_matrix["hetero_correct"] / self._confusion_matrix["hetero"] if self._confusion_matrix["hetero"] > 0 else 0
+
+    @property
+    def concordance_homo_ref(self):
+        return self._confusion_matrix["homo_ref_correct"] / self._confusion_matrix["homo_ref"] if self._confusion_matrix["homo_ref"] > 0 else 0
+
+    @property
+    def concordance_homo_alt(self):
+        return self._confusion_matrix["homo_alt_correct"] / self._confusion_matrix["homo_alt"] if self._confusion_matrix["homo_alt"] > 0 else 0
+
+    @property
+    def weighted_concordance(self):
+        return (self.concordance_hetero + self.concordance_homo_alt + self.concordance_homo_ref) / 3
 
     @property
     def false_negative(self):
@@ -274,7 +322,29 @@ class GenotypeAccuracy:
 
 
 @dataclass
-class MultiAllelicVariant:
+class BiallelicVariant:
+    chromosome: str
+    position: int
+    reference_sequence: str
+    alt_sequence: str
+    genotype: List[int]
+
+    def key(self):
+        return f"{self.chromosome}-{self.position}-{self.reference_sequence}-{self.alt_sequence}"
+
+    def genotype_string(self, missing_genotype_encoding=127):
+        alleles = self.genotype
+        allele1 = str(alleles[0])
+        if allele1 == str(missing_genotype_encoding):
+            allele1 = "."
+        allele2 = str(alleles[1])
+        if allele2 == str(missing_genotype_encoding):
+            allele2 = "."
+        return f"{allele1}/{allele2}"
+
+
+@dataclass
+class MultiAllelicVariant(BiallelicVariant):
     """
     Represents a multiallelic variant that can be uniquely identified
     by chromosome, position and reference sequence (which works when multiallelic variants are not overlapping)
@@ -288,16 +358,6 @@ class MultiAllelicVariant:
     def key(self):
         return f"{self.chromosome}-{self.position}-{self.reference_sequence}"
 
-    def genotype_string(self, missing_genotype_encoding=127):
-        alleles = self.genotype
-        allele1 = str(alleles[0])
-        if allele1 == str(missing_genotype_encoding):
-            allele1 = "."
-        allele2 = str(alleles[1])
-        if allele2 == str(missing_genotype_encoding):
-            allele2 = "."
-        return f"{allele1}/{allele2}"
-
     def normalize_using_reference_variant(self, reference_variant, missing_allele_encoding=127):
         """
         "Normalizes" using another  reference variant that is identical but that
@@ -307,7 +367,7 @@ class MultiAllelicVariant:
         assert self.key() == reference_variant.key()
         allele_mapping = {seq: i for i, seq in enumerate(reference_variant.alt_sequences)}
         for seq in self.alt_sequences:
-            assert seq in allele_mapping, f"Allele {seq} not in reference variant"
+            assert seq in allele_mapping, f"Allele {seq} not in reference variant {reference_variant} but is in {self}"
 
         new_alt_sequences = reference_variant.alt_sequences  # [self.alt_sequences[allele_mapping[seq]] for seq in self.alt_sequences]
         new_alleles = sorted([allele_mapping[self.alt_sequences[allele-1]]+1 if allele != 0 and allele != missing_allele_encoding
@@ -315,7 +375,6 @@ class MultiAllelicVariant:
 
         self.alt_sequences = new_alt_sequences
         self.genotype = new_alleles
-
 
 
 class IndexedGenotypes2(IndexedGenotypes):
@@ -342,9 +401,28 @@ class IndexedGenotypes2(IndexedGenotypes):
 
         return cls(index)
 
+
     def normalize_against_reference_variants(self, reference_variants: 'IndexedGenotypes2'):
         for key, variant in self.items():
             assert key in reference_variants, f"Variant {key} not in reference variants"
             reference_variant = reference_variants[key]
             variant.normalize_using_reference_variant(reference_variant)
+
+    @classmethod
+    def from_biallelic_vcf(cls, file_name):
+        vcf_with_genotypes = bnp.open(file_name, buffer_type=VcfWithSingleIndividualBuffer).read()
+        logging.info("Processing genotypes")
+        genotypes = vcf_with_genotypes.genotype.tolist()
+        genotypes = (normalize_genotype(g) for g in genotypes)
+        logging.info("Making haplotype matrix")
+        genotypes = normalized_genotypes_to_haplotype_matrix(genotypes)
+        index = {}
+
+        for variant, haplotypes in tqdm.tqdm(zip(vcf_with_genotypes, genotypes), total=len(genotypes)):
+            assert "," not in variant.alt_seq.to_string()
+            v = BiallelicVariant(variant.chromosome.to_string(), variant.position, variant.ref_seq.to_string(),
+                                 variant.alt_seq.to_string(), list(haplotypes))
+            index[v.key()] = v
+
+        return cls(index)
 

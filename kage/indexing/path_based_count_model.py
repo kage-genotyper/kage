@@ -121,13 +121,13 @@ class PathKmers:
         logging.info("Pruning")
         new = []
         for i, kmers in tqdm(enumerate(self.kmers), desc="Pruning kmers"):
-            logging.info("Pruning path %d", i)
+            #logging.info("Pruning path %d", i)
             t0 = time.perf_counter()
             assert np.all(kmers.shape[0] >= 0)
             encoding = kmers.encoding
             raw_kmers = kmers.raw().ravel().astype(np.uint64)
             #is_in = kmer_index.has_kmers_parallel(raw_kmers, n_threads)
-            logging.info("Got raw kmers")
+            #logging.info("Got raw kmers")
             #is_in = kmer_index.has_kmers(raw_kmers)
             is_in = lookup[raw_kmers % modulo]
             assert len(is_in) == len(kmers.ravel()) == len(raw_kmers) == np.sum(kmers.shape[1])
@@ -136,14 +136,14 @@ class PathKmers:
             assert len(mask.ravel()) == np.sum(mask.shape[1])
             assert len(mask.ravel()) == len(is_in)
             assert np.sum(mask.ravel()) == np.sum(is_in)
-            logging.info(f"Pruned away {np.sum(mask==False)}/{len(kmers)} kmers for path {i}")
+            #logging.info(f"Pruned away {np.sum(mask==False)}/{len(kmers)} kmers for path {i}")
             kmers = raw_kmers[mask.ravel()]
             shape = np.sum(mask, axis=1)
             assert np.sum(shape) == len(kmers), (np.sum(shape), len(kmers), np.sum(is_in), np.sum(is_in == True))
             new.append(bnp.EncodedRaggedArray(bnp.EncodedArray(kmers, encoding), shape))
             assert np.sum(mask) == len(kmers)
-            logging.info("Pruning took %.5f sec" % (time.perf_counter() - t0))
-            log_memory_usage_now("After pruning")
+            #logging.info("Pruning took %.5f sec" % (time.perf_counter() - t0))
+            #log_memory_usage_now("After pruning")
 
         self.kmers = new
 

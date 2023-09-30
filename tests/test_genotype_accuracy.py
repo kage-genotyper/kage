@@ -24,7 +24,7 @@ def test_genotype_accuracy():
     truth = IndexedGenotypes({
         "1": "0/0",
         "2": "0/1",
-        "10": "1|0",
+        "10": "0/1",
     })
 
     sample = IndexedGenotypes({
@@ -41,6 +41,16 @@ def test_genotype_accuracy():
 
     assert accuracy.recall() == 0.5
     assert accuracy.precision() == 0.5
+
+    assert accuracy.confusion_matrix["hetero"] == 2
+    assert accuracy.concordance_hetero == 0.5
+    assert accuracy.concordance_homo_alt == 0.0
+    assert accuracy.concordance_homo_ref == 0.0
+
+    assert accuracy.confusion_matrix["homo_ref"] == 1
+    assert accuracy.confusion_matrix["homo_alt"] == 0
+
+    assert accuracy.weighted_concordance == 0.5 / 3
 
 
 def test_indexed_genotypes_from_multiallelic():
@@ -119,3 +129,5 @@ def test_multiallelic_variant():
     other.normalize_using_reference_variant(ref)
     assert other.alt_sequences == ref.alt_sequences
     assert other.genotype == [0, 3]
+
+

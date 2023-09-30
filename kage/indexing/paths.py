@@ -118,7 +118,8 @@ class Paths:
         Idea is to chunk each path at a time to avoid reading same paths from file multiple times
         """
         new_path_sequences = [PathSequences([]) for _ in range(len(from_to_intervals))]
-        for path_sequence in self.paths:
+        for i, path_sequence in enumerate(self.paths):
+            logging.info("Chunking path %d" % i)
             if isinstance(path_sequence, PathSequence):
                 for i, (from_id, to_id) in enumerate(from_to_intervals):
                     new_path_sequences[i].sequences.append(path_sequence.subset_on_variants(from_id, to_id, padding))
@@ -133,6 +134,7 @@ class Paths:
                             new_file_name)
                     )
 
+        logging.info("Chunking variant alleles")
         new_variant_alleles = []
         for i, (from_id, to_id) in enumerate(from_to_intervals):
             new_variant_alleles.append(PathCombinationMatrix(self.variant_alleles[:, from_id:to_id]))
