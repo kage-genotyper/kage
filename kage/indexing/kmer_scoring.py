@@ -4,8 +4,10 @@ import time
 from typing import List
 
 import npstructures as nps
+import numba
 import numpy as np
 import shared_memory_wrapper.util
+from numba import njit, prange
 from shared_memory_wrapper.util import interval_chunks
 from shared_memory_wrapper.shared_array_map_reduce import additative_shared_array_map_reduce
 import tqdm
@@ -24,19 +26,46 @@ class FastApproxCounter:
         return FastApproxCounter(self._array.copy(), self._modulo)
 
     @classmethod
-    def empty(cls, modulo):
-        return cls(np.zeros(modulo, dtype=np.int32), modulo)
+    def empty(cls, modulo, dtype=np.uint8):
+        assert dtype == np.uint8, "Only uint8 support now"
+        return cls(np.zeros(modulo, dtype=dtype), modulo)
 
     def add(self, values):
         value_hashes = (values % self._modulo).astype(int)
         t0 = time.perf_counter()
         add_counts = np.bincount(value_hashes, minlength=self._modulo)
         print("Addding %d kmers with modulo %d took %.5f sec" % (len(values), self._modulo, time.perf_counter() - t0))
-        self._array += add_counts
+        self._array += np.minimum(255 - self._array, add_counts).astype(self._array.dtype)  # to not overflow
+
+    def add_numba(self, values):
+        value_hashes = (values % self._modulo).astype(int)
+        t0 = time.perf_counter()
+
+        @numba.jit(nopython=True)
+        def _add(array, value_hashes):
+            for value_hash in value_hashes:
+                if array[value_hash] < 255:
+                    array[value_hash] += 1
+
+        _add(self._array, value_hashes)
+        print("Addding %d kmers with modulo %d took %.5f sec" % (len(values), self._modulo, time.perf_counter() - t0))
+
+    def add_numba2(self, values):
+        value_hashes = (values % self._modulo).astype(int)
+        t0 = time.perf_counter()
+
+        @njit
+        def _add(array, value_hashes):
+            for i in prange(len(value_hashes)): #value_hash in value_hashes:
+                if array[value_hashes[i]] < 255:
+                    array[value_hashes[i]] += 1
+
+        _add(self._array, value_hashes)
+        print("Addding %d kmers with modulo %d took %.5f sec" % (len(values), self._modulo, time.perf_counter() - t0))
 
     def add_parallel(self, values, n_threads=16):
-        chunks = interval_chunks(0, len(values), n_threads*10)
-        result_array = np.zeros(self._modulo, dtype=np.int32)
+        chunks = interval_chunks(0, len(values), len(values)//1000000+1)
+        result_array = np.zeros(self._modulo, dtype=np.uint8)
         data = (values, self._modulo)
 
         def func(values, modulo, chunk):
@@ -48,8 +77,12 @@ class FastApproxCounter:
             print("  Counting %d values for chunk %d-%d, took %.5f sec" % (len(values), chunk[0], chunk[1], time.perf_counter()-t0))
             return add_counts
 
-        counts = additative_shared_array_map_reduce(func, chunks, result_array, data, n_threads=n_threads, queue_size_factor=0.5)
-        self._array += counts
+        def add_func(result_array, job_result):
+            result_array += np.minimum(255 - result_array, job_result).astype(np.uint8)
+
+        counts = additative_shared_array_map_reduce(func, chunks, result_array, data, n_threads=n_threads, queue_size_factor=0.5,
+                                                    add_func=add_func)
+        self._array += counts.astype(np.uint8)
 
     @property
     def values(self):
@@ -101,7 +134,7 @@ def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: Spar
             n_kmers = 0
             for subkmers in kmers:
                 t_add_start = time.perf_counter()
-                counter.add(subkmers)
+                counter.add_numba(subkmers)
                 t_add += time.perf_counter() - t_add_start
                 n_kmers += len(subkmers)
             logging.info("Adding %d kmers to counter took %.5f sec" % (n_kmers, t_add))

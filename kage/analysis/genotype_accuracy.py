@@ -326,11 +326,11 @@ class BiallelicVariant:
     chromosome: str
     position: int
     reference_sequence: str
-    alt_sequence: str
+    alt_sequences: str
     genotype: List[int]
 
     def key(self):
-        return f"{self.chromosome}-{self.position}-{self.reference_sequence}-{self.alt_sequence}"
+        return f"{self.chromosome}-{self.position}-{self.reference_sequence}-{self.alt_sequences}"
 
     def genotype_string(self, missing_genotype_encoding=127):
         alleles = self.genotype
@@ -349,11 +349,7 @@ class MultiAllelicVariant(BiallelicVariant):
     Represents a multiallelic variant that can be uniquely identified
     by chromosome, position and reference sequence (which works when multiallelic variants are not overlapping)
     """
-    chromosome: str
-    position: int
-    reference_sequence: str
     alt_sequences: List[str]
-    genotype: List[int]
 
     def key(self):
         return f"{self.chromosome}-{self.position}-{self.reference_sequence}"
