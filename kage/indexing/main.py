@@ -65,7 +65,8 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     logging.info("Making paths")
     paths = PathCreator(graph,
                         window=variant_window,  # bigger windows to get more paths when multiallelic
-                        make_disc_backed=True,
+                        #make_disc_backed=True,
+                        make_graph_backed_sequences=True,
                         disc_backed_file_base_name=out_base_name,
                         use_new_allele_matrix=True
                         ).run(n_alleles_per_variant)

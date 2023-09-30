@@ -1,6 +1,7 @@
 import itertools
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import List, Literal, Union, Tuple, Optional
 import bionumpy as bnp
@@ -61,6 +62,8 @@ class PathSequences:
         path_sequence = self.sequences[path_index]
         if isinstance(path_sequence, DiscBackedPathSequence):
             return path_sequence.load()
+        elif isinstance(path_sequence, GraphBackedPathSequence):
+            return PathSequence(path_sequence.get_sequence())
         else:
             return path_sequence
 
@@ -121,7 +124,7 @@ class Paths:
         new_path_sequences = [PathSequences([]) for _ in range(len(from_to_intervals))]
         for i, path_sequence in enumerate(self.paths):
             logging.info("Chunking path %d" % i)
-            if isinstance(path_sequence, PathSequence):
+            if isinstance(path_sequence, (PathSequence, GraphBackedPathSequence)):
                 for i, (from_id, to_id) in enumerate(from_to_intervals):
                     new_path_sequences[i].sequences.append(path_sequence.subset_on_variants(from_id, to_id, padding))
             else:
@@ -289,6 +292,7 @@ class GraphBackedPathSequence:
             # not a chunk
             return self.graph.sequence(self.alleles)
         else:
+            t0 = time.perf_counter()
             assert self.padding is not None
             assert self.end_variant is not None
             assert self.end_variant > self.start_variant
@@ -299,11 +303,14 @@ class GraphBackedPathSequence:
 
             sequence = self.graph.sequence(self.alleles, from_to_variant=(self.start_variant, self.end_variant))
 
-            return np.concatenate([
+            result = np.concatenate([
                 bnp.EncodedRaggedArray(sequence_before, [len(sequence_before)]),
                 sequence,
                 bnp.EncodedRaggedArray(sequence_after, [len(sequence_after)])
             ])
+
+            logging.info("Time to get path sequence from graph: %.5f" % (time.perf_counter() - t0))
+            return result
 
     def subset_on_variants(self, from_variant, to_variant, padding=0):
         """Subsets on variant and ensures min padding before and after"""
