@@ -8,7 +8,7 @@ from kage.util import stream_ragged_array
 from ..preprocessing.variants import get_padded_variants_from_vcf, Variants
 from ..util import zip_sequences
 from bionumpy.datatypes import Interval
-from typing import Tuple, Union
+from typing import Tuple, Union, Optional
 
 
 @dataclass
@@ -84,7 +84,8 @@ class Graph:
     def n_nodes(self):
         return self.n_variants()*2
 
-    def sequence(self, haplotypes: np.ndarray, stream=False, reverse_complement=False) -> bnp.EncodedArray:
+    def sequence(self, haplotypes: np.ndarray, stream=False, reverse_complement=False,
+                 from_to_variant: Optional[Tuple[int, int]]=None) -> bnp.EncodedArray:
         """
         Returns the sequence through the graph given haplotypes for all variants
         """
@@ -106,6 +107,47 @@ class Graph:
             return result
         else:
             return (res for res in stream_ragged_array(result))
+
+    def get_bases_after_variant(self, variant: int, haplotypes: np.ndarray, n_bases: int) -> bnp.EncodedArray:
+        """Returns n_bases on haplotype path after variant"""
+        sequences = []
+        bases_found = 0
+        for i in range(variant, len(haplotypes)):
+            reference_index = i+1
+            next_variant_index = i+1
+            sequences.append(self.genome.sequence[reference_index])
+            bases_found += len(sequences[-1])
+            if next_variant_index < len(haplotypes):
+                # no variant at end
+                sequences.append(self.variants.get_haplotype_sequence_at_variant(next_variant_index, haplotypes[next_variant_index]))
+                bases_found += len(sequences[-1])
+
+            if bases_found >= n_bases:
+                break
+
+        full = np.concatenate(sequences)
+        return full[:min(n_bases, len(full))]
+
+    def get_bases_before_variant(self, variant: int, haplotypes: np.ndarray, n_bases: int) -> bnp.EncodedArray:
+        """Returns n_bases on haplotype path before variant"""
+        sequences = []
+        bases_found = 0
+        for i in range(variant, -1, -1):
+            reference_index = i - 0
+            next_variant_index = i - 1
+            sequences.append(self.genome.sequence[reference_index])
+            bases_found += len(sequences[-1])
+            if next_variant_index >= 0:
+                # no variant at end
+                sequences.append(
+                    self.variants.get_haplotype_sequence_at_variant(next_variant_index, haplotypes[next_variant_index]))
+                bases_found += len(sequences[-1])
+
+            if bases_found >= n_bases:
+                break
+
+        full = np.concatenate(sequences[::-1])
+        return full[max(0, len(full)-n_bases):]
 
     def sequence_of_pairs_of_ref_and_variants_as_ragged_array(self, haplotypes: np.ndarray) -> bnp.EncodedRaggedArray:
         """

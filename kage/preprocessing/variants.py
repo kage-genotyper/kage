@@ -495,5 +495,9 @@ class MultiAllelicVariantSequences(VariantAlleleSequences):
         bytes = ak.to_numpy(ak.flatten(ak.without_parameters(allele_sequences)))
         return bnp.EncodedRaggedArray(bnp.change_encoding(bnp.EncodedArray(bytes, bnp.BaseEncoding), bnp.DNAEncoding), shape)
 
+    def get_haplotype_sequence_at_variant(self, variant, haplotype) -> bnp.EncodedArray:
+        sequence = ak.to_numpy(self._data[variant, haplotype])
+        return bnp.EncodedArray(bnp.change_encoding(bnp.EncodedArray(sequence, bnp.BaseEncoding), bnp.DNAEncoding), bnp.DNAEncoding)
+
     def to_list(self):
         return ak.to_list(self._data)

@@ -2,10 +2,11 @@ import itertools
 import logging
 import os
 from dataclasses import dataclass
-from typing import List, Literal, Union, Tuple
+from typing import List, Literal, Union, Tuple, Optional
 import bionumpy as bnp
 import numpy as np
 import tqdm
+from kage.indexing.graph import Graph
 from kage.util import n_unique_values_per_column
 from shared_memory_wrapper import to_file, from_file
 import npstructures as nps
@@ -13,7 +14,7 @@ import npstructures as nps
 
 @dataclass
 class PathSequences:
-    sequences: List[Union['PathSequence', 'DiscBackedPathSequence']]
+    sequences: List[Union['PathSequence', 'DiscBackedPathSequence', 'GraphBackedPathSequence']]
 
     def __post_init__(self):
         if len(self.sequences) > 0 and isinstance(self.sequences[0], bnp.EncodedRaggedArray):
@@ -200,7 +201,10 @@ class PathSequence:
     sequence: bnp.EncodedRaggedArray
 
     def __getitem__(self, item):
-        return self.sequence[item]
+        return self.get_sequence()[item]
+
+    def get_sequence(self):
+        return self.sequence
 
     @property
     def _shape(self):
@@ -247,11 +251,13 @@ class DiscBackedPathSequence:
     file: str
 
     def __getitem__(self, item):
-        data = from_file(self.file)
-        return data[item]
+        return self.get_sequence()[item]
 
     def load(self):
         return from_file(self.file)
+
+    def get_sequence(self):
+        return self.load()
 
     @classmethod
     def from_non_disc_backed(cls, path, file_name):
@@ -264,14 +270,44 @@ class DiscBackedPathSequence:
             logging.warning("Did not find file %s" % self.file)
 
 
+@dataclass
+class GraphBackedPathSequence:
+    """Stores no sequence, but only a reference to the graph and how to get sequences from the graph"""
+    graph: Graph
+    alleles: np.ndarray
+    start_variant: Optional[int] = None
+    end_variant: Optional[int] = None
+    padding: Optional[int] = None
+
+    def __getitem__(self, item):
+        pass
+
+    def get_sequence(self):
+        # challenge is padding
+        # if this path-sequence is a chunk, make sure to get enough sequence according to padding
+        if self.start_variant is None:
+            # not a chunk
+            return self.graph.sequence(self.alleles)
+        else:
+            return
+            return PathSequence(np.concatenate([padding_before, subset, padding_after]))
+
+    def subset_on_variants(self, from_variant, to_variant, padding=0):
+        """Subsets on variant and ensures min padding before and after"""
+        return GraphBackedPathSequence(self.graph, self.alleles, from_variant, to_variant, padding)
+
+
 class PathCreator:
-    def __init__(self, graph, window: int = 3, make_disc_backed=False, disc_backed_file_base_name=None, use_new_allele_matrix=False):
+    def __init__(self, graph, window: int = 3, make_disc_backed=False, disc_backed_file_base_name=None, use_new_allele_matrix=False,
+                 make_graph_backed_sequences=False):
         self._graph = graph
         self._variants = graph.variants
         self._genome = graph.genome
         self._window = window
         self._make_disc_backed = make_disc_backed
         self._use_new_allele_matrix = use_new_allele_matrix
+        self._make_graph_backed_sequences = make_graph_backed_sequences
+
         if self._make_disc_backed:
             logging.info("Will make disc backed paths")
             assert disc_backed_file_base_name is not None
@@ -297,9 +333,12 @@ class PathCreator:
         ref_between = self._genome.sequence
         for i, alleles in tqdm.tqdm(enumerate(combinations), total=n_paths, desc="Creating paths through graph", unit="path"):
             # make a new EncodedRaggedArray where every other row is ref/variant
-            path = self._graph.sequence(alleles)
-            if self._make_disc_backed:
-                path = DiscBackedPathSequence.from_non_disc_backed(PathSequence(path), f"{self._disc_backed_file_base_name}_path_{i}")
+            if self._make_graph_backed_sequences:
+                path = GraphBackedPathSequence(self._graph, alleles)
+            else:
+                path = self._graph.sequence(alleles)
+                if self._make_disc_backed:
+                    path = DiscBackedPathSequence.from_non_disc_backed(PathSequence(path), f"{self._disc_backed_file_base_name}_path_{i}")
             paths.append(path)
 
         return Paths(PathSequences(paths), combinations)

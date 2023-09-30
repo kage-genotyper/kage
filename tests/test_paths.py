@@ -1,7 +1,9 @@
 import numpy as np
 import pytest
+from kage.indexing.graph import Graph, GenomeBetweenVariants
 from kage.indexing.paths import PathCreator, PathSequences, Paths
 import bionumpy as bnp
+from kage.preprocessing.variants import MultiAllelicVariantSequences
 from kage.util import n_unique_values_per_column
 
 
@@ -58,8 +60,8 @@ def test_subset_path_sequence(path_sequences):
     subset = disc_backed.subset_on_variants(0, 1, padding=4)
 
     sequences = list(subset.iter_path_sequences())
-    assert np.all(sequences[0].sequence == bnp.as_encoded_array(["ACGT", "A", "GGGC"]))
-    assert np.all(sequences[1].sequence == bnp.as_encoded_array(["ACGT", "G", "GGGA"]))
+    assert np.all(sequences[0].get_sequence() == bnp.as_encoded_array(["ACGT", "A", "GGGC"]))
+    assert np.all(sequences[1].get_sequence() == bnp.as_encoded_array(["ACGT", "G", "GGGA"]))
 
 
 def test_subset_paths(path_sequences):
@@ -125,3 +127,52 @@ def test_path_combination_matrix_v3():
     matrix = PathCreator.make_combination_matrix_multi_allele_v3(n_alleles_per_variant, window=3)
     assert np.all(n_unique_values_per_column(matrix) == n_alleles_per_variant)
     print(matrix)
+
+
+@pytest.fixture
+def graph():
+    graph = Graph(
+        genome=GenomeBetweenVariants.from_list(["ACTG", "AAA", "", "GGG", "CCCCCC"]),
+        variants=MultiAllelicVariantSequences.from_list(
+            [["A", "C"], ["A", "C", "T"], ["AA", "CC"], ["G", "T"]]
+        )
+    )
+    return graph
+
+def test_graph_backed_path_sequence(graph):
+    paths = PathCreator(graph, window=2, make_graph_backed_sequences=True).run()
+    path0_alleles = paths.variant_alleles[0]
+    path0_sequence = paths.paths[0].get_sequence().ravel().to_string()
+    assert path0_sequence == "ACTG" + "A" + "AAA" + "A" + "" + "AA" + "GGG" + "G" + "CCCCCC"
+
+
+def test_sequence_after_variant_at_graph(graph):
+    seq = graph.get_bases_after_variant(0, np.array([0, 0, 0, 0]), n_bases=4)
+    assert seq.to_string() == "AAAA"
+
+    seq = graph.get_bases_after_variant(0, np.array([0, 0, 0, 0]), n_bases=7)
+    assert seq.to_string() == "AAAAAAG"
+
+    seq = graph.get_bases_after_variant(0, np.array([0, 0, 0, 0]), n_bases=100)
+    assert seq.to_string() == "AAAAAAGGGGCCCCCC"
+
+    seq = graph.get_bases_after_variant(0, np.array([1, 2, 1, 1]), n_bases=100)
+    assert seq.to_string() == "AAA" + "T" + "" + "CC" + "GGG" + "T" + "CCCCCC"
+
+    seq = graph.get_bases_after_variant(1, np.array([1, 2, 1, 1]), n_bases=5)
+    assert seq.to_string() == "" + "CC" + "GGG"
+
+
+def test_sequence_before_variant_at_graph(graph):
+    seq = graph.get_bases_before_variant(1, np.array([0, 0, 0, 0]), n_bases=100)
+    assert seq.to_string() == "ACTG" + "A" + "AAA"
+
+    seq = graph.get_bases_before_variant(1, np.array([0, 0, 0, 0]), n_bases=5)
+    assert seq.to_string() == "G" + "A" + "AAA"
+
+    seq = graph.get_bases_before_variant(3, np.array([0, 0, 0, 0]), n_bases=8)
+    assert seq.to_string() == "AA" + "A" + "" + "AA" + "GGG"
+
+    seq = graph.get_bases_before_variant(3, np.array([0, 2, 0, 0]), n_bases=8)
+    assert seq.to_string() == "AA" + "T" + "" + "AA" + "GGG"
+

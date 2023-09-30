@@ -98,7 +98,7 @@ class FastApproxCounter:
         return self._array[keys % self._modulo]
 
     def score_kmers(self, kmers):
-        return -self[kmers]
+        return -self[kmers].astype(int)
 
 
 def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: SparseHaplotypeMatrix,
