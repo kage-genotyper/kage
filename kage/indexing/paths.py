@@ -282,7 +282,7 @@ class GraphBackedPathSequence:
     def __getitem__(self, item):
         pass
 
-    def get_sequence(self):
+    def get_sequence(self) -> bnp.EncodedRaggedArray:
         # challenge is padding
         # if this path-sequence is a chunk, make sure to get enough sequence according to padding
         if self.start_variant is None:
@@ -299,7 +299,11 @@ class GraphBackedPathSequence:
 
             sequence = self.graph.sequence(self.alleles, from_to_variant=(self.start_variant, self.end_variant))
 
-            return PathSequence(np.concatenate([sequence_before, sequence, sequence_after]))
+            return np.concatenate([
+                bnp.EncodedRaggedArray(sequence_before, [len(sequence_before)]),
+                sequence,
+                bnp.EncodedRaggedArray(sequence_after, [len(sequence_after)])
+            ])
 
     def subset_on_variants(self, from_variant, to_variant, padding=0):
         """Subsets on variant and ensures min padding before and after"""

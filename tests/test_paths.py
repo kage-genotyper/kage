@@ -139,11 +139,20 @@ def graph():
     )
     return graph
 
+
 def test_graph_backed_path_sequence(graph):
     paths = PathCreator(graph, window=2, make_graph_backed_sequences=True).run()
-    path0_alleles = paths.variant_alleles[0]
     path0_sequence = paths.paths[0].get_sequence().ravel().to_string()
     assert path0_sequence == "ACTG" + "A" + "AAA" + "A" + "" + "AA" + "GGG" + "G" + "CCCCCC"
+
+    # subsetting
+    subset = paths.paths[0].subset_on_variants(0, 3, padding=3)
+    seq = subset.get_sequence()
+    assert seq.tolist() == ["CTG", "A", "AAA", "A", "", "AA", "GGG"]
+
+    subset = paths.paths[0].subset_on_variants(1, 3, padding=1)
+    seq = subset.get_sequence()
+    assert seq.tolist() == ["A", "A", "", "AA", "G"]
 
 
 def test_sequence_after_variant_at_graph(graph):
