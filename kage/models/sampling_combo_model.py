@@ -288,7 +288,6 @@ class SparseObservedCounts:
         splits = [int(i) for i in np.linspace(0, self.indexes[0][-1], n_threads+1)]
         splits[-1] += 1  # last index must be at end
         splits = np.searchsorted(self.indexes[0], splits, side='left')
-        logging.info("Splits: %s" % splits)
         chunks = [(a, b) for a, b in zip(splits[0:-1], splits[1:])]
 
         results = run_numpy_based_function_in_parallel(SparseObservedCounts._logpmf, n_threads,

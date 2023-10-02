@@ -2,6 +2,9 @@ import logging
 import time
 from dataclasses import dataclass
 import numpy as np
+import ray
+from shared_memory_wrapper.util import interval_chunks
+
 from kage.preprocessing.variants import VariantAlleleToNodeMap
 from scipy.signal import convolve2d
 import bionumpy as bnp
@@ -9,6 +12,7 @@ from typing import List
 
 from shared_memory_wrapper import to_file
 
+from .modulo_filter import ModuloFilter
 from .path_variant_indexing import MappingModelCreator
 from kage.indexing.graph import Graph
 from .paths import Paths
@@ -78,7 +82,6 @@ class PathKmers:
         logging.info("Making pathkmers for %d paths", n_paths)
         return cls((graph.kmers_for_pairs_of_ref_and_variants(path_allele_matrix[i, :], k) for i in range(n_paths)))
 
-
     def get_for_haplotype(self, haplotype: HaplotypeAsPaths, include_reverse_complements=False):
         """
         Returns all kmers for this haplotype (by using the fact that the haplotype is
@@ -104,7 +107,7 @@ class PathKmers:
         return bnp.EncodedArray(np.concatenate(kmers_found), encoding)
 
 
-    def prune(self, kmer_index, n_threads=1, modulo=400000033):
+    def prune(self, kmer_index, n_threads=1, modulo=2000000033):
         """
         Prunes away kmers that are not in kmer index.
         Prunes inplace.
@@ -116,36 +119,63 @@ class PathKmers:
         index_kmers = kmer_index.get_kmers()
         lookup = np.zeros(modulo, dtype=bool)
         lookup[index_kmers % modulo] = True
-        logging.info("Made kmer lookup")
+        lookup = ModuloFilter(lookup)
 
         logging.info("Pruning")
         new = []
         for i, kmers in tqdm(enumerate(self.kmers), desc="Pruning kmers"):
-            #logging.info("Pruning path %d", i)
+            logging.info("Pruning path %d", i)
             t0 = time.perf_counter()
-            assert np.all(kmers.shape[0] >= 0)
-            encoding = kmers.encoding
-            raw_kmers = kmers.raw().ravel().astype(np.uint64)
-            #is_in = kmer_index.has_kmers_parallel(raw_kmers, n_threads)
-            #logging.info("Got raw kmers")
-            #is_in = kmer_index.has_kmers(raw_kmers)
-            is_in = lookup[raw_kmers % modulo]
-            assert len(is_in) == len(kmers.ravel()) == len(raw_kmers) == np.sum(kmers.shape[1])
-            mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)
-
-            assert len(mask.ravel()) == np.sum(mask.shape[1])
-            assert len(mask.ravel()) == len(is_in)
-            assert np.sum(mask.ravel()) == np.sum(is_in)
-            #logging.info(f"Pruned away {np.sum(mask==False)}/{len(kmers)} kmers for path {i}")
-            kmers = raw_kmers[mask.ravel()]
-            shape = np.sum(mask, axis=1)
-            assert np.sum(shape) == len(kmers), (np.sum(shape), len(kmers), np.sum(is_in), np.sum(is_in == True))
-            new.append(bnp.EncodedRaggedArray(bnp.EncodedArray(kmers, encoding), shape))
-            assert np.sum(mask) == len(kmers)
-            #logging.info("Pruning took %.5f sec" % (time.perf_counter() - t0))
-            #log_memory_usage_now("After pruning")
+            pruned_kmers = self.prune_kmers(kmers, lookup)
+            new.append(pruned_kmers)
+            logging.info("Pruning took %.5f sec" % (time.perf_counter() - t0))
 
         self.kmers = new
+
+    @staticmethod
+    def prune_kmers(kmers: bnp.EncodedRaggedArray, lookup: ModuloFilter):
+        assert np.all(kmers.shape[0] >= 0)
+        encoding = kmers.encoding
+        raw_kmers = kmers.raw().ravel().astype(np.uint64)
+        logging.info("Got raw kmers")
+        t_lookup = time.perf_counter()
+        is_in = lookup[raw_kmers]
+        logging.info("Time lookup %d kmers: %.5f" % (len(raw_kmers), time.perf_counter() - t_lookup))
+        mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)
+        print(f"Kept {np.sum(mask)}/{len(raw_kmers)} kmers for path")
+        kmers = raw_kmers[is_in]
+        shape = np.sum(mask, axis=1)
+        pruned_kmers = bnp.EncodedRaggedArray(bnp.EncodedArray(kmers, encoding), shape)
+        return pruned_kmers
+
+
+
+@ray.remote
+def _prune(kmers, lookup, start, end):
+    t0 = time.perf_counter()
+    result = PathKmers.prune_kmers(kmers[start:end], lookup)
+    print("Time for ", start, end, ":", time.perf_counter()-t0)
+    return result
+
+
+def prune_kmers_parallel(kmers, lookup, n_threads=8):
+    #ray.init(num_cpus=n_threads)
+    chunks = interval_chunks(0, len(kmers), n_threads)
+    print(chunks)
+    t0 = time.perf_counter()
+    kmers = ray.put(kmers)
+    lookup = ray.put(lookup)
+    print("Putting data took ", time.perf_counter()-t0)
+
+    result = []
+    for start, end in chunks:
+        result.append(_prune.remote(kmers, lookup, start, end))
+
+    result = ray.get(result)
+    t0 = time.perf_counter()
+    result = np.concatenate(result)
+    print("Time to concatenate: ", time.perf_counter()-t0)
+    return result
 
 
 class PathBasedMappingModelCreator(MappingModelCreator):

@@ -1,12 +1,17 @@
+import time
+
 import pytest
+import ray
+
 from kage.indexing.graph import GenomeBetweenVariants, Graph, MultiAllelicVariantSequences
 from kage.preprocessing.variants import VariantAlleleSequences
 from kage.indexing.paths import Paths, PathCreator
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
-from kage.indexing.path_based_count_model import HaplotypeAsPaths, PathKmers
+from kage.indexing.path_based_count_model import HaplotypeAsPaths, PathKmers, prune_kmers_parallel
 import numpy as np
 import npstructures as nps
 import bionumpy as bnp
+from kage.indexing.modulo_filter import ModuloFilter
 
 
 @pytest.fixture
@@ -141,3 +146,27 @@ def test_get_kmers_for_haplotype_multiallelic():
     kmers = [k.to_string() for k in kmers]
     correct = ["GG", "GG", "GA", "AG", "GG", "GT", "TG", "GG", "GT", "TG", "GG", "GC", "CG", "GG"]
     assert sorted(kmers) == sorted(correct)
+
+
+def test_prune_many_kmers():
+    n_threads = 4
+    encoding = bnp.get_kmers(bnp.as_encoded_array("G"*31, bnp.DNAEncoding), 31).encoding
+    n = 40_000_000
+    n_rows = int(n / 10)
+    kmers = bnp.EncodedRaggedArray(
+        bnp.EncodedArray(np.random.randint(0, 2**63, n), encoding),
+        np.zeros(n_rows, int) + 10
+    )
+    filter = ModuloFilter(np.random.randint(0, 30, 200_000_033) < 1)
+    t0 = time.perf_counter()
+    pruned = PathKmers.prune_kmers(kmers, filter)
+    print("Time noparallel", time.perf_counter()-t0)
+
+    # parallel
+    ray.init(num_cpus=n_threads)
+    t0 = time.perf_counter()
+    pruned2 = prune_kmers_parallel(kmers, filter, n_threads=n_threads)
+    print("Time parallel", time.perf_counter()-t0)
+
+    #assert np.all(pruned2 == pruned)
+

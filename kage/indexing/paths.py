@@ -189,7 +189,6 @@ class Paths:
         self.paths = self.paths.to_disc_backed(file_base_name)
 
     def remove_tmp_files(self):
-        logging.info("Removing tmp files")
         for path in self.paths.sequences:
             if isinstance(path, DiscBackedPathSequence):
                 path.remove_file()
@@ -309,7 +308,7 @@ class GraphBackedPathSequence:
                 bnp.EncodedRaggedArray(sequence_after, [len(sequence_after)])
             ])
 
-            logging.info("Time to get path sequence from graph: %.5f" % (time.perf_counter() - t0))
+            #logging.info("Time to get path sequence from graph: %.5f" % (time.perf_counter() - t0))
             return result
 
     def subset_on_variants(self, from_variant, to_variant, padding=0):

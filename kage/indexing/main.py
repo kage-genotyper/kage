@@ -96,8 +96,12 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
 
     # find tricky variants before count model is refined
     #tricky_variants = find_tricky_variants_with_count_model(signatures, count_model)
+    logging.info("Finding tricky variants")
+    log_memory_usage_now("Finding tricky variants")
     tricky_variants = find_tricky_variants_from_multiallelic_signatures(signatures, node_mapping, count_model)
+    log_memory_usage_now("Finding tricky variants 2")
     tricky_alleles = find_tricky_ref_and_var_alleles_from_count_model(count_model, node_mapping)
+    log_memory_usage_now("Finding tricky variants 3")
 
     from ..models.mapping_model import refine_sampling_model_noncli
     count_model = refine_sampling_model_noncli(count_model, variant_to_nodes)

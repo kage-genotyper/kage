@@ -1,4 +1,5 @@
 import logging
+import time
 from dataclasses import dataclass
 import bionumpy as bnp
 import numpy as np
@@ -178,6 +179,7 @@ class Graph:
         Returns a ragged array where each row is the kmers for a variant allele (given by the haplotypes)
         and the next ref sequence. The first element is only the first sequence in the graph.
         """
+        t0 = time.perf_counter()
         sequences = self.sequence_of_pairs_of_ref_and_variants_as_ragged_array(haplotypes)
         all_kmers = bnp.get_kmers(sequences.ravel(), k)
         sequence_lengths = sequences.shape[1].copy()
@@ -185,7 +187,9 @@ class Graph:
         # on last node, there will be fewer kmers
         sequence_lengths[-1] -= k-1
         assert np.all(sequence_lengths >= 0), sequence_lengths
-        return bnp.EncodedRaggedArray(all_kmers.ravel(), sequence_lengths)
+        result = bnp.EncodedRaggedArray(all_kmers.ravel(), sequence_lengths)
+        logging.info("Time to get graph kmers: %.2f" % (time.perf_counter()-t0))
+        return result
 
     def get_haplotype_kmers(self, haplotype: np.array, k, stream=False, reverse_complement=False) -> np.ndarray:
         sequence = self.sequence(haplotype, reverse_complement=reverse_complement).ravel()

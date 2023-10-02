@@ -20,6 +20,7 @@ setup(name='kage-genotyper',
                         'npstructures>=0.2.9',
                         'awkward',
                         'numba',
+                        'ray'
                         ],
       include_dirs=["."],
       classifiers=[

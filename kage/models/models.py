@@ -51,7 +51,6 @@ class ComboModelBothAlleles(Model):
             return self._logpmf_cache[genotype]
 
         logging.debug("Using base lambda %.3f in combo model both alleles" % base_lambda)
-        logging.info("Model is %s" % type(self._model_ref))
         ref_probs = self._model_ref.logpmf(k1, 2 - genotype, base_lambda=base_lambda, gpu=gpu, n_threads=n_threads)
         alt_probs = self._model_alt.logpmf(k2, genotype, base_lambda=base_lambda, gpu=gpu, n_threads=n_threads)
         prob = ref_probs + alt_probs
