@@ -21,7 +21,7 @@ class VcfEntryWithSingleIndividualGenotypes:
     genotype: str
 
 
-class VcfWithSingleIndividualBuffer(bnp.io.delimited_buffers.VCFBuffer):
+class VcfWithSingleIndividualBuffer(bnp.io.VCFBuffer):
     dataclass = VcfEntryWithSingleIndividualGenotypes
 
 

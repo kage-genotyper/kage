@@ -76,7 +76,7 @@ class IndexedGenotypes:
         Also works for nonmultiallelic. Will split multiallelic entries into biallelic if there are any.
         """
         logging.info("Redding vcf")
-        vcf_entry = bnp.open(file_name, buffer_type=bnp.io.delimited_buffers.VCFBuffer).read()
+        vcf_entry = bnp.open(file_name, buffer_type=bnp.io.VCFBuffer).read()
         
         # read genotypes using VcfEntryWithSingleIndividualGenotypes
         # encode genotypes manually since bionumpy does not support many alleles

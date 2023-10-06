@@ -164,7 +164,7 @@ class SparseHaplotypeMatrix:
     @classmethod
     def from_vcf2(cls, vcf_file_name, convert_multiallelic_to_biallelic=False) -> 'SparseHaplotypeMatrix':
         # Uses haplotypeencoding
-        vcf = bnp.open(vcf_file_name, buffer_type=bnp.io.delimited_buffers.PhasedHaplotypeVCFMatrixBuffer)
+        vcf = bnp.open(vcf_file_name, buffer_type=bnp.io.vcf_buffers.PhasedHaplotypeVCFMatrixBuffer)
         matrix = SparseHaplotypeMatrix.empty()
 
         n_alleles_per_variant = []
