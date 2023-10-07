@@ -131,3 +131,16 @@ def test_multiallelic_variant():
     assert other.genotype == [0, 3]
 
 
+def test_variant_type():
+
+    variant = MultiAllelicVariant("chr1", "10", "A", "T", (0, 0))
+    assert variant.type() == "snp"
+
+    variant = MultiAllelicVariant("chr1", "10", "AT", "A", (0, 0))
+    assert variant.type() == "indel"
+
+    variant = MultiAllelicVariant("chr1", "10", "A", ["A", "TT"] , (0, 0))
+    assert variant.type() == "indel"
+
+    variant = MultiAllelicVariant("chr1", "10", "A", ["A"*50, "TT"] , (0, 0))
+    assert variant.type() == "sv"

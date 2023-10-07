@@ -123,7 +123,6 @@ class Paths:
         """
         new_path_sequences = [PathSequences([]) for _ in range(len(from_to_intervals))]
         for i, path_sequence in enumerate(self.paths):
-            logging.info("Chunking path %d" % i)
             if isinstance(path_sequence, (PathSequence, GraphBackedPathSequence)):
                 for i, (from_id, to_id) in enumerate(from_to_intervals):
                     new_path_sequences[i].sequences.append(path_sequence.subset_on_variants(from_id, to_id, padding))

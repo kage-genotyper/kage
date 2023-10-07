@@ -6,7 +6,7 @@ from kage.preprocessing.variants import Variants
 import tqdm
 
 logging.basicConfig(level=logging.INFO)
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional, Literal
 
 import bionumpy as bnp
 import numpy as np
@@ -166,7 +166,7 @@ class IndexedGenotypes:
 
 
 class GenotypeAccuracy:
-    def __init__(self, true_genotypes: IndexedGenotypes, inferred_genotypes: IndexedGenotypes):
+    def __init__(self, true_genotypes: IndexedGenotypes, inferred_genotypes: IndexedGenotypes, limit_to: Optional[Literal["all", "snps", "indels", "snps_indels", "svs"]] = None):
         self._truth = true_genotypes
         self._sample = inferred_genotypes
         self._confusion_matrix = None
@@ -174,12 +174,32 @@ class GenotypeAccuracy:
             "false_negatives": [],
             "false_positives": []
         }
+        self._limit_to = limit_to
+        if self._limit_to is None:
+            self._limit_to = "all"
+
         self._preprocess()
         self._validate()
 
     @property
     def confusion_matrix(self):
         return self._confusion_matrix
+
+    def _include_variant(self, variant):
+        type = variant.type()
+        if self._limit_to == "all":
+            return True
+
+        if type == "snp" and self._limit_to in ("snps", "snps_indels"):
+            return True
+
+        if type == "indel" and self._limit_to in ("indels", "snps_indels"):
+            return True
+
+        if type == "sv" and self._limit_to == "svs":
+            return True
+
+        return False
 
     def _preprocess(self):
         n_with_missing = 0
@@ -200,7 +220,12 @@ class GenotypeAccuracy:
         }
 
         truth = self._truth
+        n_skipped = 0
         for i, (key, t) in tqdm.tqdm(enumerate(truth.items()), desc="Running comparison", total=len(truth.items())):
+            if self._limit_to != "all" and not self._include_variant(t):
+                n_skipped += 1
+                continue
+
             if isinstance(t, BiallelicVariant):
                 t = t.genotype_string()
 
@@ -246,6 +271,7 @@ class GenotypeAccuracy:
             else:
                 assert False, (t, g)
 
+        logging.info(f"Skipped {n_skipped} variants not matching variant type {self._limit_to}")
         logging.info(f"{n_with_missing} truth genotypes contained missing allele(s)")
         logging.info(f"{n_not_found_in_sample} truth genotypes not found in sample. These were set to 0/0")
         logging.info("Confusion matrix: %s" % self._confusion_matrix)
@@ -341,6 +367,19 @@ class BiallelicVariant:
         if allele2 == str(missing_genotype_encoding):
             allele2 = "."
         return f"{allele1}/{allele2}"
+
+    def type(self):
+        alt_sequences = self.alt_sequences
+        if isinstance(alt_sequences, str):
+            alt_sequences = [alt_sequences]
+        alt_sequences_lengths = np.array([len(seq) for seq in alt_sequences])
+
+        if len(self.reference_sequence) >= 50 or np.any(alt_sequences_lengths >= 50):
+            return "sv"
+        elif len(self.reference_sequence) == 1 and np.all(alt_sequences_lengths == 1):
+            return "snp"
+        else:
+            return "indel"
 
 
 @dataclass

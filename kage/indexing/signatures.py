@@ -745,7 +745,7 @@ class VariantWindowKmers2:
         n_alleles_per_variant = np.max(path_alleles, axis=0) + 1
         logging.info("Total alleles: %d" % np.sum(n_alleles_per_variant))
         logging.info("Max alleles on a variant: %d" % np.max(n_alleles_per_variant))
-        assert np.max(n_alleles_per_variant) <= n_paths, "There are not enough paths to cover all alleles on variants. Try to increase number of paths"
+        assert np.max(n_alleles_per_variant) < n_paths, "There are not enough paths to cover all alleles on variants. Try to increase number of paths"
         logging.info("Total signatures alleles: %d" % len(grouped_by_alleles))
         grouped_by_variants = ak.unflatten(grouped_by_alleles, n_alleles_per_variant)
         return cls(grouped_by_variants)

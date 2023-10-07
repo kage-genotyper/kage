@@ -20,7 +20,8 @@ from ..preprocessing.variants import get_padded_variants_from_vcf
 
 
 def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
-               modulo=20000033, variant_window=6, make_helper_model=False):
+               modulo=20000033, variant_window=6, make_helper_model=False,
+               n_threads=16):
     """
     Makes all indexes and writes to an index bundle.
     """
@@ -52,6 +53,7 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
 
     # Convert biallelic haplotype matrix to multiallelic
     n_alleles_per_variant = node_mapping.n_alleles_per_variant
+    assert np.max(n_alleles_per_variant) < 2**variant_window, "Some variants have too many alleles to be indexed. Increase --window (currently at %d)" % variant_window
     haplotype_matrix = biallelic_haplotype_matrix.to_multiallelic(n_alleles_per_variant)
     logging.info(f"{haplotype_matrix.n_variants} variants after converting to multiallelic")
 
@@ -91,7 +93,8 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
                                                  window=variant_window-2,
                                                  max_count=20,
                                                  node_map=node_mapping,
-                                                 n_nodes=len(variants)*2)
+                                                 n_nodes=len(variants)*2,
+                                                 n_threads=n_threads)
     count_model = model_creator.run()
 
     # find tricky variants before count model is refined

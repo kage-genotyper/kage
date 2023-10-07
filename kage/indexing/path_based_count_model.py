@@ -181,7 +181,8 @@ def prune_kmers_parallel(kmers, lookup, n_threads=8):
 class PathBasedMappingModelCreator(MappingModelCreator):
     def __init__(self, graph: Graph, kmer_index: KmerIndex,
                  haplotype_matrix: SparseHaplotypeMatrix, window, paths_allele_matrix = None,
-                 max_count=10, k=31, node_map: VariantAlleleToNodeMap = None, n_nodes: int = None):
+                 max_count=10, k=31, node_map: VariantAlleleToNodeMap = None, n_nodes: int = None,
+                 n_threads=16):
         self._graph = graph
         self._kmer_index = kmer_index
         self._haplotype_matrix = haplotype_matrix
@@ -199,18 +200,33 @@ class PathBasedMappingModelCreator(MappingModelCreator):
         self._path_kmers.prune(kmer_index, n_threads=16)
         self._node_map = node_map
         self._window = window
+        self._all_haplotypes_as_paths = get_haplotypes_as_paths_parallel(
+            self._haplotype_matrix, self._path_allele_matrix, self._window, n_threads=n_threads)
 
     def _process_individual(self, i):
+        t0 = time.perf_counter()
+        all_haplotypes_as_paths = self._all_haplotypes_as_paths
+
         haplotype1 = self._haplotype_matrix.get_haplotype(i * 2)
         haplotype2 = self._haplotype_matrix.get_haplotype(i * 2 + 1)
+        logging.info("Getting haplotypes took %.5f sec" % (time.perf_counter() - t0))
 
         all_kmers = []
-        for haplotype_id, haplotype in enumerate([haplotype1, haplotype2]):
-            as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles_multiallelic(haplotype, self._path_allele_matrix, window=self._window)
+        #for haplotype_id, haplotype in enumerate([haplotype1, haplotype2]):
+        for haplotype_id in [0, 1]:
+            t0 = time.perf_counter()
+            #as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles_multiallelic(haplotype, self._path_allele_matrix,
+            #                                                                         window=self._window)
+            as_paths = all_haplotypes_as_paths[i*2 + haplotype_id]
+            #print(len(haplotype), self._path_allele_matrix.shape)
+            logging.info("As paths took %.5f" % (time.perf_counter()-t0))
             #print("Individual %d, haplotype %s as paths: %s" % (i, haplotype, as_paths))
+            t0 = time.perf_counter()
             all_kmers.append(self._path_kmers.get_for_haplotype(as_paths).raw().ravel().astype(np.uint64))
+            logging.info("Getting kmers took %.5f sec" % (time.perf_counter() - t0))
 
         # todo for multiallelic: use variant_to_nodes
+        t0 = time.perf_counter()
         if self._node_map is None:
             logging.info("No node map provided. Assuming biallelic and deciding node ids implicitly")
             haplotype1_nodes = self._haplotype_matrix.get_haplotype_nodes(i*2)
@@ -218,8 +234,75 @@ class PathBasedMappingModelCreator(MappingModelCreator):
         else:
             haplotype1_nodes = self._node_map.haplotypes_to_node_ids(haplotype1)
             haplotype2_nodes = self._node_map.haplotypes_to_node_ids(haplotype2)
+        logging.info("Getting node ids took %.5f sec" % (time.perf_counter() - t0))
 
+        t0 = time.perf_counter()
         node_counts = self._kmer_index.map_kmers(np.concatenate(all_kmers), self._n_nodes)
+        logging.info("Mapping took %.5f sec" % (time.perf_counter() - t0))
+        t0 = time.perf_counter()
         self._add_node_counts(haplotype1_nodes, haplotype2_nodes, node_counts)
+        logging.info("Adding counts took %.5f sec" % (time.perf_counter() - t0))
 
 
+def get_haplotypes_as_paths(haplotype_matrix: SparseHaplotypeMatrix, path_allele_matrix: np.ndarray, window_size):
+    """
+    Returns all haplotypes as paths by matching against path_allele_matrix
+    """
+    t0 = time.perf_counter()
+    out = []
+    path_signatures = sliding_window_view(
+        np.append(path_allele_matrix, np.zeros((path_allele_matrix.shape[0], window_size - 1)), axis=1),
+        window_size, axis=1)
+
+    for i in range(haplotype_matrix.n_haplotypes):
+        haplotype = haplotype_matrix.get_haplotype(i)
+
+        haplotype_signatures = sliding_window_view(np.append(haplotype, np.zeros(window_size-1)), window_size)
+        matching_paths = np.zeros(len(haplotype), dtype=np.uint16)
+
+        for i in range(path_signatures.shape[0]):
+            matching_paths[np.all(path_signatures[i] == haplotype_signatures, axis=1)] = i
+
+        out.append(HaplotypeAsPaths(matching_paths))
+
+    logging.info("Getting all haplotypes as paths took %.5f sec" % (time.perf_counter() - t0))
+    return out
+
+@ray.remote
+def _get_single_haplotype_as_paths(path_signatures, haplotype_matrix, haplotype_id, window_size):
+    haplotype = haplotype_matrix.get_haplotype(haplotype_id)
+
+    haplotype_signatures = sliding_window_view(np.append(haplotype, np.zeros(window_size - 1)), window_size)
+    matching_paths = np.zeros(len(haplotype), dtype=np.uint16)
+
+    for i in range(path_signatures.shape[0]):
+        matching_paths[np.all(path_signatures[i] == haplotype_signatures, axis=1)] = i
+
+    return HaplotypeAsPaths(matching_paths)
+
+
+def get_haplotypes_as_paths_parallel(haplotype_matrix: SparseHaplotypeMatrix, path_allele_matrix: np.ndarray, window_size, n_threads=8):
+    t0 = time.perf_counter()
+    ray.init(num_cpus=n_threads, ignore_reinit_error=True)
+    print("Time init", time.perf_counter()-t0)
+
+    out = []
+    t0 = time.perf_counter()
+    n_haplotypes = haplotype_matrix.n_haplotypes
+    haplotype_matrix = ray.put(haplotype_matrix)
+
+    path_signatures = sliding_window_view(
+        np.append(path_allele_matrix, np.zeros((path_allele_matrix.shape[0], window_size - 1)), axis=1),
+        window_size, axis=1)
+
+    path_signatures = ray.put(path_signatures)
+    print("Time putting things in memory etc", time.perf_counter()-t0)
+
+    for haplotype in range(n_haplotypes):
+        out.append(_get_single_haplotype_as_paths.remote(path_signatures, haplotype_matrix, haplotype, window_size))
+
+    t0 = time.perf_counter()
+    results = ray.get(out)
+    print("Time doing stuff", time.perf_counter()-t0)
+
+    return results

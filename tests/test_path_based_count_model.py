@@ -7,7 +7,8 @@ from kage.indexing.graph import GenomeBetweenVariants, Graph, MultiAllelicVarian
 from kage.preprocessing.variants import VariantAlleleSequences
 from kage.indexing.paths import Paths, PathCreator
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
-from kage.indexing.path_based_count_model import HaplotypeAsPaths, PathKmers, prune_kmers_parallel
+from kage.indexing.path_based_count_model import HaplotypeAsPaths, PathKmers, prune_kmers_parallel, \
+    get_haplotypes_as_paths, get_haplotypes_as_paths_parallel
 import numpy as np
 import npstructures as nps
 import bionumpy as bnp
@@ -170,3 +171,39 @@ def test_prune_many_kmers():
 
     #assert np.all(pruned2 == pruned)
 
+
+
+
+def test_benchmark_haplotype_as_paths_from_haplotype():
+    n_variants = 1000000
+    n_paths = 128
+    haplotype = np.random.randint(0, 2, n_variants)
+    paths = np.random.randint(0, 2, (n_paths, n_variants))
+
+    t0 = time.perf_counter()
+    haplotype_as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles(haplotype, paths, window=3)
+    print("Time", time.perf_counter()-t0)
+
+
+def test_get_all_haplotypes_as_paths():
+    n_variants = 3000
+    n_individuals = 50
+    n_paths = 128
+    window = 7
+    haplotype_matrix = SparseHaplotypeMatrix.from_nonsparse_matrix(
+        np.random.randint(0, 2, (n_variants, n_individuals))
+    )
+
+    paths = np.random.randint(0, 2, (n_paths, n_variants))
+
+    t0 = time.perf_counter()
+    all_haplotypes_as_paths = get_haplotypes_as_paths(haplotype_matrix, paths, window)
+    print("Time", time.perf_counter()-t0)
+
+
+    t0 = time.perf_counter()
+    all_haplotypes_as_paths2 = get_haplotypes_as_paths_parallel(haplotype_matrix, paths, window, n_threads=8)
+    print("Time", time.perf_counter()-t0)
+
+    for h1, h2 in zip(all_haplotypes_as_paths, all_haplotypes_as_paths2):
+        assert np.all(h1.paths == h2.paths)
