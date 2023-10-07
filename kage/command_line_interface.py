@@ -194,6 +194,25 @@ def run_argument_parser(args):
     subparser.add_argument("-c", "--count_probs", required=True)
     subparser.set_defaults(func=analyse_variants)
 
+
+    def simulate_reads_cli(args):
+        from kage.simulation.read_simulation import simulate_reads
+        simulate_reads(args.vcf, args.fasta,
+                       out_file_name=args.out_file_name,
+                        coverage=args.coverage,
+                        read_length=args.read_length
+                       )
+
+    subparser = subparsers.add_parser("simulate_reads")
+    subparser.add_argument("-v", "--vcf", required=True)
+    subparser.add_argument("-f", "--fasta", required=True)
+    subparser.add_argument("-o", "--out_file_name", required=True)
+    subparser.add_argument("-c", "--coverage", type=float, required=True)
+    subparser.add_argument("-s", "--random-seed", type=int, required=False, default=1)
+    subparser.add_argument("-l", "--read-length", type=int, required=False, default=150)
+    subparser.set_defaults(func=simulate_reads_cli)
+
+
     def run_tests(args):
         from kage.simulation.simulation import run_genotyper_on_simualated_data
 

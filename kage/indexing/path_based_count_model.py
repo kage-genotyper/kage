@@ -8,7 +8,7 @@ from shared_memory_wrapper.util import interval_chunks
 from kage.preprocessing.variants import VariantAlleleToNodeMap
 from scipy.signal import convolve2d
 import bionumpy as bnp
-from typing import List
+from typing import List, Union
 
 from shared_memory_wrapper import to_file
 
@@ -107,7 +107,7 @@ class PathKmers:
         return bnp.EncodedArray(np.concatenate(kmers_found), encoding)
 
 
-    def prune(self, kmer_index, n_threads=1, modulo=2000000033):
+    def prune(self, kmer_index, n_threads=1, modulo=2_000_000_033):
         """
         Prunes away kmers that are not in kmer index.
         Prunes inplace.
@@ -116,10 +116,11 @@ class PathKmers:
         # first creates an approx lookup of which kmers are in kmer_index
         # then prunes away kmers that are not in kmer_index
         logging.info("Making kmer lookup")
-        index_kmers = kmer_index.get_kmers()
-        lookup = np.zeros(modulo, dtype=bool)
-        lookup[index_kmers % modulo] = True
-        lookup = ModuloFilter(lookup)
+        lookup = kmer_index
+        #index_kmers = kmer_index.get_kmers()
+        #lookup = np.zeros(modulo, dtype=bool)
+        #lookup[index_kmers % modulo] = True
+        #lookup = ModuloFilter(lookup)
 
         logging.info("Pruning")
         new = []
@@ -133,13 +134,17 @@ class PathKmers:
         self.kmers = new
 
     @staticmethod
-    def prune_kmers(kmers: bnp.EncodedRaggedArray, lookup: ModuloFilter):
+    def prune_kmers(kmers: bnp.EncodedRaggedArray, lookup: Union[ModuloFilter, KmerIndex]):
         assert np.all(kmers.shape[0] >= 0)
         encoding = kmers.encoding
         raw_kmers = kmers.raw().ravel().astype(np.uint64)
         logging.info("Got raw kmers")
         t_lookup = time.perf_counter()
-        is_in = lookup[raw_kmers]
+        if isinstance(lookup, ModuloFilter):
+            is_in = lookup[raw_kmers]
+        else:
+            is_in = lookup.has_kmers(raw_kmers)
+
         logging.info("Time lookup %d kmers: %.5f" % (len(raw_kmers), time.perf_counter() - t_lookup))
         mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)
         print(f"Kept {np.sum(mask)}/{len(raw_kmers)} kmers for path")
@@ -209,7 +214,7 @@ class PathBasedMappingModelCreator(MappingModelCreator):
 
         haplotype1 = self._haplotype_matrix.get_haplotype(i * 2)
         haplotype2 = self._haplotype_matrix.get_haplotype(i * 2 + 1)
-        logging.info("Getting haplotypes took %.5f sec" % (time.perf_counter() - t0))
+        #logging.info("Getting haplotypes took %.5f sec" % (time.perf_counter() - t0))
 
         all_kmers = []
         #for haplotype_id, haplotype in enumerate([haplotype1, haplotype2]):
@@ -219,11 +224,11 @@ class PathBasedMappingModelCreator(MappingModelCreator):
             #                                                                         window=self._window)
             as_paths = all_haplotypes_as_paths[i*2 + haplotype_id]
             #print(len(haplotype), self._path_allele_matrix.shape)
-            logging.info("As paths took %.5f" % (time.perf_counter()-t0))
+            #logging.info("As paths took %.5f" % (time.perf_counter()-t0))
             #print("Individual %d, haplotype %s as paths: %s" % (i, haplotype, as_paths))
             t0 = time.perf_counter()
             all_kmers.append(self._path_kmers.get_for_haplotype(as_paths).raw().ravel().astype(np.uint64))
-            logging.info("Getting kmers took %.5f sec" % (time.perf_counter() - t0))
+            #logging.info("Getting kmers took %.5f sec" % (time.perf_counter() - t0))
 
         # todo for multiallelic: use variant_to_nodes
         t0 = time.perf_counter()
@@ -234,14 +239,14 @@ class PathBasedMappingModelCreator(MappingModelCreator):
         else:
             haplotype1_nodes = self._node_map.haplotypes_to_node_ids(haplotype1)
             haplotype2_nodes = self._node_map.haplotypes_to_node_ids(haplotype2)
-        logging.info("Getting node ids took %.5f sec" % (time.perf_counter() - t0))
+        #logging.info("Getting node ids took %.5f sec" % (time.perf_counter() - t0))
 
         t0 = time.perf_counter()
         node_counts = self._kmer_index.map_kmers(np.concatenate(all_kmers), self._n_nodes)
-        logging.info("Mapping took %.5f sec" % (time.perf_counter() - t0))
+        #logging.info("Mapping took %.5f sec" % (time.perf_counter() - t0))
         t0 = time.perf_counter()
         self._add_node_counts(haplotype1_nodes, haplotype2_nodes, node_counts)
-        logging.info("Adding counts took %.5f sec" % (time.perf_counter() - t0))
+        #logging.info("Adding counts took %.5f sec" % (time.perf_counter() - t0))
 
 
 def get_haplotypes_as_paths(haplotype_matrix: SparseHaplotypeMatrix, path_allele_matrix: np.ndarray, window_size):
