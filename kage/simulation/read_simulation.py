@@ -14,7 +14,9 @@ def get_haplotype_genomes(individual_vcf, reference_fasta):
     """Yields two GenomicSequences object (one for each haplotype) containing the sequences of the haplotypes."""
     reference_sequences = bnp.open(reference_fasta).read()
     variants, vcf_variants, n_alleles_per_original_variant = get_padded_variants_from_vcf(individual_vcf,
-                                                                                          reference_fasta, True)
+                                                                                          reference_fasta,
+                                                                                          True,
+                                                                                          remove_indel_padding=False)
     graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
 
     haplotype_matrix_original_vcf = SparseHaplotypeMatrix.from_vcf(individual_vcf)

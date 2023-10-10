@@ -64,7 +64,7 @@ class Variants:
         return SimpleVcfEntry(self.chromosome, self.position-pad_size, new_ref, new_alt)
 
     @classmethod
-    def from_multiallelic_vcf_entry(cls, variants: Union[bnp.datatypes.VCFEntry, SimpleVcfEntry], return_n_alleles_per_variant=False):
+    def from_multiallelic_vcf_entry(cls, variants: Union[bnp.datatypes.VCFEntry, SimpleVcfEntry], return_n_alleles_per_variant=False, remove_indel_padding=True):
         """ Create a Variants object from a multiallelic vcf entry where no variants
         are overlapping (variants are padded).
         Converts all multiallelic variants to biallelic.
@@ -96,20 +96,21 @@ class Variants:
 
         new.append(variants[prev_variant:])
         merged = np.concatenate(new)
-        merged = cls.from_vcf_entry(merged)
+        merged = cls.from_vcf_entry(merged, remove_indel_padding=remove_indel_padding)
         if return_n_alleles_per_variant:
             return merged, n_alleles_per_variant
         return merged
 
     @classmethod
-    def from_vcf_entry(cls, variants: bnp.datatypes.VCFEntry, remove_padding_from_indels=True):
+    def from_vcf_entry(cls, variants: bnp.datatypes.VCFEntry, remove_indel_padding=True):
         variant_ref_sequences = variants.ref_seq
         variant_alt_sequences = variants.alt_seq
+        variants_start = variants.position
 
-        if remove_padding_from_indels:
+        if remove_indel_padding:
+            logging.info("Removing trailing bases from indels")
             # find indels to remove padding
             is_indel = (variants.ref_seq.shape[1] > 1) | (variants.alt_seq.shape[1] > 1)
-            variants_start = variants.position
             variants_start[is_indel] += 1
             variants_stop = variants_start + variants.ref_seq.shape[1]
             variants_stop[is_indel] -= 1
@@ -123,6 +124,8 @@ class Variants:
             mask = np.ones_like(variant_alt_sequences.raw(), dtype=bool)
             mask[is_indel, 0] = False
             variant_alt_sequences = bnp.EncodedRaggedArray(variant_alt_sequences[mask], mask.sum(axis=1))
+        else:
+            logging.warning("Not removing trailling base from indels")
 
         #assert np.all(variants_start[1:] >= variants_start[:-1]), "Variants in vcf must be sorted by position within each chromosome, %s" % variants
 
@@ -395,7 +398,7 @@ class VariantPadder:
         return Variants(self._variants.chromosome, new_positions, new_ref_sequences, new_alt_sequences)
 
 
-def get_padded_variants_from_vcf(vcf_file_name, reference_file_name, also_return_original_variants=False) -> Variants:
+def get_padded_variants_from_vcf(vcf_file_name, reference_file_name, also_return_original_variants=False, remove_indel_padding=True) -> Variants:
     variants = bnp.open(vcf_file_name).read_chunks()
     genome = bnp.open(reference_file_name).read()
     sequences = {str(sequence.name): sequence.sequence for sequence in genome}
@@ -405,7 +408,7 @@ def get_padded_variants_from_vcf(vcf_file_name, reference_file_name, also_return
 
     for chromosome, raw_chromosome_variants in bnp.groupby(variants, "chromosome"):
         n_alleles_per_variant.append(np.sum(raw_chromosome_variants.alt_seq == ",", axis=1) + 2)
-        chromosome_variants = Variants.from_multiallelic_vcf_entry(raw_chromosome_variants)
+        chromosome_variants = Variants.from_multiallelic_vcf_entry(raw_chromosome_variants, remove_indel_padding=remove_indel_padding)
         logging.info("Padding variants on chromosome " + chromosome)
         logging.info("%d variants" % len(chromosome_variants))
         padded_variants = VariantPadder(chromosome_variants, sequences[chromosome]).run()

@@ -173,8 +173,6 @@ def test_prune_many_kmers():
     #assert np.all(pruned2 == pruned)
 
 
-
-
 @pytest.mark.skip
 def test_benchmark_haplotype_as_paths_from_haplotype():
     n_variants = 1000000

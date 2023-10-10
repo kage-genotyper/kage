@@ -29,7 +29,8 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     reference_sequences = bnp.open(reference_file_name).read()
     # vcf_variants are original vcf variants, needed when writing final vcf after genotyping
     # n_alleles_per_variant lets us convert genotypes on variants (which are biallelic) to multiallelic where necessary
-    variants, vcf_variants, n_alleles_per_original_variant = get_padded_variants_from_vcf(vcf_file_name, reference_file_name, True)
+    variants, vcf_variants, n_alleles_per_original_variant = get_padded_variants_from_vcf(vcf_file_name, reference_file_name,
+                                                                                          True, remove_indel_padding=False)
     assert len(variants) == np.sum(n_alleles_per_original_variant-1), f"{len(variants)} != {np.sum(n_alleles_per_original_variant-1)}"
     assert len(vcf_variants) == len(n_alleles_per_original_variant), f"{len(vcf_variants)} != {len(n_alleles_per_original_variant)}"
 
