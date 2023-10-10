@@ -102,34 +102,31 @@ class Variants:
         return merged
 
     @classmethod
-    def from_vcf_entry(cls, variants: bnp.datatypes.VCFEntry):
-        # find indels to remove padding
-        is_indel = (variants.ref_seq.shape[1] > 1) | (variants.alt_seq.shape[1] > 1)
-        variants_start = variants.position
-        variants_start[is_indel] += 1
-        variants_stop = variants_start + variants.ref_seq.shape[1]
-        variants_stop[is_indel] -= 1
-
+    def from_vcf_entry(cls, variants: bnp.datatypes.VCFEntry, remove_padding_from_indels=True):
         variant_ref_sequences = variants.ref_seq
         variant_alt_sequences = variants.alt_seq
 
-        # remove padding from ref and alt seq
-        mask = np.ones_like(variant_ref_sequences.raw(), dtype=bool)
-        mask[is_indel, 0] = False
-        variant_ref_sequences = bnp.EncodedRaggedArray(variant_ref_sequences[mask], mask.sum(axis=1))
+        if remove_padding_from_indels:
+            # find indels to remove padding
+            is_indel = (variants.ref_seq.shape[1] > 1) | (variants.alt_seq.shape[1] > 1)
+            variants_start = variants.position
+            variants_start[is_indel] += 1
+            variants_stop = variants_start + variants.ref_seq.shape[1]
+            variants_stop[is_indel] -= 1
 
-        mask = np.ones_like(variant_alt_sequences.raw(), dtype=bool)
-        mask[is_indel, 0] = False
-        variant_alt_sequences = bnp.EncodedRaggedArray(variant_alt_sequences[mask], mask.sum(axis=1))
+
+            # remove padding from ref and alt seq
+            mask = np.ones_like(variant_ref_sequences.raw(), dtype=bool)
+            mask[is_indel, 0] = False
+            variant_ref_sequences = bnp.EncodedRaggedArray(variant_ref_sequences[mask], mask.sum(axis=1))
+
+            mask = np.ones_like(variant_alt_sequences.raw(), dtype=bool)
+            mask[is_indel, 0] = False
+            variant_alt_sequences = bnp.EncodedRaggedArray(variant_alt_sequences[mask], mask.sum(axis=1))
 
         #assert np.all(variants_start[1:] >= variants_start[:-1]), "Variants in vcf must be sorted by position within each chromosome, %s" % variants
 
         return cls(variants.chromosome, variants_start, variant_ref_sequences, variant_alt_sequences)
-
-    def to_vcf_entry(self, ):
-        # adds trailing bases to indels and adjusts positions
-        is_indel = (self.ref_seq.shape[1] != 1) | (self.alt_seq.shape[1] != 1)
-        new_positions = self.position.copy()
 
     def get_multi_allele_variant_alleles(self) -> Tuple['MultiAllelicVariantSequences', 'VariantAlleleToNodeMap', Interval]:
         """
@@ -399,7 +396,6 @@ class VariantPadder:
 
 
 def get_padded_variants_from_vcf(vcf_file_name, reference_file_name, also_return_original_variants=False) -> Variants:
-    # todo: if also_return_original_variants, read original variants into SimpleVcfEntry and return that also
     variants = bnp.open(vcf_file_name).read_chunks()
     genome = bnp.open(reference_file_name).read()
     sequences = {str(sequence.name): sequence.sequence for sequence in genome}

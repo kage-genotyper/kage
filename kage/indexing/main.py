@@ -37,8 +37,8 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     logging.info("N original variants: %d" % len(vcf_variants))
 
     graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
-    #to_file(node_mapping, "tmp_node_mapping")
-    #assert False
+    assert np.max(node_mapping.n_alleles_per_variant) < 2**variant_window, "Some variants have too many alleles to be indexed. Increase --window (currently at %d)" % variant_window
+
     if len(graph.genome.sequence[-1]) < k:
         # pad genome
         logging.warning("Last variant is too close to end of the genome. Padding")
@@ -53,7 +53,6 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
 
     # Convert biallelic haplotype matrix to multiallelic
     n_alleles_per_variant = node_mapping.n_alleles_per_variant
-    assert np.max(n_alleles_per_variant) < 2**variant_window, "Some variants have too many alleles to be indexed. Increase --window (currently at %d)" % variant_window
     haplotype_matrix = biallelic_haplotype_matrix.to_multiallelic(n_alleles_per_variant)
     logging.info(f"{haplotype_matrix.n_variants} variants after converting to multiallelic")
 

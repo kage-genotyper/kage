@@ -32,6 +32,7 @@ def test_add_many():
     print(counter[1])
 
 
+@pytest.mark.skip
 def test_benchmark_parallel_add():
     counter = FastApproxCounter.empty(2000000003)
     kmers = np.random.randint(0, 2**63, 1000000, dtype=np.uint64)

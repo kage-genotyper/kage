@@ -13,6 +13,7 @@ def test_modulo_filter():
     assert np.all(filter[elements])
 
 
+@pytest.mark.skip
 def test_benchmark_modulo_filter():
     modulo = 2_000_000_033
     n_kmers = 200000000

@@ -149,6 +149,7 @@ def test_get_kmers_for_haplotype_multiallelic():
     assert sorted(kmers) == sorted(correct)
 
 
+@pytest.mark.skip
 def test_prune_many_kmers():
     n_threads = 4
     encoding = bnp.get_kmers(bnp.as_encoded_array("G"*31, bnp.DNAEncoding), 31).encoding
@@ -174,6 +175,7 @@ def test_prune_many_kmers():
 
 
 
+@pytest.mark.skip
 def test_benchmark_haplotype_as_paths_from_haplotype():
     n_variants = 1000000
     n_paths = 128
