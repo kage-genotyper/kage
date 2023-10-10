@@ -53,6 +53,13 @@ class GenomeBetweenVariants:
         between_variants_end = np.insert(global_starts, len(global_starts), len(global_reference_sequence))
         if not np.all(between_variants_start[1:] >= between_variants_start[:-1]):
             logging.error("Some variants start before others end. Are there overlapping variants?")
+            wrong = np.where(between_variants_start[1:] < between_variants_start[:-1])[0]
+            print("Wrong variants:")
+            for w in wrong:
+                print(" ---- ", w, " ---- ")
+                for i in range(w-3, w+3):
+                    print(variant_intervals[i])
+
             raise Exception("")
 
         # some variants will start and end at the same position. Then we don't need the sequence between them

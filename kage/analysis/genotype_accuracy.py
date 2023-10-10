@@ -258,7 +258,10 @@ class GenotypeAccuracy:
                 if g == t:
                     self._confusion_matrix["homo_alt_correct"] += 1
 
-            if t == g and t != "0/0":
+            if "." in t:
+                # truth has missing allele, ignore
+                continue
+            elif t == g and t != "0/0":
                 self._confusion_matrix["true_positive"] += 1
             elif t == '0/0' and g != '0/0':
                 self._confusion_matrix["false_positive"] += 1
@@ -272,7 +275,7 @@ class GenotypeAccuracy:
                 assert False, (t, g)
 
         logging.info(f"Skipped {n_skipped} variants not matching variant type {self._limit_to}")
-        logging.info(f"{n_with_missing} truth genotypes contained missing allele(s)")
+        print(f"{n_with_missing} truth genotypes contained missing allele(s)")
         logging.info(f"{n_not_found_in_sample} truth genotypes not found in sample. These were set to 0/0")
         logging.info("Confusion matrix: %s" % self._confusion_matrix)
 

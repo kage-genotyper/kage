@@ -144,3 +144,14 @@ def test_variant_type():
 
     variant = MultiAllelicVariant("chr1", "10", "A", ["A"*50, "TT"] , (0, 0))
     assert variant.type() == "sv"
+
+
+def test_read_vcf_with_missing_genotypes():
+    truth = IndexedGenotypes2.from_multiallelic_vcf("vcf_with_missing.vcf", convert_to_biallelic=False)
+
+    for id, variant in truth.items():
+        print(id, variant.genotype_string())
+
+    comparison = GenotypeAccuracy(truth, truth)
+
+    print(comparison.confusion_matrix)
