@@ -1,6 +1,6 @@
 import bionumpy as bnp
-from kage.simulation.read_simulation import simulate_reads_from_sequence
-
+import numpy as np
+from kage.simulation.read_simulation import simulate_reads_from_sequence, add_errors_to_sequences
 
 
 def test_simple():
@@ -10,7 +10,11 @@ def test_simple():
     print(simulated)
 
 
-
 def test_get_haplotype_genomes():
     pass
 
+
+def test_add_errors_to_sequences():
+    sequences = bnp.as_encoded_array(["ACTGAC", "AAAAAAAAAAAAAaA", "CCCCCCCCCCCCCCCCCCCC"], bnp.DNAEncoding)
+    add_errors_to_sequences(sequences, snp_error_rate=0.3, rng=np.random.default_rng(1))
+    print(sequences)

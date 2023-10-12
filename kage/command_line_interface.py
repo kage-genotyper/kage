@@ -200,7 +200,9 @@ def run_argument_parser(args):
         simulate_reads(args.vcf, args.fasta,
                        out_file_name=args.out_file_name,
                         coverage=args.coverage,
-                        read_length=args.read_length
+                        read_length=args.read_length,
+                       snp_error_rate=args.snp_error_rate,
+                       random_seed=args.random_seed,
                        )
 
     subparser = subparsers.add_parser("simulate_reads")
@@ -209,8 +211,19 @@ def run_argument_parser(args):
     subparser.add_argument("-o", "--out_file_name", required=True)
     subparser.add_argument("-c", "--coverage", type=float, required=True)
     subparser.add_argument("-s", "--random-seed", type=int, required=False, default=1)
+    subparser.add_argument("-e", "--snp-error-rate", type=float, required=False, default=0.001)
     subparser.add_argument("-l", "--read-length", type=int, required=False, default=150)
     subparser.set_defaults(func=simulate_reads_cli)
+
+    def preprocess_sv_vcf_cli(args):
+        from kage.benchmarking.vcf_preprocessing import preprocess_sv_vcf
+        preprocess_sv_vcf(args.vcf, args.fasta)
+
+
+    subparser = subparsers.add_parser("preprocess_sv_vcf")
+    subparser.add_argument("-v", "--vcf", required=True)
+    subparser.add_argument("-f", "--fasta", required=True)
+    subparser.set_defaults(func=preprocess_sv_vcf_cli)
 
 
     def run_tests(args):

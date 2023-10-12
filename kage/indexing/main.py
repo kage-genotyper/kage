@@ -38,7 +38,10 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     logging.info("N original variants: %d" % len(vcf_variants))
 
     graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
-    assert np.max(node_mapping.n_alleles_per_variant) < 2**variant_window, "Some variants have too many alleles to be indexed. Increase --window (currently at %d)" % variant_window
+    if np.max(node_mapping.n_alleles_per_variant) >= 2**variant_window:
+        logging.error("Some variants have too many alleles to be indexed. Increase --window (currently at %d)" % variant_window)
+        logging.error(f"Max alleles on a variant is {np.max(node_mapping.n_alleles_per_variant)}")
+        raise Exception("Too many alleles")
 
     if len(graph.genome.sequence[-1]) < k:
         # pad genome

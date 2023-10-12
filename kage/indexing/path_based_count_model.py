@@ -122,14 +122,14 @@ class PathKmers:
         #lookup[index_kmers % modulo] = True
         #lookup = ModuloFilter(lookup)
 
-        logging.info("Pruning")
+        #logging.info("Pruning")
         new = []
         for i, kmers in tqdm(enumerate(self.kmers), desc="Pruning kmers"):
-            logging.info("Pruning path %d", i)
+            #logging.info("Pruning path %d", i)
             t0 = time.perf_counter()
             pruned_kmers = self.prune_kmers(kmers, lookup)
             new.append(pruned_kmers)
-            logging.info("Pruning took %.5f sec" % (time.perf_counter() - t0))
+            #logging.info("Pruning took %.5f sec" % (time.perf_counter() - t0))
 
         self.kmers = new
 
@@ -138,16 +138,16 @@ class PathKmers:
         assert np.all(kmers.shape[0] >= 0)
         encoding = kmers.encoding
         raw_kmers = kmers.raw().ravel().astype(np.uint64)
-        logging.info("Got raw kmers")
+        #logging.info("Got raw kmers")
         t_lookup = time.perf_counter()
         if isinstance(lookup, ModuloFilter):
             is_in = lookup[raw_kmers]
         else:
             is_in = lookup.has_kmers(raw_kmers)
 
-        logging.info("Time lookup %d kmers: %.5f" % (len(raw_kmers), time.perf_counter() - t_lookup))
+        #logging.info("Time lookup %d kmers: %.5f" % (len(raw_kmers), time.perf_counter() - t_lookup))
         mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)
-        print(f"Kept {np.sum(mask)}/{len(raw_kmers)} kmers for path")
+        #print(f"Kept {np.sum(mask)}/{len(raw_kmers)} kmers for path")
         kmers = raw_kmers[is_in]
         shape = np.sum(mask, axis=1)
         pruned_kmers = bnp.EncodedRaggedArray(bnp.EncodedArray(kmers, encoding), shape)

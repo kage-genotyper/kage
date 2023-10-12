@@ -33,10 +33,23 @@ def get_haplotype_genomes(individual_vcf, reference_fasta):
     return sequence1, sequence2
 
 
-def simulate_reads_from_sequence(sequence: bnp.EncodedArray, read_length: int = 150, n_reads: int = 10000, rng=np.random.default_rng()):
+def add_errors_to_sequences(sequences: bnp.EncodedRaggedArray,
+                            snp_error_rate: float = 0.001, rng=np.random.default_rng()):
+    flat_sequences = sequences.ravel()
+    effective_mutation_rate = snp_error_rate * 1.25  # scale up since 1/4 of mutations will be to same base
+    mutation_locations = rng.integers(0, len(flat_sequences), size=int(len(flat_sequences) * effective_mutation_rate))
+    new_bases = rng.integers(0, 4, size=len(mutation_locations))
+    new_bases = bnp.EncodedArray(new_bases, bnp.DNAEncoding)
+    flat_sequences[mutation_locations] = new_bases
+
+
+def simulate_reads_from_sequence(sequence: bnp.EncodedArray, read_length: int = 150,
+                                 n_reads: int = 10000, snp_error_rate=0.001, rng=np.random.default_rng()):
     starts = rng.integers(0, len(sequence) - read_length, size=n_reads)
     stops = starts + read_length
     sequences = bnp.ragged_slice(sequence, starts, stops)
+    logging.error(f"Adding errors to sequences with rate {snp_error_rate}")
+    add_errors_to_sequences(sequences, rng=rng, snp_error_rate=snp_error_rate)
 
     # remove sequences with N
     #sequences = sequences[~np.any(sequences == "N", axis=1)]
@@ -50,7 +63,8 @@ def simulate_reads_from_sequence(sequence: bnp.EncodedArray, read_length: int = 
 
 
 def simulate_reads(individual_vcf: str, reference_fasta: str, out_file_name: str, read_length: int = 150,
-                  n_reads: int = 10000, coverage: float = 0, chunk_size: int = 100000, random_seed: int = 1,
+                  n_reads: int = 10000, coverage: float = 0, chunk_size: int = 100000, snp_error_rate=0.001,
+                   random_seed: int = 1,
                    sequence_name_prefix=""):
     haplotype0, haplotype1 = get_haplotype_genomes(individual_vcf, reference_fasta)
 
@@ -68,7 +82,7 @@ def simulate_reads(individual_vcf: str, reference_fasta: str, out_file_name: str
             n_simulated = 0
             while n_simulated < to_simulate:
                 n = min(n_reads - n_simulated, chunk_size)
-                reads = simulate_reads_from_sequence(haplotype_seq, read_length, n, rng)
+                reads = simulate_reads_from_sequence(haplotype_seq, read_length, n, snp_error_rate, rng)
 
                 names = bnp.as_encoded_array(
                     [f"{sequence_name_prefix}{i}" for i in range(n_simulated, n_simulated + len(reads))])
