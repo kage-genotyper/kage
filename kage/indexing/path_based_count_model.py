@@ -275,18 +275,22 @@ def get_haplotypes_as_paths(haplotype_matrix: SparseHaplotypeMatrix, path_allele
 
 @ray.remote
 def _get_single_haplotype_as_paths(path_signatures, haplotype_matrix, haplotype_id, window_size):
+    log_memory_usage_now("_get_single_haplotype_as_paths_start")
     haplotype = haplotype_matrix.get_haplotype(haplotype_id)
 
     haplotype_signatures = sliding_window_view(np.append(haplotype, np.zeros(window_size - 1)), window_size)
-    matching_paths = np.zeros(len(haplotype), dtype=np.uint16)
+    matching_paths = np.zeros(len(haplotype), dtype=np.uint8)
+    assert path_signatures.shape[0] <= 256, "Too many paths for uint8"
 
     for i in range(path_signatures.shape[0]):
         matching_paths[np.all(path_signatures[i] == haplotype_signatures, axis=1)] = i
+    log_memory_usage_now("_get_single_haplotype_as_paths_end")
 
     return HaplotypeAsPaths(matching_paths)
 
 
-def get_haplotypes_as_paths_parallel(haplotype_matrix: SparseHaplotypeMatrix, path_allele_matrix: np.ndarray, window_size, n_threads=8):
+def get_haplotypes_as_paths_parallel(haplotype_matrix: SparseHaplotypeMatrix, path_allele_matrix: np.ndarray,
+                                     window_size, n_threads=8):
     t0 = time.perf_counter()
     ray.init(num_cpus=n_threads, ignore_reinit_error=True)
     print("Time init", time.perf_counter()-t0)

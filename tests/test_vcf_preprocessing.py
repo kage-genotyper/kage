@@ -1,7 +1,7 @@
-from kage.benchmarking.vcf_preprocessing import preprocess_sv_vcf, get_cn0_ref_alt_sequences_from_vcf
+from kage.benchmarking.vcf_preprocessing import preprocess_sv_vcf, get_cn0_ref_alt_sequences_from_vcf, find_snps_indels_covered_by_svs
 import pytest
 import bionumpy as bnp
-
+import numpy as np
 
 @pytest.fixture
 def genome():
@@ -30,3 +30,23 @@ def test_get_cn0_sequences(genome, variants):
     assert alt[0].to_string() == "C"
 
     print(ref, alt)
+
+
+@pytest.fixture
+def variants2():
+    return bnp.datatypes.VCFEntry.from_entry_tuples(
+        [
+            ("chr1", 1, ".", "A", "T", ".", ".", "."),
+            ("chr1", 2, ".", "A", "G", ".", ".", "."),
+            ("chr1", 2, ".", "ACACACAC", "A", ".", ".", "."),
+            ("chr1", 5, ".", "C", "G", ".", ".", "."),
+            ("chr1", 9, ".", "AT", "A", ".", ".", "."),
+            ("chr1", 8, ".", "AT", "A", ".", ".", "."),
+        ]
+    )
+
+
+def test_find_snps_indels_covered_by_svs(variants2):
+    is_covered = find_snps_indels_covered_by_svs(variants2, sv_size_limit=3)
+    assert np.all(is_covered == [False, False, False, True, False, True])
+

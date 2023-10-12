@@ -2,7 +2,7 @@ import dataclasses
 import logging
 from isal import igzip
 from tqdm import tqdm
-
+import npstructures as nps
 logging.basicConfig(level=logging.INFO)
 import bionumpy as bnp
 import typing as tp
@@ -156,4 +156,48 @@ def preprocess_sv_vcf(vcf_file_name, reference_file_name):
 
     logging.info(f"{n_wrong} variants had wrong ref sequence and were ignored ")
 
+
+def find_snps_indels_covered_by_svs(variants: bnp.datatypes.VCFEntry, sv_size_limit: int = 50) -> np.ndarray:
+    """
+    Returns a boolean mask where True are SNPs/indels that are covered by a SV.
+    Assumes all variants are on the same chromosome.
+    """
+    assert variants.chromosome[0].to_string() == variants.chromosome[-1].to_string()
+    is_snp_indel = (variants.ref_seq.shape[1] <= sv_size_limit) & (variants.alt_seq.shape[1] <= sv_size_limit)
+    is_sv = ~is_snp_indel
+
+    is_any_indel = (variants.ref_seq.shape[1] > 1) | (variants.alt_seq.shape[1] > 1)
+    starts = variants.position
+    starts[is_any_indel] += 1  # indels are padded with one base
+    ends = starts + variants.ref_seq.shape[1] - 1
+
+    sv_position_mask = np.zeros(np.max(ends)+1, dtype=bool)
+    indexes_of_covered_by_sv = nps.ragged_slice(np.arange(len(sv_position_mask)), starts[is_sv], ends[is_sv]).ravel()
+    sv_position_mask[indexes_of_covered_by_sv] = True
+
+    is_covered = (sv_position_mask[starts] | sv_position_mask[ends]) & is_snp_indel
+
+    return is_covered
+
+
+def filter_snps_indels_covered_by_svs_cli(args):
+    variants = bnp.open(args.vcf).read_chunks(min_chunk_size=200000000)
+
+    remove = []
+    for chromosome, variants in bnp.groupby(variants, "chromosome"):
+        is_covered = find_snps_indels_covered_by_svs(variants, args.sv_size_limit)
+        remove.append(is_covered)
+        logging.info(f"Removing {np.sum(is_covered)} variants on chromosome {chromosome}")
+
+    remove = np.concatenate(remove)
+
+    with igzip.open(args.vcf, "rb") as f:
+        for line in f:
+            line = line.decode("utf-8").strip()
+            if line.startswith("#"):
+                print(line)
+                continue
+            if not remove[0]:
+                print(line)
+            remove = remove[1:]
 

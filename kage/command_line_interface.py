@@ -35,6 +35,7 @@ from kage.indexing.main import make_index_cli
 import gc
 from .analysis.debugging import debug_cli
 from kage.io import create_vcf_header_with_sample_name, write_multiallelic_vcf_with_biallelic_numeric_genotypes
+from kage.benchmarking.vcf_preprocessing import preprocess_sv_vcf, get_cn0_ref_alt_sequences_from_vcf, filter_snps_indels_covered_by_svs_cli
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -216,7 +217,6 @@ def run_argument_parser(args):
     subparser.set_defaults(func=simulate_reads_cli)
 
     def preprocess_sv_vcf_cli(args):
-        from kage.benchmarking.vcf_preprocessing import preprocess_sv_vcf
         preprocess_sv_vcf(args.vcf, args.fasta)
 
 
@@ -224,6 +224,13 @@ def run_argument_parser(args):
     subparser.add_argument("-v", "--vcf", required=True)
     subparser.add_argument("-f", "--fasta", required=True)
     subparser.set_defaults(func=preprocess_sv_vcf_cli)
+
+
+    subparser = subparsers.add_parser("filter_snps_indels_covered_by_svs")
+    subparser.add_argument("-v", "--vcf", required=True)
+    subparser.add_argument("-l", "--sv_size_limit", required=False, default=50, type=int)
+    subparser.set_defaults(func=filter_snps_indels_covered_by_svs_cli)
+
 
 
     def run_tests(args):

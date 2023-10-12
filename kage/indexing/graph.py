@@ -195,7 +195,7 @@ class Graph:
         sequence_lengths[-1] -= k-1
         assert np.all(sequence_lengths >= 0), sequence_lengths
         result = bnp.EncodedRaggedArray(all_kmers.ravel(), sequence_lengths)
-        logging.info("Time to get graph kmers: %.2f" % (time.perf_counter()-t0))
+        #logging.info("Time to get graph kmers: %.2f" % (time.perf_counter()-t0))
         return result
 
     def get_haplotype_kmers(self, haplotype: np.array, k, stream=False, reverse_complement=False) -> np.ndarray:
