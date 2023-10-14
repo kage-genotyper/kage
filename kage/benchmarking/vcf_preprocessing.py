@@ -165,6 +165,7 @@ def find_snps_indels_covered_by_svs(variants: bnp.datatypes.VCFEntry, sv_size_li
     assert variants.chromosome[0].to_string() == variants.chromosome[-1].to_string()
     is_snp_indel = (variants.ref_seq.shape[1] <= sv_size_limit) & (variants.alt_seq.shape[1] <= sv_size_limit)
     is_sv = ~is_snp_indel
+    logging.info(f"{np.sum(is_sv)} SVs, {np.sum(is_snp_indel)} SNPs/indels")
 
     is_any_indel = (variants.ref_seq.shape[1] > 1) | (variants.alt_seq.shape[1] > 1)
     starts = variants.position
@@ -176,6 +177,7 @@ def find_snps_indels_covered_by_svs(variants: bnp.datatypes.VCFEntry, sv_size_li
     sv_position_mask[indexes_of_covered_by_sv] = True
 
     is_covered = (sv_position_mask[starts] | sv_position_mask[ends]) & is_snp_indel
+    logging.info(f"{np.sum(is_covered)} SNPs/indels are covered by SVs")
 
     return is_covered
 

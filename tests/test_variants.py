@@ -3,7 +3,7 @@ logging.basicConfig(level=logging.INFO)
 import pytest
 import numpy as np
 import bionumpy as bnp
-from kage.preprocessing.variants import Variants, SimpleVcfEntry
+from kage.preprocessing.variants import Variants, SimpleVcfEntry, VariantStream
 
 
 def test_variants_from_multialellic_vcf():
@@ -71,3 +71,15 @@ def test_variants_to_simple_vcf_entry():
     ])
 
     assert np.all(padded == correct)
+
+
+def test_variant_stream():
+    variant_stream = VariantStream.from_vcf("multiallelic.vcf")
+    for chunk in variant_stream.read_chunks():
+        print(chunk)
+
+
+    variant_stream = VariantStream.from_vcf("multiallelic.vcf")
+    for chunk in variant_stream.read_by_chromosome():
+        print(chunk)
+

@@ -22,8 +22,8 @@ class Debugger:
         self.tricky_variants = self.kage_index["tricky_variants"]
         self.kmer_index = self.kage_index["kmer_index"]
 
-        self.genotypes = bnp.open(genotypes_vcf, buffer_type=bnp.io.delimited_buffers.PhasedVCFMatrixBuffer).read()
-        self.truth = bnp.open(truth_vcf, buffer_type=bnp.io.delimited_buffers.PhasedVCFMatrixBuffer).read()
+        self.genotypes = bnp.open(genotypes_vcf, buffer_type=bnp.io.vcf_buffers.PhasedVCFMatrixBuffer).read()
+        self.truth = bnp.open(truth_vcf, buffer_type=bnp.io.vcf_buffers.PhasedVCFMatrixBuffer).read()
         self.reverse_kmer_index = self.get_reverse_kmer_index()
 
     def get_reverse_kmer_index(self):

@@ -34,7 +34,7 @@ class FastApproxCounter:
         value_hashes = (values % self._modulo).astype(int)
         t0 = time.perf_counter()
         add_counts = np.bincount(value_hashes, minlength=self._modulo)
-        print("Addding %d kmers with modulo %d took %.5f sec" % (len(values), self._modulo, time.perf_counter() - t0))
+        #print("Addding %d kmers with modulo %d took %.5f sec" % (len(values), self._modulo, time.perf_counter() - t0))
         self._array += np.minimum(255 - self._array, add_counts).astype(self._array.dtype)  # to not overflow
 
     def add_numba(self, values):
@@ -48,7 +48,7 @@ class FastApproxCounter:
                     array[value_hash] += 1
 
         _add(self._array, value_hashes)
-        print("Addding %d kmers with modulo %d took %.5f sec" % (len(values), self._modulo, time.perf_counter() - t0))
+        #print("Addding %d kmers with modulo %d took %.5f sec" % (len(values), self._modulo, time.perf_counter() - t0))
 
     def add_numba2(self, values):
         value_hashes = (values % self._modulo).astype(int)

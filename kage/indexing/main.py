@@ -16,7 +16,7 @@ from .path_based_count_model import PathBasedMappingModelCreator
 from kage.models.mapping_model import convert_model_to_sparse
 from kage.util import log_memory_usage_now
 import bionumpy as bnp
-from ..preprocessing.variants import get_padded_variants_from_vcf
+from ..preprocessing.variants import get_padded_variants_from_vcf, VariantStream, FilteredVariantStream
 
 
 def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
@@ -29,8 +29,11 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     reference_sequences = bnp.open(reference_file_name).read()
     # vcf_variants are original vcf variants, needed when writing final vcf after genotyping
     # n_alleles_per_variant lets us convert genotypes on variants (which are biallelic) to multiallelic where necessary
-    variants, vcf_variants, n_alleles_per_original_variant = get_padded_variants_from_vcf(vcf_file_name, reference_file_name,
-                                                                                          True, remove_indel_padding=False)
+    variant_stream = FilteredVariantStream.from_vcf_with_snps_indels_inside_svs_removed(vcf_file_name, sv_size_limit=50)
+    variants, vcf_variants, n_alleles_per_original_variant = get_padded_variants_from_vcf(variant_stream,
+                                                                                          reference_file_name,
+                                                                                          True,
+                                                                                          remove_indel_padding=False)
     assert len(variants) == np.sum(n_alleles_per_original_variant-1), f"{len(variants)} != {np.sum(n_alleles_per_original_variant-1)}"
     assert len(vcf_variants) == len(n_alleles_per_original_variant), f"{len(vcf_variants)} != {len(n_alleles_per_original_variant)}"
 
@@ -49,7 +52,13 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
         graph.genome.pad_at_end(k)
 
     logging.info("Making haplotype matrix")
-    haplotype_matrix_original_vcf = SparseHaplotypeMatrix.from_vcf(vcf_file_name)
+    #variant_stream = VariantStream.from_vcf(vcf_file_name, buffer_type=bnp.io.vcf_buffers.PhasedHaplotypeVCFMatrixBuffer, min_chunk_size=500000000)
+    variant_stream = FilteredVariantStream.from_vcf_with_snps_indels_inside_svs_removed(vcf_file_name,
+                                                                                        buffer_type=bnp.io.vcf_buffers.PhasedHaplotypeVCFMatrixBuffer,
+                                                                                        min_chunk_size=500000000,
+                                                                                        sv_size_limit=50
+                                                                                        )
+    haplotype_matrix_original_vcf = SparseHaplotypeMatrix.from_vcf(variant_stream)
     logging.info("N variants in original haplotype matrix: %d" % haplotype_matrix_original_vcf.data.shape[0])
     # this haplotype matrix may be multiallelic, convert to biallelic which will match "variants"
     biallelic_haplotype_matrix = haplotype_matrix_original_vcf.to_biallelic(n_alleles_per_original_variant)
@@ -81,7 +90,7 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     variant_to_nodes = node_mapping.get_variant_to_nodes()
     signatures_chunk_size = 10000
     if len(variants) > 1000000:
-        signatures_chunk_size = 100000
+        signatures_chunk_size = 20000
     signatures = get_signatures(k, paths, scorer, chunk_size=signatures_chunk_size)
 
     # todo: Send in node_mapping to get kmer_index with correct node ids

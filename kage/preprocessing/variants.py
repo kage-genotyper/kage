@@ -9,8 +9,11 @@ from bionumpy.bnpdataclass import bnpdataclass
 from bionumpy import EncodedRaggedArray, Interval
 import logging
 from typing import List, Tuple, Union
+from bionumpy.io.vcf_buffers import VCFBuffer
 
 from shared_memory_wrapper import to_file, from_file
+
+from kage.benchmarking.vcf_preprocessing import find_snps_indels_covered_by_svs
 
 
 @dataclass
@@ -398,15 +401,19 @@ class VariantPadder:
         return Variants(self._variants.chromosome, new_positions, new_ref_sequences, new_alt_sequences)
 
 
-def get_padded_variants_from_vcf(vcf_file_name, reference_file_name, also_return_original_variants=False, remove_indel_padding=True) -> Variants:
-    variants = bnp.open(vcf_file_name).read_chunks()
+def get_padded_variants_from_vcf(variants: 'VariantStream', reference_file_name, also_return_original_variants=False, remove_indel_padding=True) -> Variants:
+    if isinstance(variants, str):
+        variants = VariantStream.from_vcf(variants)
+
+    #variants = bnp.open(vcf_file_name).read_chunks()
+    #variants = variants.read_chunks()
     genome = bnp.open(reference_file_name).read()
     sequences = {str(sequence.name): sequence.sequence for sequence in genome}
     all_variants = []
     all_vcf_variants = []
     n_alleles_per_variant = []
 
-    for chromosome, raw_chromosome_variants in bnp.groupby(variants, "chromosome"):
+    for chromosome, raw_chromosome_variants in variants.read_by_chromosome():  #bnp.groupby(variants, "chromosome"):
         n_alleles_per_variant.append(np.sum(raw_chromosome_variants.alt_seq == ",", axis=1) + 2)
         chromosome_variants = Variants.from_multiallelic_vcf_entry(raw_chromosome_variants, remove_indel_padding=remove_indel_padding)
         logging.info("Padding variants on chromosome " + chromosome)
@@ -505,3 +512,56 @@ class MultiAllelicVariantSequences(VariantAlleleSequences):
 
     def to_list(self):
         return ak.to_list(self._data)
+
+
+class VariantStream:
+    """
+    Wrapper around bnp's read_chunks() on a vcf.
+    """
+    def __init__(self, stream):
+        self._stream = stream
+
+    @classmethod
+    def from_vcf(cls, vcf_file_name, buffer_type=VCFBuffer, min_chunk_size=50000000):
+        chunks = bnp.open(vcf_file_name, buffer_type=buffer_type).read_chunks(min_chunk_size)
+        return cls(chunks)
+
+    def read_chunks(self):
+        return self._stream
+
+    def read_by_chromosome(self):
+        return bnp.groupby(self._stream, "chromosome")
+
+    def raw(self):
+        return self._stream
+
+
+class FilteredVariantStream(VariantStream):
+    """Subclass of VariantStream with a mask of what to keep.
+    Will only give entries that are to be kept according to mask"""
+    def __init__(self, stream: VariantStream, to_keep: np.ndarray):
+        super().__init__(stream)
+        self._to_keep = to_keep
+
+    def read_chunks(self):
+        prev = 0
+        for chunk in self._stream:
+            yield chunk[self._to_keep[prev:prev+len(chunk)]]
+            prev += len(chunk)
+
+        #return (chunk[mask] for chunk, mask in zip(self._stream.read_chunks(), self._to_keep))
+
+    @classmethod
+    def from_vcf_with_snps_indels_inside_svs_removed(cls, vcf_file_name, sv_size_limit=50,
+                                                     buffer_type=bnp.io.vcf_buffers.VCFBuffer,
+                                                     min_chunk_size=50000000):
+        to_keep = []
+        stream = VariantStream.from_vcf(vcf_file_name, buffer_type=VCFBuffer)  # only need VCFBuffer for filtering
+        for chromosome, chunk in stream.read_by_chromosome():
+            to_keep.append(~find_snps_indels_covered_by_svs(chunk, sv_size_limit=sv_size_limit))
+
+        to_keep = np.concatenate(to_keep)
+        logging.info(f"{np.sum(~to_keep)} snps/indels inside SVs filtered out")
+        return cls(VariantStream.from_vcf(vcf_file_name, buffer_type=buffer_type, min_chunk_size=min_chunk_size).raw(), to_keep)
+
+

@@ -297,6 +297,7 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         # idea is to first find the score for each window position at each allele at each variant
         # as the worst window score
         # Then, best window can be found using argmax over these scores
+        t0 = time.perf_counter()
         self._score_signatures(add_dummy_count_to_index=add_dummy_count_to_index)
         best_windows = np.argmax(self._window_scores, axis=-1)
         # create a best windows array with same length as number of paths on all alleles
@@ -322,15 +323,16 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         chosen_kmers_by_variants = ak.unflatten(chosen_kmers_by_allele, n_alleles_per_variant)
 
         signatures = MultiAllelicSignatures(chosen_kmers_by_variants)
+        logging.info("Finding signatures took %.4f sec" % (time.perf_counter() - t0))
         logging.info("Removing nonunique")
         t0 = time.perf_counter()
         signatures.filter_nonunique_on_alleles(also_remove=self._replace_nonunique_with)
         logging.info("Removing nonunique took %.4f sec" % (time.perf_counter() - t0))
 
-        # TODO:
-        # go through SVs manually, find better kmers if possible
         self._signatures_found = signatures
+        t0 = time.perf_counter()
         self._manually_process_svs()
+        logging.info("Manually processing SVs took %.4f sec" % (time.perf_counter() - t0))
 
         return self._signatures_found
 
