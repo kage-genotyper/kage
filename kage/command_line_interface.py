@@ -1,5 +1,5 @@
 import logging
-import sys
+import sys  
 import platform
 from .util import vcf_pl_and_gl_header_lines, convert_string_genotypes_to_numeric_array, _write_genotype_debug_data, \
     log_memory_usage_now

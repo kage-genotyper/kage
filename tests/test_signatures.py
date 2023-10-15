@@ -67,9 +67,9 @@ def test_manually_find_kmers():
 
 # Only for profiling
 def test_manually_find_kmers_large():
-    window_size = 200
+    window_size = 1000
     n_paths = 128
-    n_alleles = 52
+    n_alleles = 10
 
     kmers = ak.Array(np.array([
         # allele

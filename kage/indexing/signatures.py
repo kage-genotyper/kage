@@ -387,8 +387,6 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         """
         Kmers and scores are ak.Arrays of shape n_alleles x n_paths x n_windows
         """
-        n_alleles = len(kmers)
-        new_variant_kmers = []
 
         # make a kmer scorer counting only kmers on this variant
         # get scores for kmers, add those scores to the existing scores
@@ -398,34 +396,88 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         all_variant_kmers = ak.to_numpy(ak.ravel(kmers))
         local_scorer += np.bincount((all_variant_kmers % local_modulo).astype(int), minlength=local_modulo)
 
+        n_alleles = len(kmers)
 
-        for allele in range(n_alleles):
-            t0 = time.perf_counter()
-            #all_kmers_for_other_alleles = set(np.concatenate([ak.to_numpy(ak.ravel(kmers[other_allele, :, :]))
-            #                                              for other_allele in range(n_alleles)
-            #                                              if other_allele != allele]))
-            #print("Getting all kmers for allele %d: %.5f" % (allele, time.perf_counter()-t0))
-            allele_kmers = kmers[allele]  # x n_paths x n_windows
-            n_windows = len(allele_kmers[0])  # same windows on all paths
-            # pick some windoe locations
-            window_locations = range(0, n_windows, max(1, n_windows // 10))
-            best_window = 0
-            best_score = -10000000000
-            t0 = time.perf_counter()
-            for window in window_locations:
-                window_kmers = kmers[allele, :, window]
-                score = scores[allele, window]
-                score -= np.max(local_scorer[window_kmers % local_modulo])
-                #if all_kmers_for_other_alleles.intersection(window_kmers):
-                #    continue
-                if score > best_score:
-                    best_window = window
-                    best_score = score
-            #print("Time allele %d: %.4f" % (allele, time.perf_counter()-t0))
+        def _find(kmers, local_scorer):
+            new_variant_kmers = []
+            n_alleles = len(kmers)
+            #n_paths = len(kmers[0])  # same on all alleles
+            for allele in range(n_alleles):
+                #t0 = time.perf_counter()
+                allele_kmers = ak.to_numpy(kmers[allele])  # x n_paths x n_windows
+                n_windows = len(allele_kmers[0])  # same windows on all paths
+                # pick some window locations
+                window_locations = range(0, n_windows, max(1, n_windows // 10))
+                #best_window = 0
+                #best_score = -10000000000
+                #t0 = time.perf_counter()
 
-            chosen = np.unique(ak.to_numpy(kmers[allele, :, best_window]))
-            assert chosen.dtype == np.uint64
-            new_variant_kmers.append(chosen)
+                window_kmers_matrix = allele_kmers[:, window_locations]
+                scores_for_windows = ak.to_numpy(scores[allele, window_locations])
+                local_scores_for_windows = np.max(
+                    local_scorer[window_kmers_matrix.ravel() % local_modulo].reshape(window_kmers_matrix.shape), axis=0
+                )
+                scores_for_windows -= local_scores_for_windows
+                best_window = window_locations[np.argmax(scores_for_windows)]
+
+                """
+                for window in window_locations:
+                    window_kmers = allele_kmers[:, window]
+                    score = scores[allele, window]
+                    score -= np.max(local_scorer[window_kmers % local_modulo])
+                    if score > best_score:
+                        best_window = window
+                        best_score = score
+                """
+                chosen = np.unique(ak.to_numpy(kmers[allele, :, best_window]))
+                assert chosen.dtype == np.uint64
+                new_variant_kmers.append(chosen)
+
+            return new_variant_kmers
+
+        @numba.jit(nopython=True)
+        def _find2(kmers, local_scorer):
+            new_variant_kmers = []
+            n_alleles = len(kmers)
+            n_paths = len(kmers[0])  # same on all alleles
+            for allele in range(n_alleles):
+                #t0 = time.perf_counter()
+                allele_kmers = kmers[allele]  # x n_paths x n_windows
+                n_windows = len(allele_kmers[0])  # same windows on all paths
+                # pick some window locations
+                window_locations = range(0, n_windows, max(1, n_windows // 10))
+                best_window = 0
+                best_score = -10000000000
+                #t0 = time.perf_counter()
+                for window in window_locations:
+                    window_scores = np.zeros(n_paths)
+                    for window_kmer_i in range(n_paths):
+                        #window_kmer = kmers[int(allele), int(window_kmer_i), int(window)]
+                        window_kmer = kmers[0, 0, 0]
+                        window_scores[window_kmer_i] = local_scorer[int(window_kmer % local_modulo)]
+
+                    score = scores[allele, window]
+                    score -= np.max(window_scores)
+
+                    #window_kmers = kmers[allele, :, window]
+                    #score -= np.max(local_scorer[window_kmers % local_modulo])
+                    if score > best_score:
+                        best_window = window
+                        best_score = score
+
+                chosen = np.zeros(n_paths, dtype=np.uint64)
+                for path_i in range(n_paths):
+                    chosen[path_i] = kmers[allele, path_i, best_window]
+
+                chosen = np.unique(ak.to_numpy(chosen))
+                #chosen = np.unique(ak.to_numpy(kmers[allele, :, best_window]))
+                assert chosen.dtype == np.uint64
+                new_variant_kmers.append(chosen)
+
+            return new_variant_kmers
+
+        new_variant_kmers = _find(kmers, local_scorer)
+
         # hacky way to build ak array to keep dtype
         # awkard array changes dtype when making from list
         flat = np.concatenate(new_variant_kmers)
