@@ -3,6 +3,11 @@
 [![DOI](https://zenodo.org/badge/251419423.svg)](https://zenodo.org/badge/latestdoi/251419423)
 
 
+## Update October 16 2023
+* KAGE can now genotype structural variants
+* The indexing process has been rewritten and indexing is now much faster and requires less memory
+
+
 ## KAGE: *K*mer-based *A*lignment-free *G*raph G*e*notyper
 KAGE is a tool for efficiently genotyping short SNPs and indels from short genomic reads.
 
@@ -26,33 +31,38 @@ The above will perform genotyping on some dummy data and should finish without a
 
 
 ## How to run
-**KAGE** is easy and fast to use once you have indexes built for the variants you want to genotype. However, building these indexes can take some time. Therefore, we have prebuilt indexes for 1000 Genomes Projects variants (allele frequency > 0.1%), which can be [downloaded from here](https://zenodo.org/record/7585054/files/index_2548all_uncompressed.npz?download=1).
+You will need:
+* A reference genome in fasta format
+* A set of variants with genotypes of known individuals in vcf-format (`.vcf` or `.vcf.gz`)
 
-If you want to make your own indexes for your own reference genome and variants, you should use the KAGE Snakemake pipeline which can [be found here](https://github.com/ivargr/genotyping-benchmarking). Feel free to contact us if you want help making these indexes for your desired variants.
+Variants can be biallelic or multiallelic and both SNPs/indels and structural variants are supported. Note however that all variants must have actual sequences in the ref and alt fields. Genotypes should be phased and there should ideally be few missing genotypes.
 
-Once you have an index of the variants you want to genotype, running KAGE is straight-forward:
+### Step 1: Build an index of the variants you want to genotype
+Building an index is time consuming, but only needs to be done once for each set of variants you want to genotype. Indexing time scales approximately linearly with number of variants and the size of the reference genome. Creating an index for a human pangenome with 30 million variants should take approximately a day or so.
 
-### Step 1: Map fasta kmers to the pangenome index:
-```python
-kmer_mapper map -b index -f reads.fa -o kmer_counts
-```
-
-In the above example, the index specified by `-b` is an index bundle (see explanation above).
-
-The kmer mapper works with .fa and .fq files. It can also takes gzipped-files, but for now this is a bit experimentally and may be a bit slow (it is using BioNumPy's parser which is under development).
-
-
-### Step 2: Do the genotyping
-Count kmers:
 ```bash
-kage genotype -i index -c kmer_counts --average-coverage 15 -o genotypes.vcf
+kage index -r reference.fa -v variants.vcf.gz -o index -k 31
 ```
 
-Make sure to set `--average-coverage` to the expected average coverage of your input reads. The resulting predicted genotypes will be written to the file specified by `-o`.
+### Step 2: Genotype
+Genotyping with kage is extremely fast once you have an index:
 
+```bash
+kage genotype -i index -f reads.fq.gz -t 16 --average-coverage 30 -k 31
+```
 
 Note:
-KAGE puts data and arrays in shared memory to speed up computation. It automatically frees this memory when finished, but KAGE gets accidentally killed or stops before finishing, you might end up with allocated memory not being freed. You can free this memory by calling `kage free_memory`.
+* `-k` must be set to the same used when creating the index
+* `--average-coverage` should be set to the expected average coverage of your input reads (doesn't need to be exact)
+* KAGE puts data and arrays in shared memory to speed up computation. It automatically frees this memory when finished, but KAGE gets accidentally killed or stops before finishing, you might end up with allocated memory not being freed. You can free this memory by calling `kage free_memory`.
+
+### Prebuilt indexes
+
+You can find some prebuilt indexes here (coming soon):
+
+* 1000 genomes SNPs/indels, 2548 individuals
+* 1000 genomes SVs
+* 1000 genomes SNPs/indels + SVs
 
 
 ## Using KAGE with GPU-support (GKAGE)
@@ -70,7 +80,8 @@ Note: GKAGE has been tested to work with GPUs with 4 GBs of RAM.
 
 ## Recent changes and future plans
 Recent changes:
-* Janyary 30 2023: Release of GPU support (version 0.0.30).
+* October 16 2023: Indexing process rewritten and support for structural variation.
+* January 30 2023: Release of GPU support (version 0.0.30).
 * October 7 2022: Minor update. Now using [BioNumPy](https://gitub.com/uio-bmi/bionumpy) do parse input files and hash kmers.
 * June 2022: Release of version for manuscript in Genome Biology
 

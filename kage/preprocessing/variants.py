@@ -128,8 +128,6 @@ class Variants:
             mask = np.ones_like(variant_alt_sequences.raw(), dtype=bool)
             mask[is_indel, 0] = False
             variant_alt_sequences = bnp.EncodedRaggedArray(variant_alt_sequences[mask], mask.sum(axis=1))
-        else:
-            logging.warning("Not removing trailling base from indels")
 
         #assert np.all(variants_start[1:] >= variants_start[:-1]), "Variants in vcf must be sorted by position within each chromosome, %s" % variants
 
