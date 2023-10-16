@@ -44,9 +44,14 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
 
     graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
     if np.max(node_mapping.n_alleles_per_variant) >= 2**variant_window:
-        logging.error("Some variants have too many alleles to be indexed. Increase --window (currently at %d)" % variant_window)
-        logging.error(f"Max alleles on a variant is {np.max(node_mapping.n_alleles_per_variant)}")
-        raise Exception("Too many alleles")
+        logging.warning("Some variants have more alleles than supported by current window size (%d)" % variant_window)
+        possible_windows = [w for w in range(8) if 2**w >= np.max(node_mapping.n_alleles_per_variant)]
+        if len(possible_windows) == 0:
+            logging.error("Could not find a window large enough. There are too many alleles (max alleles on a variant is %d)" % np.max(node_mapping.n_alleles_per_variant))
+            raise Exception("Too many alleles")
+        else:
+            variant_window = min(possible_windows)
+            logging.warning("Increased window to %d" % variant_window)
 
     if len(graph.genome.sequence[-1]) < k:
         # pad genome
@@ -95,9 +100,8 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     signatures_chunk_size = 2000
     if len(variants) > 1000000:
         signatures_chunk_size = 4000
-    signatures = get_signatures(k, paths, scorer, chunk_size=signatures_chunk_size)
+    signatures = get_signatures(k, paths, scorer, chunk_size=signatures_chunk_size, spacing=k//2)
 
-    # todo: Send in node_mapping to get kmer_index with correct node ids
     kmer_index = signatures.get_as_kmer_index(node_mapping=node_mapping, modulo=modulo, k=k)
 
     logging.info("Creating count model")

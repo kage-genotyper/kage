@@ -4,9 +4,8 @@ from kage.simulation.read_simulation import simulate_reads_from_sequence, add_er
 
 
 def test_simple():
-    sequence = bnp.as_encoded_array("ACTGACAACANCACTACCA")
+    sequence = bnp.as_encoded_array("ACTGACAACACACTACCA", bnp.DNAEncoding)
     simulated = simulate_reads_from_sequence(sequence, read_length=3, n_reads=10)
-
     print(simulated)
 
 

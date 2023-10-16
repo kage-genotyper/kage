@@ -48,7 +48,6 @@ def simulate_reads_from_sequence(sequence: bnp.EncodedArray, read_length: int = 
     starts = rng.integers(0, len(sequence) - read_length, size=n_reads)
     stops = starts + read_length
     sequences = bnp.ragged_slice(sequence, starts, stops)
-    logging.error(f"Adding errors to sequences with rate {snp_error_rate}")
     add_errors_to_sequences(sequences, rng=rng, snp_error_rate=snp_error_rate)
 
     # remove sequences with N

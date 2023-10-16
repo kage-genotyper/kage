@@ -78,25 +78,13 @@ def genotype(args):
         logging.info("Did not find helper variants in index. Will not use helper variants/model")
 
 
-    if args.counts is None:
-        kmer_index = index.kmer_index
-        if args.kmer_index is not None:
-            logging.info("Not using index from index bundle, but instead using %s" % args.kmer_index)
-            kmer_index = KmerIndex.from_file(args.kmer_index)
-        # map with kmer_mapper to get node counts
-        assert args.reads is not None, "--reads must be specified if not node_counts is specified"
-        node_counts = get_kmer_counts(kmer_index, args.kmer_size, args.reads, config.n_threads, args.gpu)
-        np.save(args.out_file_name + ".node_counts.npy", node_counts.node_counts)
-    else:
-        node_counts = NodeCounts.from_file(args.counts)
+    kmer_index = index.kmer_index
+    assert args.reads is not None, "--reads must be specified if not node_counts is specified"
+    node_counts = get_kmer_counts(kmer_index, args.kmer_size, args.reads, config.n_threads, args.gpu)
+    np.save(args.out_file_name + ".node_counts.npy", node_counts.node_counts)
 
     max_variant_id = len(index.variant_to_nodes.ref_nodes) - 1
     logging.info("Max variant id is assumed to be %d" % max_variant_id)
-    if args.limit_model_counts > 0:
-        logging.info("Making model smaller (ignoring counts > %d)" % args.limit_model_counts)
-        for i, count_model in enumerate(index.count_model):
-            index.count_model[i].limit_to_n_individuals(args.limit_model_counts)
-
 
     genotyper = CombinationModelGenotyper(0, max_variant_id, node_counts, index, config=config)
     genotypes, probs, count_probs = genotyper.genotype()
@@ -119,13 +107,8 @@ def genotype(args):
             header=create_vcf_header_with_sample_name(index.vcf_header, args.sample_name_output)
         )
     else:
-        if args.variants is not None:
-            delattr(index, "index")  # release some memory
-            t = time.perf_counter()
-            numpy_variants = NumpyVariants.from_file(args.variants)
-            logging.info("Reading numpy variants took %.3f sec" % (time.perf_counter()-t))
-        else:
-            numpy_variants = index.numpy_variants
+
+        numpy_variants = index.numpy_variants
 
         t = time.perf_counter()
         numpy_variants.to_vcf_with_genotypes(
@@ -155,13 +138,10 @@ def run_argument_parser(args):
 
 
     subparser = subparsers.add_parser("genotype")
-    subparser.add_argument("-c", "--counts", required=False)
     subparser.add_argument("-r", "--reads", required=False)
     subparser.add_argument("-k", "--kmer_size", required=False, type=int, default=31)
     subparser.add_argument("-g", "--gpu", required=False, type=bool, default=False)
     subparser.add_argument("-i", "--index-bundle", required=True)
-    subparser.add_argument("-m", "--kmer-index", required=False, help="Can be specified to override kmer index in index bundle for mapping.")
-    subparser.add_argument("-v", "--variants", required=False, help="Can be used to specify variants as NumPy file if not part of index bundle")
     subparser.add_argument("-o", "--out-file-name", required=True, help="Will write genotyped variants to this file")
     subparser.add_argument("-t", "--n-threads", type=int, required=False, default=8)
     subparser.add_argument("-a", "--average-coverage", type=float, default=15, help="Expected average read coverage", )
@@ -170,7 +150,7 @@ def run_argument_parser(args):
     subparser.add_argument( "-s", "--sample-name-output", required=False, default="DONOR", help="Sample name that will be used in the output vcf")
     subparser.add_argument( "-u", "--use-naive-priors", required=False, type=bool, default=False,
         help="Set to True to use only population allele frequencies as priors.")
-    subparser.add_argument("-l", "--limit-model-counts", default=0, type=int, help="If larger than 0, model will ignore counts larger than this. Can be used to use lower memory, but will make model less accurate.")
+    #subparser.add_argument("-l", "--limit-model-counts", default=0, type=int, help="If larger than 0, model will ignore counts larger than this. Can be used to use lower memory, but will make model less accurate.")
     subparser.add_argument("-I", "--ignore-helper-model", required=False, type=bool, default=False)
     subparser.add_argument("-V", "--ignore-helper-variants", required=False, type=bool, default=False)
     subparser.add_argument("-b", "--ignore-homo-ref", required=False, type=bool, default=False, help="Set to True to not write homo ref variants to output vcf")

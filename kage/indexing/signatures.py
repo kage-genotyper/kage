@@ -864,7 +864,7 @@ class MatrixVariantWindowKmers:
         return cls(matrix)
 
     @classmethod
-    def from_paths_with_flexible_window_size(cls, path_sequences: PathSequences, k):
+    def from_paths_with_flexible_window_size(cls, path_sequences: PathSequences, k, spacing=0):
         # uses different windows for each variant, stores in an awkward array
         kmers_found = []  # one RaggedArray for each path. Each element in ragged array represents a variant allele
 
@@ -894,7 +894,8 @@ class MatrixVariantWindowKmers:
             t0 = time.perf_counter()
             ragged_kmers = bnp.get_kmers(windows, k=k)
             # subsample kmers?
-            ragged_kmers = ragged_kmers[:, ::k//2]
+            if spacing > 1:
+                ragged_kmers = ragged_kmers[:, ::spacing]
 
 
             kmers = ragged_kmers.ravel().raw().astype(np.uint64)
@@ -965,7 +966,7 @@ def awkward_unravel_like(flat_array, like_array):
     """ Utility function for unraveling a flattened ak.Array """
 
 
-def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_count_to_index=-1):
+def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_count_to_index=-1, spacing=0):
     """Wrapper function that finds multiallelic signatures from paths"""
     log_memory_usage_now("Before MatrixVariantWindowKmers")
 
@@ -989,7 +990,7 @@ def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_cou
 
         logging.info("Making variant window kmers from paths (finding kmer candidates)")
         t0 = time.perf_counter()
-        variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(subpaths.paths, k)
+        variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(subpaths.paths, k, spacing=spacing)
         logging.info("Making signature kmers from paths took %.4f seconds" % (time.perf_counter() - t0))
         log_memory_usage_now("After MatrixVariantWindowKmers")
         logging.info("Converting variant window kmers to new data structure")

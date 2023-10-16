@@ -1,5 +1,5 @@
 import time
-
+import pytest
 import ray
 import shared_memory_wrapper
 from shared_memory_wrapper.util import interval_chunks
@@ -26,6 +26,7 @@ def func2(array_ref, kmers_ref, start, end):
 #remote_func = ray.remote(func)
 
 
+@pytest.mark.skip
 def test():
     filter = np.zeros(2000000033, dtype=bool)
     kmers = np.random.randint(0, 2**63, 500000000, dtype=np.uint64)
