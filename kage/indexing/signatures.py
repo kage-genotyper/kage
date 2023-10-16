@@ -283,22 +283,27 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
 
     def _score_signatures(self, add_dummy_count_to_index=-1):
         scores = self._kmers.score_kmers(self._scorer)
+        t0 = time.perf_counter()
         window_scores = np.sum(scores, axis=2)  # or np.min?
+        logging.info("Summing scores took %.4f sec" % (time.perf_counter() - t0))
         # add 1 in score to the last window, so that is preferred on a tie. Convert to RaggedArray to be able to add
         # hackish flatten and unflatten
 
+        t0 = time.perf_counter()
         window_scores_tmp = nps.RaggedArray(ak.to_numpy(ak.flatten(ak.flatten(window_scores))).astype(float),
                                             ak.to_numpy(ak.num(ak.flatten(window_scores))))
         window_scores_tmp[:, add_dummy_count_to_index] += 0.1
         self._window_scores = ak.unflatten(ak.unflatten(window_scores_tmp.ravel(), ak.num(ak.flatten(window_scores))),
                                      ak.num(window_scores))
+        logging.info("Postprocessing scores took %.4f sec" % (time.perf_counter() - t0))
 
     def run(self, add_dummy_count_to_index=-1) -> MultiAllelicSignatures:
         # idea is to first find the score for each window position at each allele at each variant
         # as the worst window score
         # Then, best window can be found using argmax over these scores
-        t0 = time.perf_counter()
+        tstart = time.perf_counter()
         self._score_signatures(add_dummy_count_to_index=add_dummy_count_to_index)
+        logging.info("Scoring signatures took %.4f sec" % (time.perf_counter() - tstart))
         best_windows = np.argmax(self._window_scores, axis=-1)
         # create a best windows array with same length as number of paths on all alleles
         kmers = self._kmers.kmers
@@ -323,7 +328,7 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         chosen_kmers_by_variants = ak.unflatten(chosen_kmers_by_allele, n_alleles_per_variant)
 
         signatures = MultiAllelicSignatures(chosen_kmers_by_variants)
-        logging.info("Finding signatures took %.4f sec" % (time.perf_counter() - t0))
+        logging.info("Finding signatures took %.4f sec" % (time.perf_counter() - tstart))
         logging.info("Removing nonunique")
         t0 = time.perf_counter()
         signatures.filter_nonunique_on_alleles(also_remove=self._replace_nonunique_with)
@@ -362,7 +367,7 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
                 to_add = MultiAllelicSignatureFinderV2.manually_find_kmers(sv_kmers, sv_scores)
                 time_spent = time.perf_counter()-t0
                 if time_spent > 0.1:
-                    print(sv_id, len(signatures[sv_id]), len(sv_kmers[0][0]), time_spent)
+                    print(f"Sv {sv_id} with {len(signatures[sv_id])} allele and {len(sv_kmers[0][0])} windows took {time_spent} sec")
 
                 #print(to_add)
                 #print("to add dtype", to_add.type)
@@ -408,9 +413,6 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
                 n_windows = len(allele_kmers[0])  # same windows on all paths
                 # pick some window locations
                 window_locations = range(0, n_windows, max(1, n_windows // 10))
-                #best_window = 0
-                #best_score = -10000000000
-                #t0 = time.perf_counter()
 
                 window_kmers_matrix = allele_kmers[:, window_locations]
                 scores_for_windows = ak.to_numpy(scores[allele, window_locations])
@@ -757,12 +759,16 @@ class VariantWindowKmers2:
     def score_kmers(self, scorer):
         # returns an ak.Array of the same shape with kmer scores
         # hackish way to flatten/unflatten since awkard array doesn't support unravel (only flatten/unflatten on single dimension)
-        flat = ak.flatten(ak.flatten(ak.flatten(self.kmers)))
-        scores = scorer.score_kmers(ak.to_numpy(flat))
+        flat = ak.to_numpy(ak.flatten(ak.flatten(ak.flatten(self.kmers))))
+        t0 = time.perf_counter()
+        scores = scorer.score_kmers(flat)
+        logging.info(f"Scoring {len(flat)} kmers took {time.perf_counter() - t0} sec")
         # always score 0 as 0, tmp hack
         #scores[flat == 0] = 0
         a = self.kmers
+        t0 = time.perf_counter()
         scores = ak.unflatten(ak.unflatten(ak.unflatten(scores, ak.num(ak.flatten(ak.flatten(a)))), ak.num(ak.flatten(a))), ak.num(a))
+        logging.info("Unflatten took %.4f sec" % (time.perf_counter() - t0))
         return scores
 
     @classmethod
@@ -864,8 +870,12 @@ class MatrixVariantWindowKmers:
 
         outer_dimension = []
         inner_dimensions = []
+        t_get_kmers = 0
+        t_div = 0
+        t_div2 = 0
 
         for i, path in enumerate(path_sequences.iter_path_sequences()):
+            t0 = time.perf_counter()
             variant_sizes = path[1::2].shape[1]
             window_sizes = variant_sizes + (k-1)*2
             n_kmers_in_each_window = window_sizes - k + 1
@@ -879,21 +889,36 @@ class MatrixVariantWindowKmers:
             #logging.info("DTYPE window starts/ends: %s/%s" % (window_starts.dtype, window_ends.dtype))
             windows = bnp.ragged_slice(path.ravel(), window_starts, window_ends)
             assert np.all(window_sizes == windows.shape[1]), "%s != %s" % (window_sizes, windows.shape[1])
-            kmers = bnp.get_kmers(windows, k=k).ravel().raw().astype(np.uint64)
-            assert len(kmers) == np.sum(n_kmers_in_each_window)
+            t_div += time.perf_counter() - t0
+
+            t0 = time.perf_counter()
+            ragged_kmers = bnp.get_kmers(windows, k=k)
+            # subsample kmers?
+            ragged_kmers = ragged_kmers[:, ::k//2]
+
+
+            kmers = ragged_kmers.ravel().raw().astype(np.uint64)
+            t_get_kmers += time.perf_counter() - t0
+            #assert len(kmers) == np.sum(n_kmers_in_each_window)
             assert np.all(n_kmers_in_each_window > 0)
 
-            kmers = nps.RaggedArray(kmers, n_kmers_in_each_window)
-            inner_dimensions.append(n_kmers_in_each_window)  #kmers.shape[1])
+            t0 = time.perf_counter()
+            kmers = nps.RaggedArray(kmers, ragged_kmers.shape)
+            inner_dimensions.append(ragged_kmers.shape[1])  #kmers.shape[1])
             outer_dimension.append(len(kmers))
             kmers_found.append(
                 kmers.ravel()
             )
+            t_div2 += time.perf_counter() - t0
 
+        logging.info("Getting kmers took %.4f seconds. Time div: %.4f. Time div2: %.4f" % (t_get_kmers, t_div, t_div2))
+
+        t0 = time.perf_counter()
         flat_kmers = np.concatenate(kmers_found)
         assert flat_kmers.dtype == np.uint64
         kmers_found = ak.unflatten(flat_kmers, np.concatenate(inner_dimensions))
         kmers_found = ak.unflatten(kmers_found, outer_dimension)
+        logging.info("Unflattening took %.4f seconds" % (time.perf_counter() - t0))
         return cls(ak.Array(kmers_found))  #matrix[i, :, :] = kmers
 
     def get_kmers(self, variant, allele, variant_alleles):
@@ -963,12 +988,16 @@ def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_cou
         subpaths = all_subpaths[i]
 
         logging.info("Making variant window kmers from paths (finding kmer candidates)")
+        t0 = time.perf_counter()
         variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(subpaths.paths, k)
+        logging.info("Making signature kmers from paths took %.4f seconds" % (time.perf_counter() - t0))
         log_memory_usage_now("After MatrixVariantWindowKmers")
         logging.info("Converting variant window kmers to new data structure")
         log_memory_usage_now("Before variant window kmers2")
+        t0 = time.perf_counter()
         variant_window_kmers2 = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers,
                                                                                      subpaths.variant_alleles.matrix)
+        logging.info("Conversion took %.4f seconds" % (time.perf_counter() - t0))
         log_memory_usage_now("After variant window kmers2")
         logging.info("Finding best signatures for variants")
         signatures = MultiAllelicSignatureFinderV2(variant_window_kmers2, scorer=scorer, k=k).run(add_dummy_count_to_index)

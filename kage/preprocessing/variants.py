@@ -8,8 +8,9 @@ import numpy as np
 from bionumpy.bnpdataclass import bnpdataclass
 from bionumpy import EncodedRaggedArray, Interval
 import logging
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Iterable
 from bionumpy.io.vcf_buffers import VCFBuffer
+from bionumpy.streams import NpDataclassStream
 
 from shared_memory_wrapper import to_file, from_file
 
@@ -518,7 +519,7 @@ class VariantStream:
     """
     Wrapper around bnp's read_chunks() on a vcf.
     """
-    def __init__(self, stream):
+    def __init__(self, stream: Iterable):
         self._stream = stream
 
     @classmethod
@@ -526,11 +527,14 @@ class VariantStream:
         chunks = bnp.open(vcf_file_name, buffer_type=buffer_type).read_chunks(min_chunk_size)
         return cls(chunks)
 
-    def read_chunks(self):
+    def _read_chunks(self) -> Iterable:
         return self._stream
 
+    def read_chunks(self) -> NpDataclassStream:
+        return NpDataclassStream(self._read_chunks())
+
     def read_by_chromosome(self):
-        return bnp.groupby(self._stream, "chromosome")
+        return bnp.groupby(self.read_chunks(), "chromosome")
 
     def raw(self):
         return self._stream
@@ -540,10 +544,10 @@ class FilteredVariantStream(VariantStream):
     """Subclass of VariantStream with a mask of what to keep.
     Will only give entries that are to be kept according to mask"""
     def __init__(self, stream: VariantStream, to_keep: np.ndarray):
-        super().__init__(stream)
+        self._stream = stream
         self._to_keep = to_keep
 
-    def read_chunks(self):
+    def _read_chunks(self):
         prev = 0
         for chunk in self._stream:
             yield chunk[self._to_keep[prev:prev+len(chunk)]]
@@ -565,3 +569,13 @@ class FilteredVariantStream(VariantStream):
         return cls(VariantStream.from_vcf(vcf_file_name, buffer_type=buffer_type, min_chunk_size=min_chunk_size).raw(), to_keep)
 
 
+class FilteredOnMaxAllelesVariantStream(VariantStream):
+    def __init__(self, stream: VariantStream, max_alleles: int):
+        self._stream = stream
+        self._max_alleles = max_alleles
+
+    def _read_chunks(self):
+        for chunk in self._stream.read_chunks():
+            mask = np.sum(chunk.alt_seq == ",", axis=1) + 2 <= self._max_alleles
+            logging.info("Filtering away %d variants because more than %d alleles" % (np.sum(~mask), self._max_alleles))
+            yield chunk[mask]
