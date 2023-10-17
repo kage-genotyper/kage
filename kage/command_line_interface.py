@@ -103,8 +103,8 @@ def genotype(args):
         write_multiallelic_vcf_with_biallelic_numeric_genotypes(
             index.vcf_variants, genotypes, args.out_file_name,
             index.n_alleles_per_variant,
-            sample_name=config.sample_name_output,
-            header=create_vcf_header_with_sample_name(index.vcf_header, args.sample_name_output)
+            header=create_vcf_header_with_sample_name(index.vcf_header, config.sample_name_output, add_genotype_likelyhoods=not config.do_not_write_genotype_likelihoods),
+            add_genotype_likelihoods=probs if not config.do_not_write_genotype_likelihoods else None,
         )
     else:
 

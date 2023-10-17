@@ -15,27 +15,31 @@ def main():
     modulo_filter = ModuloFilter.empty(2_000_000_003)
     modulo_filter.add(kmers)
 
-    n_kmers = 1000000000
-    random_kmers = np.concatenate([kmers, np.random.randint(0, 2**63, n_kmers, dtype=np.uint64)])
+    n_kmers = 200_000_000
+    #random_kmers = np.concatenate([kmers, np.random.randint(0, 2**63, n_kmers, dtype=np.uint64)])
+    random_kmers = np.random.randint(0, 2**63, n_kmers, dtype=np.uint64)
+    print("Made random kmers")
 
+    """
     t0 = time.perf_counter()
     match = modulo_filter[random_kmers]
     print("Modulo filter", time.perf_counter()-t0)
-
     print(np.sum(match))
+    """
 
     t0 = time.perf_counter()
     match2 = kmer_index.has_kmers(random_kmers)
     print("Kmer index", time.perf_counter()-t0)
     print(np.sum(match2))
 
+    """
     ray.init(num_cpus=4)
     kmer_index = object_to_shared_memory(kmer_index)
     t0 = time.perf_counter()
     match3 = kmer_index_has_kmers_parallel(kmer_index, random_kmers, 8)
     print("Kmer index parallel", time.perf_counter()-t0)
     print(np.sum(match3))
-
+    """
 
 @ray.remote
 def kmer_index_has_kmers(kmer_index_name, kmers, start, end):

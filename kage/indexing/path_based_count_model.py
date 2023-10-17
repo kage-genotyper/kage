@@ -138,7 +138,7 @@ class PathKmers:
         assert np.all(kmers.shape[0] >= 0)
         encoding = kmers.encoding
         raw_kmers = kmers.raw().ravel().astype(np.uint64)
-        logging.info("Got raw kmers")
+        logging.info("Got %d raw kmers" % len(raw_kmers))
         t_lookup = time.perf_counter()
         if isinstance(lookup, ModuloFilter):
             is_in = lookup[raw_kmers]
