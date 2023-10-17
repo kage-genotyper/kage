@@ -24,7 +24,7 @@ def test_vcf_writer():
     ])
 
     genotypes = bnp.as_encoded_array(["0/1", "1/1"])
-    write_vcf(variants, genotypes, "test.vcf", "sample123", header="#someheader\n")
+    write_vcf(variants, genotypes, "test.vcf", header="#someheader\n")
 
 
 def test_vcf_writer2():
@@ -39,7 +39,7 @@ def test_vcf_writer2():
     write_multiallelic_vcf_with_biallelic_numeric_genotypes(variants, genotypes,
                                                             "test.vcf",
                                                             n_alleles_per_variant,
-                                                            header= "#someheader\n")
+                                                            header="#someheader\n")
 
 
 def test_convert_biallelic_numeric_genotypes_to_multialellic_string_genotypes():

@@ -269,7 +269,6 @@ class GenotypeAccuracy:
             elif t != '0/0' and g != t:
                 self._confusion_matrix["false_negative"] += 1
                 self._out_report["false_negatives"].append(i)
-                print(t, g)
             elif t == "0/0" and g == "0/0":
                 self._confusion_matrix["true_negative"] += 1
             else:

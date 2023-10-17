@@ -8,6 +8,30 @@ from bionumpy.bnpdataclass import bnpdataclass
 import npstructures as nps
 from kage.preprocessing.variants import Variants, SimpleVcfEntry
 from kage.util import vcf_pl_and_gl_header_lines
+from bionumpy.bnpdataclass import BNPDataClass
+import dataclasses
+
+
+# old bnp vcfbuffer for now for subclassing SingleIndividual (new causes trouble with info)
+class VCFBuffer(bnp.io.delimited_buffers.DelimitedBuffer):
+    dataclass = bnp.datatypes.VCFEntry
+
+    def get_data(self):
+        data = super().get_data()
+        data.position -= 1
+        return data
+
+    def get_field_by_number(self, field_nr: int, field_type: type=object):
+        val = super().get_field_by_number(field_nr, field_type)
+        if field_nr == 1:
+            val -= 1
+        return val
+
+    @classmethod
+    def from_data(cls, data: BNPDataClass) -> "DelimitedBuffer":
+        data = dataclasses.replace(data, position=data.position+1)
+        return super().from_data(data)
+
 
 
 @bnpdataclass
@@ -24,7 +48,7 @@ class VcfEntryWithSingleIndividualGenotypes:
     genotype: str
 
 
-class VcfWithSingleIndividualBuffer(bnp.io.VCFBuffer):
+class VcfWithSingleIndividualBuffer(VCFBuffer):
     dataclass = VcfEntryWithSingleIndividualGenotypes
 
 
@@ -62,13 +86,16 @@ def write_vcf(variants: SimpleVcfEntry, string_genotypes: bnp.EncodedRaggedArray
     if add_genotype_likelihoods is not None:
         logging.info("Writing genotype likelyhoods to file")
         p = add_genotype_likelihoods
-        logging.info(p)
         genotype_likelihoods = p * np.log10(np.e)
-        logging.info(genotype_likelihoods[genotype_likelihoods < -60])
+        has_nan = np.where(np.any(np.isnan(genotype_likelihoods), axis=1))[0]
+        if len(has_nan):
+            for n in has_nan:
+                logging.warning("Genotype likelyhood is nan")
+                logging.info("%s %s" % (p[n], genotype_likelihoods[n]))
+                genotype_likelihoods[n] = [-0.1, -0.1, -0.1]
+
         genotype_likelihoods[genotype_likelihoods < -60] = -60
-        logging.info(genotype_likelihoods[genotype_likelihoods < -60])
         genotype_likelihoods[genotype_likelihoods == 0] = -0.0001
-        logging.info(genotype_likelihoods)
         gl_strings = (",".join(str(p) if p != 0 else "-0.01" for p in genotype_likelihoods[i]) for i in range(len(variants)))
         genotypes = [f"{genotype}:{gl}" for genotype, gl in zip(genotypes, gl_strings)]
         format = ["GT:GL" for i in range(len(variants))]
