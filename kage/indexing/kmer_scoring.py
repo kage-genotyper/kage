@@ -121,14 +121,14 @@ def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: Spar
                                        ])
 
     for i, nodes in tqdm.tqdm(enumerate(haplotype_nodes), desc="Estimating global kmer counts", total=len(chosen_haplotypes), unit="haplotype"):
-        log_memory_usage_now("Memory after getting nodes")
+        #log_memory_usage_now("Memory after getting nodes")
 
         for reverse_complement in [False, True]:
-            logging.info("Reverse complement %s" % reverse_complement)
+            #logging.info("Reverse complement %s" % reverse_complement)
             t0 = time.perf_counter()
             kmers = graph.get_haplotype_kmers(nodes, k=k, stream=True, reverse_complement=reverse_complement)
-            logging.info("Getting kmers took %.5f sec" % (time.perf_counter() - t0))
-            log_memory_usage_now("Memory after kmers")
+            #logging.info("Getting kmers took %.5f sec" % (time.perf_counter() - t0))
+            #log_memory_usage_now("Memory after kmers")
             t0 = time.perf_counter()
             t_add = 0
             n_kmers = 0
@@ -137,10 +137,10 @@ def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: Spar
                 counter.add_numba(subkmers)
                 t_add += time.perf_counter() - t_add_start
                 n_kmers += len(subkmers)
-            logging.info("Adding %d kmers to counter took %.5f sec" % (n_kmers, t_add))
-            logging.info("Tot time: %.5f" % (time.perf_counter() - t0))
+            #logging.info("Adding %d kmers to counter took %.5f sec" % (n_kmers, t_add))
+            #logging.info("Tot time: %.5f" % (time.perf_counter() - t0))
 
-        log_memory_usage_now("After adding haplotype %d" % i)
+        #log_memory_usage_now("After adding haplotype %d" % i)
 
     return counter
 

@@ -131,6 +131,7 @@ class PathKmers:
             new.append(pruned_kmers)
             #logging.info("Pruning took %.5f sec" % (time.perf_counter() - t0))
 
+        log_memory_usage_now("After pruning kmers")
         self.kmers = new
 
     @staticmethod
@@ -238,6 +239,7 @@ class PathBasedMappingModelCreator(MappingModelCreator):
         self._window = window
         self._all_haplotypes_as_paths = get_haplotypes_as_paths_parallel(
             self._haplotype_matrix, self._path_allele_matrix, self._window, n_threads=n_threads)
+        log_memory_usage_now("After getting haplotypes as paths")
 
     def _process_individual(self, i):
         t0 = time.perf_counter()
@@ -331,9 +333,11 @@ def get_haplotypes_as_paths_parallel(haplotype_matrix: SparseHaplotypeMatrix, pa
     n_haplotypes = haplotype_matrix.n_haplotypes
     haplotype_matrix = ray.put(haplotype_matrix)
 
+    log_memory_usage_now("Before sliding window view")
     path_signatures = sliding_window_view(
         np.append(path_allele_matrix, np.zeros((path_allele_matrix.shape[0], window_size - 1)), axis=1),
         window_size, axis=1)
+    log_memory_usage_now("After sliding window view")
 
     path_signatures = ray.put(path_signatures)
     print("Time putting things in memory etc", time.perf_counter()-t0)
@@ -343,6 +347,7 @@ def get_haplotypes_as_paths_parallel(haplotype_matrix: SparseHaplotypeMatrix, pa
 
     t0 = time.perf_counter()
     results = ray.get(out)
+    logging.info("After get haplotypes as paths parallel")
     print("Time doing stuff", time.perf_counter()-t0)
 
     return results

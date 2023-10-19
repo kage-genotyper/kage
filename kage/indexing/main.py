@@ -1,4 +1,6 @@
 import logging
+import time
+
 from obgraph.numpy_variants import NumpyVariants
 import numpy as np
 from kage.indexing.index_bundle import IndexBundle
@@ -7,7 +9,8 @@ from kage.indexing.path_variant_indexing import find_tricky_variants_from_multia
 from kage.indexing.kmer_scoring import make_kmer_scorer_from_random_haplotypes
 from kage.indexing.signatures import get_signatures
 from kage.indexing.graph import make_multiallelic_graph
-from shared_memory_wrapper import to_file, remove_shared_memory_in_session
+from shared_memory_wrapper import to_file, remove_shared_memory_in_session, object_to_shared_memory, from_shared_memory, \
+    object_from_shared_memory
 
 from .paths import PathCreator
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix, GenotypeMatrix
@@ -18,14 +21,17 @@ from kage.util import log_memory_usage_now
 import bionumpy as bnp
 from ..preprocessing.variants import get_padded_variants_from_vcf, VariantStream, FilteredVariantStream, \
     FilteredOnMaxAllelesVariantStream
+from kage.models.helper_model import make_helper_model_from_genotype_matrix
+from multiprocessing import Process
 
 
 def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
-               modulo=20000033, variant_window=6, make_helper_model=False,
+               modulo=20000033, variant_window=6,
                n_threads=16):
     """
     Makes all indexes and writes to an index bundle.
     """
+    t_start = time.perf_counter()
     logging.info("Making graph")
     reference_sequences = bnp.open(reference_file_name).read()
     # vcf_variants are original vcf variants, needed when writing final vcf after genotyping
@@ -78,7 +84,10 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     haplotype_matrix = biallelic_haplotype_matrix.to_multiallelic(n_alleles_per_variant)
     logging.info(f"{haplotype_matrix.n_variants} variants after converting to multiallelic")
 
+
     log_memory_usage_now("After graph")
+    # Start seperate process for helper model
+    helper_model_process, helper_model_result_name = make_helper_model_seperate_process(biallelic_haplotype_matrix)
 
     scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=0, modulo=modulo * 10)
     assert np.all(scorer.values >= 0)
@@ -144,28 +153,50 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
             "n_alleles_per_variant": n_alleles_per_original_variant
         }
     # helper model
-    if make_helper_model:
-        from kage.models.helper_model import make_helper_model_from_genotype_matrix
-        genotype_matrix = GenotypeMatrix.from_haplotype_matrix(biallelic_haplotype_matrix)
-        logging.info("Making helper model")
-        helper_model, combo_matrix = make_helper_model_from_genotype_matrix(
-            genotype_matrix.matrix, None, dummy_count=1.0, window_size=100)
-        indexes["helper_variants"] = HelperVariants(helper_model)
-        indexes["combination_matrix"] = CombinationMatrix(combo_matrix)
-    else:
-        logging.info("Not making helper model")
+    #helper_model, combo_matrix = make_helper_model(biallelic_haplotype_matrix)
+    helper_model_process.join()
+    helper_model, combo_matrix = object_from_shared_memory(helper_model_result_name)
+    indexes["helper_variants"] = HelperVariants(helper_model)
+    indexes["combination_matrix"] = CombinationMatrix(combo_matrix)
 
 
     index = IndexBundle(
         indexes
     )
+    logging.info("Writing indexes to file")
     index.to_file(out_base_name, compress=False)
     paths.remove_tmp_files()
 
+    logging.info("Making indexes took %.2f sec" % (time.perf_counter() - t_start))
+
+
+
+def make_helper_model_seperate_process(biallelic_haplotype_matrix):
+    result_name = str(id(biallelic_haplotype_matrix))
+    logging.info("Making helper model in seperate process")
+    p = Process(target=make_helper_model, args=(object_to_shared_memory(biallelic_haplotype_matrix), result_name))
+    p.start()
+    return p, result_name
+
+def make_helper_model(biallelic_haplotype_matrix, write_to_result_shared_memory_name=None):
+    t0 = time.perf_counter()
+    if isinstance(biallelic_haplotype_matrix, str):
+        biallelic_haplotype_matrix = object_from_shared_memory(biallelic_haplotype_matrix)
+    genotype_matrix = GenotypeMatrix.from_haplotype_matrix(biallelic_haplotype_matrix)
+    logging.info("Making helper model")
+    helper_model, combo_matrix = make_helper_model_from_genotype_matrix(
+        genotype_matrix.matrix, None, dummy_count=1.0, window_size=100)
+
+    logging.info("Making helper model took %.2f sec" % (time.perf_counter() - t0))
+    if write_to_result_shared_memory_name is not None:
+        object_to_shared_memory((helper_model, combo_matrix), write_to_result_shared_memory_name)
+        return
+
+    return helper_model, combo_matrix
 
 def make_index_cli(args):
     r = make_index(args.reference, args.vcf, args.out_base_name,
-                      args.kmer_size, make_helper_model=args.make_helper_model, modulo=args.modulo,
+                      args.kmer_size, modulo=args.modulo,
                       variant_window=args.variant_window)
     remove_shared_memory_in_session()
     return r

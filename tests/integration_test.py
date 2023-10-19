@@ -35,7 +35,6 @@ def test_saccer3():
     make_index(ref, vcf, "test_index.npz",
                k=31, modulo=200000033,
                variant_window=5,
-               make_helper_model=True,
                n_threads=4)
 
     Args = namedtuple("args", ["index_bundle",

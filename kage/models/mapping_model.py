@@ -72,8 +72,6 @@ def get_sampled_nodes_and_counts(graph, haplotype_to_nodes, k, kmer_index, max_c
                                             max_count, n_nodes, [start_individual, end_individual])
     else:
         chunks = interval_chunks(0, end_individual, n_threads)
-        #chunks = [(186, 187)]
-        logging.info("Chunks: %s" % chunks)
         count_matrices = parallel_map_reduce_with_adding(_get_sampled_nodes_and_counts_for_range,
                             (graph, haplotype_to_nodes, k, kmer_index, max_count, n_nodes),
                             initial_data=count_matrices,
