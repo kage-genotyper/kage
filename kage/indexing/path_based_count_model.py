@@ -233,6 +233,7 @@ class PathBasedMappingModelCreator(MappingModelCreator):
         self._k = k
         self._max_count = max_count
         self._path_allele_matrix = paths_allele_matrix
+        assert paths_allele_matrix.matrix.dtype == np.uint8
         self._path_kmers = PathKmers.from_graph_and_paths(graph, paths_allele_matrix, k=k)
         self._path_kmers.prune(kmer_index, n_threads=16)
         self._node_map = node_map

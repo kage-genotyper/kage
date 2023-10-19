@@ -56,6 +56,7 @@ def write_multiallelic_vcf_with_biallelic_numeric_genotypes(variants: SimpleVcfE
                                                             out_file_name: str, n_alleles_per_variant: np.ndarray,
                                                             header: str = "",
                                                             add_genotype_likelihoods: Optional[np.ndarray] = None,
+                                                            ignore_homo_ref=False
                                                             ):
     assert len(n_alleles_per_variant) == len(variants)
     print("N numeric genotypes", len(numeric_genotypes))
@@ -69,12 +70,13 @@ def write_multiallelic_vcf_with_biallelic_numeric_genotypes(variants: SimpleVcfE
     print("N string genotypes: ", len(string_genotypes))
     print(string_genotypes)
     print("N variants:", len(variants))
-    write_vcf(variants, string_genotypes, out_file_name, header, add_genotype_likelihoods=add_genotype_likelihoods)
+    write_vcf(variants, string_genotypes, out_file_name, header, add_genotype_likelihoods=add_genotype_likelihoods, ignore_homo_ref=ignore_homo_ref)
 
 
 def write_vcf(variants: SimpleVcfEntry, string_genotypes: bnp.EncodedRaggedArray,
               out_file_name: str, header: str = "",
-              add_genotype_likelihoods: Optional[np.ndarray] = None):
+              add_genotype_likelihoods: Optional[np.ndarray] = None,
+              ignore_homo_ref=False):
     """Numeric genotypes: 1: 0/0, 2: 1/1, 3: 0/1 """
 
 
@@ -112,6 +114,11 @@ def write_vcf(variants: SimpleVcfEntry, string_genotypes: bnp.EncodedRaggedArray
         format,
         genotypes
     )
+
+    if ignore_homo_ref:
+        remove = bnp.str_equal(bnp.as_encoded_array(string_genotypes), "0/0")
+        logging.info(f"Not writing {np.sum(remove)} genotypes that are 0/0")
+        entry = entry[~remove]
 
     entry.set_context("header", header)
     with bnp.open(out_file_name, "w", VcfWithSingleIndividualBuffer) as f:

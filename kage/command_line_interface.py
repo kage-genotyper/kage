@@ -105,6 +105,7 @@ def genotype(args):
             index.n_alleles_per_variant,
             header=create_vcf_header_with_sample_name(index.vcf_header, config.sample_name_output, add_genotype_likelyhoods=not config.do_not_write_genotype_likelihoods),
             add_genotype_likelihoods=probs if not config.do_not_write_genotype_likelihoods else None,
+            ignore_homo_ref=config.ignore_homo_ref,
         )
     else:
 

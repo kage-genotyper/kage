@@ -1,12 +1,15 @@
 import logging
+import time
 from dataclasses import dataclass
 
+import npstructures
+from bionumpy.bnpdataclass import bnpdataclass
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 from kage.preprocessing.variants import Variants
 import tqdm
 
 logging.basicConfig(level=logging.INFO)
-from typing import Dict, List, Tuple, Optional, Literal
+from typing import Dict, List, Tuple, Optional, Literal, Union
 
 import bionumpy as bnp
 import numpy as np
@@ -84,11 +87,15 @@ class IndexedGenotypes:
         logging.info("Reading genotypes")
         vcf_with_genotypes = bnp.open(file_name, buffer_type=VcfWithSingleIndividualBuffer).read()
         logging.info("Processing genotypes")
+        t0 = time.perf_counter()
         genotypes = vcf_with_genotypes.genotype.tolist()
+        logging.info("Tolist took %.4f seconds" % (time.perf_counter() - t0))
         genotypes = (normalize_genotype(g) for g in genotypes)
         genotypes = normalized_genotypes_to_haplotype_matrix(genotypes)
         logging.info("Making haplotype matrix")
+        t0 = time.perf_counter()
         haplotype_matrix = SparseHaplotypeMatrix.from_nonsparse_matrix(genotypes)
+        logging.info("Making haplotype matrix took %.3f sec " % (time.perf_counter()-t0))
         logging.info("Done making haplotype matrix")
         if convert_to_biallelic:
             return cls.from_multiallelic_variants_and_haplotype_matrix(vcf_entry, haplotype_matrix)
@@ -108,6 +115,9 @@ class IndexedGenotypes:
 
     def items(self):
         return self._index.items()
+
+    def __len__(self):
+        return len(self.items())
 
     @classmethod
     def from_multiallelic_variants_and_haplotype_matrix_without_biallelic_converion(cls, variants: VcfEntry, haplotype_matrix: SparseHaplotypeMatrix, missing_genotype_encoding=127):
@@ -223,7 +233,7 @@ class GenotypeAccuracy:
 
         truth = self._truth
         n_skipped = 0
-        for i, (key, t) in tqdm.tqdm(enumerate(truth.items()), desc="Running comparison", total=len(truth.items())):
+        for i, (key, t) in tqdm.tqdm(enumerate(truth.items()), desc="Running comparison", total=len(truth)):
             if self._limit_to != "all" and not self._include_variant(t):
                 n_skipped += 1
                 continue
@@ -404,6 +414,9 @@ class MultiAllelicVariant(BiallelicVariant):
         may have different order of alternative sequences. Uses the reference
         to reorder the alternative sequences and recode the genotype accordingly.
         """
+        if self.alt_sequences == ["0", "0"]:
+            return  # no normalization needed
+
         assert self.key() == reference_variant.key()
         allele_mapping = {seq: i for i, seq in enumerate(reference_variant.alt_sequences)}
         for seq in self.alt_sequences:
@@ -416,7 +429,6 @@ class MultiAllelicVariant(BiallelicVariant):
         self.alt_sequences = new_alt_sequences
         self.genotype = new_alleles
 
-
 class IndexedGenotypes2(IndexedGenotypes):
     """Similar to IndexGenotypes but represents variants using MultiAllelicVariant object.
     Makes it easier to normalize variants that have different order of alternative alleles.
@@ -428,13 +440,9 @@ class IndexedGenotypes2(IndexedGenotypes):
     def from_multiallelic_variants_and_haplotype_matrix_without_biallelic_converion(cls, variants: VcfEntry,
                                                                                     haplotype_matrix: SparseHaplotypeMatrix,
                                                                                     missing_genotype_encoding=127):
-        """
-        Normalizes multiallelic variants by sorting on alternative allele. Converts genotypes according to sorting
-        so that the same multiallelic variants with different sorting can be compared.
-        """
         index = {}
         n_changed_order = 0
-        for variant, haplotypes in zip(variants, haplotype_matrix.to_matrix()):
+        for variant, haplotypes in tqdm.tqdm(zip(variants, haplotype_matrix.to_matrix()), desc="Parsing vcf-entry", total=len(variants)):
             v = MultiAllelicVariant(variant.chromosome.to_string(), variant.position, variant.ref_seq.to_string(),
                                     variant.alt_seq.to_string().split(","), list(haplotypes))
             index[v.key()] = v
@@ -443,7 +451,7 @@ class IndexedGenotypes2(IndexedGenotypes):
 
 
     def normalize_against_reference_variants(self, reference_variants: 'IndexedGenotypes2'):
-        for key, variant in self.items():
+        for key, variant in tqdm.tqdm(self.items(), desc="Normalizing variants against ref variants"):
             assert key in reference_variants, f"Variant {key} not in reference variants"
             reference_variant = reference_variants[key]
             variant.normalize_using_reference_variant(reference_variant)
@@ -466,4 +474,84 @@ class IndexedGenotypes2(IndexedGenotypes):
             index[v.key()] = v
 
         return cls(index)
+
+
+
+@bnpdataclass
+class BiallelicVariants:
+    chromosome: str
+    position: int
+    reference_sequence: str
+    alt_sequences: str
+    allele1: int  # encoded haplotype
+    allele2: int
+
+    def type(self):
+        """Returns an array where each element contains one of snp, indel or sv"""
+        pass
+
+    def key(self):
+        """Returns an array with unique ids for each variant.
+        All variants are unique by chromosome, position, ref and alt seq"""
+        pass
+
+
+@bnpdataclass
+class MultiallelicVariants(BiallelicVariants):
+    def key(self):
+        """Returns an array with unique ids for each variant.
+        All multiallelic variants are unique by chromosome, position and ref seq"""
+        t0 = time.perf_counter()
+        #ids = [entry.chromosome.to_string() + "-" + str(entry.position) + "-" + entry.reference_sequence.to_string()
+        #       for entry in self]
+        ids = [f"{entry.chromosome.to_string()}-{entry.position}-{entry.reference_sequence.to_string()}"
+               for entry in self]
+
+        logging.info("Creating ids took %.3f sec" % (time.perf_counter() - t0))
+        return ids
+
+
+class IndexedGenotypes3(IndexedGenotypes2):
+    """Stores only a concise bnpdataclass of all variants with an index to rows"""
+    def __init__(self, variants: Union[MultiallelicVariants, BiallelicVariants]):
+        self._variants = variants
+        self._index = self._create_index()
+
+    def single_entry(self, entry):
+        """Returns a BiallelicVariant or MultiAllelicVariant, to be compatible with old setup"""
+        if isinstance(self._variants, MultiallelicVariants):
+            return MultiAllelicVariant(entry.chromosome.to_string(), int(entry.position), entry.reference_sequence.to_string(),
+                                       entry.alt_sequences.to_string().split(","), [int(entry.allele1), int(entry.allele2)])
+        else:
+            assert False, type(entry)
+
+    def _create_index(self):
+        return {key: i for i, key in enumerate(self._variants.key())}
+
+    def items(self):
+        """
+        Should return an iterable of (key, genotype)
+        """
+        return ((key, self.single_entry(self._variants[self._index[key]])) for key in self._index)
+
+    @classmethod
+    def from_multiallelic_variants_and_haplotype_matrix_without_biallelic_converion(cls, variants: VcfEntry,
+                                                                                    haplotype_matrix: SparseHaplotypeMatrix,
+                                                                                    missing_genotype_encoding=127):
+        variants = MultiallelicVariants(variants.chromosome,
+                                        variants.position,
+                                        variants.ref_seq,
+                                        variants.alt_seq,
+                                        haplotype_matrix.get_haplotype(0),
+                                        haplotype_matrix.get_haplotype(1))
+        return cls(variants)
+
+    def __contains__(self, key):
+        return key in self._index
+
+    def __getitem__(self, key):
+        return self.single_entry(self._variants[self._index[key]])
+
+    def __len__(self):
+        return len(self._variants)
 
