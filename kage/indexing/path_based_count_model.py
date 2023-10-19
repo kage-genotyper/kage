@@ -10,7 +10,7 @@ from scipy.signal import convolve2d
 import bionumpy as bnp
 from typing import List, Union
 
-from shared_memory_wrapper import to_file
+from shared_memory_wrapper import to_file, object_to_shared_memory, object_from_shared_memory
 
 from .modulo_filter import ModuloFilter
 from .path_variant_indexing import MappingModelCreator
@@ -125,7 +125,7 @@ class PathKmers:
         #logging.info("Pruning")
         new = []
         for i, kmers in tqdm(enumerate(self.kmers), desc="Pruning kmers"):
-            logging.info("Pruning path %d", i)
+            #logging.info("Pruning path %d", i)
             t0 = time.perf_counter()
             pruned_kmers = self.prune_kmers(kmers, lookup)
             new.append(pruned_kmers)
@@ -134,25 +134,56 @@ class PathKmers:
         self.kmers = new
 
     @staticmethod
-    def prune_kmers(kmers: bnp.EncodedRaggedArray, lookup: Union[ModuloFilter, KmerIndex]):
+    def prune_kmers(kmers: bnp.EncodedRaggedArray, lookup: Union[ModuloFilter, KmerIndex], n_threads=1):
         assert np.all(kmers.shape[0] >= 0)
         encoding = kmers.encoding
         raw_kmers = kmers.raw().ravel().astype(np.uint64)
-        logging.info("Got %d raw kmers" % len(raw_kmers))
+        #logging.info("Got %d raw kmers" % len(raw_kmers))
         t_lookup = time.perf_counter()
         if isinstance(lookup, ModuloFilter):
             is_in = lookup[raw_kmers]
         else:
-            is_in = lookup.has_kmers(raw_kmers)
+            if n_threads == 1:
+                is_in = lookup.has_kmers(raw_kmers)
+            else:
+                logging.warning("Experimentatl with more than 1 thread. Probably not faster.")
+                is_in = parallel_kmer_index_has_kmers(raw_kmers, lookup)
 
-        logging.info("Time lookup %d kmers: %.5f" % (len(raw_kmers), time.perf_counter() - t_lookup))
+        #logging.info("Time lookup %d kmers: %.5f" % (len(raw_kmers), time.perf_counter() - t_lookup))
         mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)
-        print(f"Kept {np.sum(mask)}/{len(raw_kmers)} kmers for path")
+        #print(f"Kept {np.sum(mask)}/{len(raw_kmers)} kmers for path")
         kmers = raw_kmers[is_in]
         shape = np.sum(mask, axis=1)
         pruned_kmers = bnp.EncodedRaggedArray(bnp.EncodedArray(kmers, encoding), shape)
         return pruned_kmers
 
+
+
+def _kmer_index_has_kmers_chunk(kmer_index, kmers, out_array, interval):
+    start, end = interval
+    t0 = time.perf_counter()
+    out_array[start:end] = kmer_index.has_kmers(kmers[start:end])
+    print("Work took ", time.perf_counter()-t0)
+
+
+def parallel_kmer_index_has_kmers(kmers, kmer_index, n_threads=8):
+    """
+    Experimental: Does not seem to be any faster than nonparallel, too much overhead
+    and probably too many threads accessing same memory
+    """
+    from shared_memory_wrapper.util import parallel_map_reduce, interval_chunks
+    t0 = time.perf_counter()
+    kmer_index = kmer_index.copy()
+    out_array = np.zeros_like(kmers, dtype=bool)
+    chunks = interval_chunks(0, len(kmers), n_threads)
+    print("Time to init", time.perf_counter()-t0)
+
+    data = parallel_map_reduce(_kmer_index_has_kmers_chunk, (kmer_index, kmers, out_array),
+                        chunks,
+                        n_threads=n_threads)
+    out_array = data[2]
+    return out_array
+    #return kmer_index.has_kmers(kmers)
 
 
 @ray.remote

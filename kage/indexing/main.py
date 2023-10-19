@@ -7,7 +7,7 @@ from kage.indexing.path_variant_indexing import find_tricky_variants_from_multia
 from kage.indexing.kmer_scoring import make_kmer_scorer_from_random_haplotypes
 from kage.indexing.signatures import get_signatures
 from kage.indexing.graph import make_multiallelic_graph
-from shared_memory_wrapper import to_file
+from shared_memory_wrapper import to_file, remove_shared_memory_in_session
 
 from .paths import PathCreator
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix, GenotypeMatrix
@@ -105,7 +105,7 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     kmer_index = signatures.get_as_kmer_index(node_mapping=node_mapping, modulo=modulo, k=k)
 
     logging.info("Creating count model")
-    logging.info("N nodes: %d" % node_mapping.n_nodes)
+    log_memory_usage_now("Before creating count model")
     model_creator = PathBasedMappingModelCreator(graph, kmer_index,
                                                  haplotype_matrix,
                                                  k=k,
@@ -121,7 +121,7 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     #tricky_variants = find_tricky_variants_with_count_model(signatures, count_model)
     logging.info("Finding tricky variants")
     log_memory_usage_now("Finding tricky variants")
-    tricky_variants = find_tricky_variants_from_multiallelic_signatures(signatures, node_mapping, count_model)
+    tricky_variants = find_tricky_variants_from_multiallelic_signatures(signatures, node_mapping.n_biallelic_variants)
     log_memory_usage_now("Finding tricky variants 2")
     tricky_alleles = find_tricky_ref_and_var_alleles_from_count_model(count_model, node_mapping)
     log_memory_usage_now("Finding tricky variants 3")
@@ -164,6 +164,8 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
 
 
 def make_index_cli(args):
-    return make_index(args.reference, args.vcf, args.out_base_name,
+    r = make_index(args.reference, args.vcf, args.out_base_name,
                       args.kmer_size, make_helper_model=args.make_helper_model, modulo=args.modulo,
                       variant_window=args.variant_window)
+    remove_shared_memory_in_session()
+    return r

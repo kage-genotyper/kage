@@ -89,6 +89,7 @@ class IndexedGenotypes:
         genotypes = normalized_genotypes_to_haplotype_matrix(genotypes)
         logging.info("Making haplotype matrix")
         haplotype_matrix = SparseHaplotypeMatrix.from_nonsparse_matrix(genotypes)
+        logging.info("Done making haplotype matrix")
         if convert_to_biallelic:
             return cls.from_multiallelic_variants_and_haplotype_matrix(vcf_entry, haplotype_matrix)
         else:
@@ -116,7 +117,8 @@ class IndexedGenotypes:
         """
         index = {}
         n_changed_order = 0
-        for variant, haplotypes in zip(variants, haplotype_matrix.to_matrix()):
+        haplotype_matrix = haplotype_matrix.to_matrix()
+        for variant, haplotypes in tqdm.tqdm(zip(variants, haplotype_matrix), total=len(haplotype_matrix), desc="Normalizing multiallelic variants"):
             alt_seqs = variant.alt_seq.to_string().split(",")
             sorting = np.argsort(alt_seqs)
             if not np.all(sorting == np.arange(len(sorting))):
@@ -454,9 +456,10 @@ class IndexedGenotypes2(IndexedGenotypes):
         genotypes = (normalize_genotype(g) for g in genotypes)
         logging.info("Making haplotype matrix")
         genotypes = normalized_genotypes_to_haplotype_matrix(genotypes)
+        logging.info("Done making haplotype matrix")
         index = {}
 
-        for variant, haplotypes in tqdm.tqdm(zip(vcf_with_genotypes, genotypes), total=len(genotypes)):
+        for variant, haplotypes in tqdm.tqdm(zip(vcf_with_genotypes, genotypes), total=len(genotypes), desc="Creating biallelic variants"):
             assert "," not in variant.alt_seq.to_string()
             v = BiallelicVariant(variant.chromosome.to_string(), variant.position, variant.ref_seq.to_string(),
                                  variant.alt_seq.to_string(), list(haplotypes))

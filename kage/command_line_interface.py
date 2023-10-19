@@ -459,6 +459,6 @@ def run_argument_parser(args):
 
     args = parser.parse_args(args)
     args.func(args)
-    remove_shared_memory_in_session()
+    #remove_shared_memory_in_session()
 
 

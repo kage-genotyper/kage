@@ -412,7 +412,7 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
                 allele_kmers = ak.to_numpy(kmers[allele])  # x n_paths x n_windows
                 n_windows = len(allele_kmers[0])  # same windows on all paths
                 # pick some window locations
-                window_locations = range(0, n_windows, max(1, n_windows // 10))
+                window_locations = range(0, n_windows, max(1, n_windows // 100))
 
                 window_kmers_matrix = allele_kmers[:, window_locations]
                 scores_for_windows = ak.to_numpy(scores[allele, window_locations])

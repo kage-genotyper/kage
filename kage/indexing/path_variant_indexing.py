@@ -3,6 +3,7 @@ import time
 from typing import List, Tuple
 
 import npstructures as nps
+import numba
 import numpy as np
 import bionumpy as bnp
 from graph_kmer_index import KmerIndex
@@ -193,45 +194,48 @@ def find_tricky_variants_with_count_model(signatures: Signatures, model):
     return TrickyVariants(tricky)
 
 
-def find_tricky_variants_from_multiallelic_signatures(signatures: MultiAllelicSignatures,
-                                                      node_mapping: VariantAlleleToNodeMap, model) -> TrickyVariants:
-    n_variants = node_mapping.n_biallelic_variants
-    tricky = np.zeros(n_variants, dtype=bool)
-    n_tricky_no_signature = 0
-    n_tricky_shared_kmers = 0
-    n_missing_model = 0
+def find_tricky_variants_from_multiallelic_signatures(signatures: MultiAllelicSignatures, n_biallelic_variants: int) -> TrickyVariants:
+    tricky = np.zeros(n_biallelic_variants, dtype=bool)
 
-    variant_id = 0
+    t0 = time.perf_counter()
     signatures = signatures.signatures
-    for multiallelic_variant in signatures:
-        ref_kmers = multiallelic_variant[0]
-        for allele in range(1, len(multiallelic_variant)):
-            alt_kmers = multiallelic_variant[allele]
+    #for multiallelic_variant in tqdm.tqdm(signatures, "Finding tricky variants"):
 
-            if len(np.unique(alt_kmers)) != len(alt_kmers):
-                logging.error("Variant id: %d" % variant_id)
-                logging.error(alt_kmers)
-                raise Exception("All kmers should be unique")
+    @numba.jit(nopython=True)
+    def find(tricky, signatures):
+        n_tricky_no_signature = 0
+        n_tricky_shared_kmers = 0
+        n_missing_model = 0
+        variant_id = 0
+        for multiallelic_variant_id in range(len(signatures)):
+            multiallelic_variant = signatures[multiallelic_variant_id]
+            ref_kmers = multiallelic_variant[0]
+            ref_kmers_set = set(ref_kmers)
+            for allele in range(1, len(multiallelic_variant)):
+                alt_kmers = multiallelic_variant[allele]
 
-            if len(ref_kmers) == 0 or len(alt_kmers) == 0:
-                tricky[variant_id] = True
-                n_tricky_no_signature += 1
-            elif len(set(ref_kmers).intersection(alt_kmers)) > 0:
-                tricky[variant_id] = True
-                n_tricky_shared_kmers += 1
+                #if len(np.unique(alt_kmers)) != len(alt_kmers):
+                #    logging.error("Variant id: %d" % variant_id)
+                #    logging.error(alt_kmers)
+                #    raise Exception("All kmers should be unique")
 
-            # check for missing data in model
-            ref_node = node_mapping.get_ref_node(variant_id)
-            alt_node = node_mapping.get_alt_node(variant_id)
-            #if model.has_no_data(ref_node, threshold=3) or model.has_no_data(alt_node, threshold=3):
-            #    tricky[variant_id] = True
-            #    n_missing_model += 1
+                if len(ref_kmers) == 0 or len(set(alt_kmers)) == 0:
+                    tricky[variant_id] = True
+                    n_tricky_no_signature += 1
+                elif len(ref_kmers_set.intersection(set(alt_kmers))) > 0:
+                    tricky[variant_id] = True
+                    n_tricky_shared_kmers += 1
 
-            variant_id += 1
+                variant_id += 1
 
-    logging.info("N tricky variants because no kmers: %d " % n_tricky_no_signature)
-    logging.info("N tricky variants because shared kmers between ref/alt: %d" % n_tricky_shared_kmers)
-    logging.info("N tricky variants because missing data in model: %d" % n_missing_model)
+        #logging.info("N tricky variants because no kmers: %d " % n_tricky_no_signature)
+        #logging.info("N tricky variants because shared kmers between ref/alt: %d" % n_tricky_shared_kmers)
+        #logging.info("N tricky variants because missing data in model: %d" % n_missing_model)
+
+    find(tricky, signatures)
+
+    logging.info("Finding tricky variants took %.4f seconds" % (time.perf_counter() - t0))
+
 
     return TrickyVariants(tricky)
 
