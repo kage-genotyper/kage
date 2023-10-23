@@ -11,6 +11,7 @@ import logging
 from typing import List, Tuple, Union, Iterable
 from bionumpy.io.vcf_buffers import VCFBuffer
 from bionumpy.streams import NpDataclassStream
+from kage.util import log_memory_usage_now
 
 from shared_memory_wrapper import to_file, from_file
 
@@ -422,6 +423,7 @@ def get_padded_variants_from_vcf(variants: 'VariantStream', reference_file_name,
         if also_return_original_variants:
             r = raw_chromosome_variants
             all_vcf_variants.append(SimpleVcfEntry(r.chromosome, r.position, r.ref_seq, r.alt_seq))
+        log_memory_usage_now("After processing variants for chromosome %s" % chromosome)
 
     all_variants = np.concatenate(all_variants)
     logging.info(f"In total {len(all_variants)} variants")
@@ -568,6 +570,10 @@ class FilteredVariantStream(VariantStream):
 
 
 class FilteredOnMaxAllelesVariantStream(VariantStream):
+    """
+    Filters variants by max alleles. Only works for multiallelic variants (since
+    then number of alleles is known)
+    """
     def __init__(self, stream: VariantStream, max_alleles: int):
         self._stream = stream
         self._max_alleles = max_alleles
@@ -577,3 +583,53 @@ class FilteredOnMaxAllelesVariantStream(VariantStream):
             mask = np.sum(chunk.alt_seq == ",", axis=1) + 2 <= self._max_alleles
             logging.info("Filtering away %d variants because more than %d alleles" % (np.sum(~mask), self._max_alleles))
             yield chunk[mask]
+
+
+class FilteredOnMaxAllelesVariantStream2(VariantStream):
+    """Another version that uses a counter on the references.
+    Works for biallelic.
+    The filtering is approximate and may miss variants on chunk borders.
+    """
+    def __init__(self, stream: VariantStream, max_alleles: int):
+        self._stream = stream
+        self._max_alleles = max_alleles
+
+    def _read_chunks(self):
+        for chunk in self._stream.read_chunks():
+            # Note: This does not adjust for the fact that indels have
+            # a trailing base. So not perfectly accuracey, but probably "good enough"
+            # May filter a bit more than necessary
+
+            starts = chunk.position
+            ends = starts + chunk.ref_seq.shape[1]
+
+            first_variant_start = np.min(starts)
+            last_end = np.max(ends)
+
+            starts = starts - first_variant_start
+            ends = ends - first_variant_start
+
+            size = last_end-first_variant_start
+            allele_counter = np.zeros(size, dtype=int)
+
+            @numba.jit(nopython=True)
+            def _get_counts(starts, ends, counter):
+                for i in range(len(starts)):
+                    counter[starts[i]:ends[i]] += 1
+
+            _get_counts(starts, ends, allele_counter)
+
+            # find which variants to filter out
+            @numba.jit(nopython=True)
+            def _get_filter(filter, starts, ends, counter, max_alleles):
+                for i in range(len(starts)):
+                    if np.max(counter[starts[i]:ends[i]]) > max_alleles:
+                        filter[i] = True
+                return filter
+
+            filter = np.zeros(len(starts), dtype=bool)
+            _get_filter(filter, starts, ends, allele_counter, self._max_alleles)
+
+            logging.info("Filtering away %d variants because more than %d alleles" % (np.sum(filter), self._max_alleles))
+            yield chunk[~filter]
+

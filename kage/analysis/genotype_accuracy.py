@@ -423,8 +423,10 @@ class MultiAllelicVariant(BiallelicVariant):
             assert seq in allele_mapping, f"Allele {seq} not in reference variant {reference_variant} but is in {self}"
 
         new_alt_sequences = reference_variant.alt_sequences  # [self.alt_sequences[allele_mapping[seq]] for seq in self.alt_sequences]
-        new_alleles = sorted([allele_mapping[self.alt_sequences[allele-1]]+1 if allele != 0 and allele != missing_allele_encoding
-                       else allele for allele in self.genotype])
+        new_alleles = [allele_mapping[self.alt_sequences[allele - 1]] + 1 if allele != 0 and allele != missing_allele_encoding
+         else allele for allele in self.genotype]
+        new_alleles = sorted(map(str, new_alleles))  # string sorting
+        new_alleles = map(int, new_alleles)
 
         self.alt_sequences = new_alt_sequences
         self.genotype = new_alleles

@@ -130,6 +130,7 @@ class PathKmers:
             pruned_kmers = self.prune_kmers(kmers, lookup)
             new.append(pruned_kmers)
             #logging.info("Pruning took %.5f sec" % (time.perf_counter() - t0))
+            log_memory_usage_now("Pruning %d" % i)
 
         log_memory_usage_now("After pruning kmers")
         self.kmers = new
@@ -152,7 +153,7 @@ class PathKmers:
 
         #logging.info("Time lookup %d kmers: %.5f" % (len(raw_kmers), time.perf_counter() - t_lookup))
         mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)
-        #print(f"Kept {np.sum(mask)}/{len(raw_kmers)} kmers for path")
+        logging.info(f"Kept {np.sum(mask)}/{len(raw_kmers)} kmers for path")
         kmers = raw_kmers[is_in]
         shape = np.sum(mask, axis=1)
         pruned_kmers = bnp.EncodedRaggedArray(bnp.EncodedArray(kmers, encoding), shape)
@@ -309,7 +310,7 @@ def get_haplotypes_as_paths(haplotype_matrix: SparseHaplotypeMatrix, path_allele
 
 @ray.remote
 def _get_single_haplotype_as_paths(path_signatures, haplotype_matrix, haplotype_id, window_size):
-    log_memory_usage_now("_get_single_haplotype_as_paths_start")
+    #log_memory_usage_now("_get_single_haplotype_as_paths_start")
     haplotype = haplotype_matrix.get_haplotype(haplotype_id)
 
     haplotype_signatures = sliding_window_view(np.append(haplotype, np.zeros(window_size - 1)), window_size)
@@ -318,7 +319,7 @@ def _get_single_haplotype_as_paths(path_signatures, haplotype_matrix, haplotype_
 
     for i in range(path_signatures.shape[0]):
         matching_paths[np.all(path_signatures[i] == haplotype_signatures, axis=1)] = i
-    log_memory_usage_now("_get_single_haplotype_as_paths_end")
+    #log_memory_usage_now("_get_single_haplotype_as_paths_end")
 
     return HaplotypeAsPaths(matching_paths)
 

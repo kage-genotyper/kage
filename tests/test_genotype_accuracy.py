@@ -1,5 +1,6 @@
 from kage.analysis.genotype_accuracy import GenotypeAccuracy, read_vcf_with_genotypes, normalize_genotype, \
-    IndexedGenotypes, normalized_genotypes_to_haplotype_matrix, MultiAllelicVariant, IndexedGenotypes2
+    IndexedGenotypes, normalized_genotypes_to_haplotype_matrix, MultiAllelicVariant, IndexedGenotypes2, \
+    IndexedGenotypes3
 import bionumpy as bnp
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 from kage.preprocessing.variants import SimpleVcfEntry
@@ -149,8 +150,23 @@ def test_variant_type():
 def test_read_vcf_with_missing_genotypes():
     truth = IndexedGenotypes2.from_multiallelic_vcf("vcf_with_missing.vcf", convert_to_biallelic=False)
 
+    i = 0
     for id, variant in truth.items():
         print(id, variant.genotype_string())
+
+        if i > 10:
+            break
+        i += 1
+
+    truth2 = IndexedGenotypes3.from_multiallelic_vcf("vcf_with_missing.vcf", convert_to_biallelic=False)
+
+    i = 0
+    for id, variant in truth.items():
+        print(id, variant.genotype_string())
+
+        if i > 10:
+            break
+        i += 1
 
     comparison = GenotypeAccuracy(truth, truth)
 

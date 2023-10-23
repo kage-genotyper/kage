@@ -3,7 +3,7 @@ logging.basicConfig(level=logging.INFO)
 import pytest
 import numpy as np
 import bionumpy as bnp
-from kage.preprocessing.variants import Variants, SimpleVcfEntry, VariantStream
+from kage.preprocessing.variants import Variants, SimpleVcfEntry, VariantStream, FilteredOnMaxAllelesVariantStream2
 
 
 def test_variants_from_multialellic_vcf():
@@ -83,3 +83,10 @@ def test_variant_stream():
     for chunk in variant_stream.read_by_chromosome():
         print(chunk)
 
+
+def test_variant_filter_max_alleles():
+    variant_stream = VariantStream.from_vcf("multiallelic2.vcf")
+    filtered_stream = FilteredOnMaxAllelesVariantStream2(variant_stream, max_alleles=1)
+    for chunk in filtered_stream.read_chunks():
+        print(chunk)
+        assert len(chunk) == 2
