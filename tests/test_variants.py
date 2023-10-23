@@ -3,8 +3,9 @@ logging.basicConfig(level=logging.INFO)
 import pytest
 import numpy as np
 import bionumpy as bnp
-from kage.preprocessing.variants import Variants, SimpleVcfEntry, VariantStream, FilteredOnMaxAllelesVariantStream2, \
+from kage.preprocessing.variants import Variants, VariantStream, FilteredOnMaxAllelesVariantStream2, \
     VariantAlleleToNodeMap, filter_variants_with_more_alleles_than
+from kage.io import SimpleVcfEntry
 import npstructures as nps
 
 def test_variants_from_multialellic_vcf():

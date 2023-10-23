@@ -1,10 +1,10 @@
 import numpy as np
 import pytest
 # from kage.io import VcfWriter
-from kage.preprocessing.variants import Variants, SimpleVcfEntry
+from kage.preprocessing.variants import Variants
 from kage.io import write_vcf, VcfEntryWithSingleIndividualGenotypes, \
     convert_biallelic_numeric_genotypes_to_multialellic_string_genotypes, \
-    write_multiallelic_vcf_with_biallelic_numeric_genotypes
+    write_multiallelic_vcf_with_biallelic_numeric_genotypes, SimpleVcfEntry
 import bionumpy as bnp
 
 

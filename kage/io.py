@@ -6,7 +6,8 @@ import bionumpy as bnp
 import numpy as np
 from bionumpy.bnpdataclass import bnpdataclass
 import npstructures as nps
-from kage.preprocessing.variants import Variants, SimpleVcfEntry
+from shared_memory_wrapper import to_file, from_file
+
 from kage.util import vcf_pl_and_gl_header_lines
 from bionumpy.bnpdataclass import BNPDataClass
 import dataclasses
@@ -50,6 +51,21 @@ class VcfEntryWithSingleIndividualGenotypes:
 
 class VcfWithSingleIndividualBuffer(VCFBuffer):
     dataclass = VcfEntryWithSingleIndividualGenotypes
+
+
+@bnpdataclass
+class SimpleVcfEntry:
+    chromosome: str
+    position: int
+    ref_seq: str
+    alt_seq: str
+
+    def to_file(self, file_name):
+        return to_file((self.chromosome, self.position, self.ref_seq, self.alt_seq), file_name)
+
+    @classmethod
+    def from_file(cls, file_name):
+        return cls(*from_file(file_name))
 
 
 def write_multiallelic_vcf_with_biallelic_numeric_genotypes(variants: SimpleVcfEntry, numeric_genotypes: np.ndarray,
@@ -181,6 +197,39 @@ def convert_biallelic_numeric_genotypes_to_multialellic_string_genotypes(n_allel
     assert len(out) == len(multialellic_genotypes)
     return bnp.as_encoded_array(out)
 
+
+@bnpdataclass
+class CustomVCFEntry:
+    chromosome: str
+    position: int
+    id: str
+    ref_seq: str
+    alt_seq: str
+
+
+class CustomVCFBuffer(bnp.io.delimited_buffers.DelimitedBuffer):
+    """
+    Custom Vcf buffer that skips lazy to save memory.
+    To be used when only chromosome position and sequences are needed.
+    """
+    SKIP_LAZY = True
+    dataclass = CustomVCFEntry
+
+    def get_data(self):
+        data = super().get_data()
+        data.position -= 1
+        return data
+
+    def get_field_by_number(self, field_nr: int, field_type: type=object):
+        val = super().get_field_by_number(field_nr, field_type)
+        if field_nr == 1:
+            val -= 1
+        return val
+
+    @classmethod
+    def from_data(cls, data: BNPDataClass) -> "DelimitedBuffer":
+        data = dataclasses.replace(data, position=data.position+1)
+        return super().from_data(data)
 
 
 

@@ -1,4 +1,4 @@
-#from kage.preprocessing.variants import MultiAllelelicVariants
+#from kage.preproessing.variants import MultiAllelelicVariants
 import npstructures
 import pytest
 from bionumpy import Interval
@@ -49,9 +49,12 @@ def test_graph(graph):
     assert graph.sequence([0, 0]).tolist() == ["AAAA", "A", "GGGG", "ACTG", "TTTT"]
 
 
-class DummyScorer2():
+class DummyScorer2:
     def score_kmers(self, kmers):
         return np.zeros_like(kmers)
+
+    def __getitem__(self, item):
+        return self.score_kmers(item)
 
 
 def test_multiallelic_signature_finder():

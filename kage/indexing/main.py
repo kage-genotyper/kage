@@ -19,6 +19,8 @@ from .path_based_count_model import PathBasedMappingModelCreator
 from kage.models.mapping_model import convert_model_to_sparse
 from kage.util import log_memory_usage_now
 import bionumpy as bnp
+
+from ..io import CustomVCFBuffer
 from ..preprocessing.variants import get_padded_variants_from_vcf, VariantStream, FilteredVariantStream, \
     FilteredOnMaxAllelesVariantStream, FilteredOnMaxAllelesVariantStream2, filter_variants_with_more_alleles_than
 from kage.models.helper_model import make_helper_model_from_genotype_matrix
@@ -27,19 +29,20 @@ from multiprocessing import Process
 
 def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
                modulo=20000033, variant_window=6,
-               n_threads=16):
+               n_threads=16,
+               vcf_no_genotypes=None):
     """
     Makes all indexes and writes to an index bundle.
     """
     t_start = time.perf_counter()
-    logging.info("Making graph")
-    reference_sequences = bnp.open(reference_file_name).read()
-    log_memory_usage_now("After reading reference genome")
     # vcf_variants are original vcf variants, needed when writing final vcf after genotyping
     # n_alleles_per_variant lets us convert genotypes on variants (which are biallelic) to multiallelic where necessary
-    variant_stream = FilteredVariantStream.from_vcf_with_snps_indels_inside_svs_removed(vcf_file_name,
+    if vcf_no_genotypes is None:
+        vcf_no_genotypes = vcf_file_name
+    variant_stream = FilteredVariantStream.from_vcf_with_snps_indels_inside_svs_removed(vcf_no_genotypes,
                                                                                         min_chunk_size=500000000,
-                                                                                        sv_size_limit=50)
+                                                                                        sv_size_limit=50,
+                                                                                        buffer_type=CustomVCFBuffer)
     #variant_stream = FilteredOnMaxAllelesVariantStream2(variant_stream, max_alleles=2**variant_window-2)
     # convert variants to biallelic variants, keep track of how many alleles original variants had
     variants, vcf_variants, n_alleles_per_original_variant = get_padded_variants_from_vcf(variant_stream,
@@ -58,17 +61,8 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
                                                                                                             vcf_variants,
                                                                                                             n_alleles_per_original_variant,
                                                                                                             2**variant_window-2)
-    assert len(filter) == n_orig_variants_before_filtering
-    print("Filter", filter, len(filter))
-
-    """
-    variants = variants[~filter_on_max_alleles]
-    vcf_variants = vcf_variants[~filter_on_max_alleles]
-    n_alleles_per_original_variant = n_alleles_per_original_variant[~filter_on_max_alleles]
-    logging.info(f"{np.sum(filter_on_max_alleles)} variants have more alleles than window size allow. Will ignore these")
-    """
-
     log_memory_usage_now("After getting variants")
+    assert len(filter) == n_orig_variants_before_filtering
     assert len(variants) == np.sum(n_alleles_per_original_variant-1), f"{len(variants)} != {np.sum(n_alleles_per_original_variant-1)}"
     assert len(vcf_variants) == len(n_alleles_per_original_variant), f"{len(vcf_variants)} != {len(n_alleles_per_original_variant)}"
 
@@ -76,18 +70,16 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     logging.info("N original variants: %d" % len(vcf_variants))
     logging.info("Max alleles on original variant: %d" % np.max(n_alleles_per_original_variant))
 
+    logging.info("Making graph")
+    reference_sequences = bnp.open(reference_file_name).read()
+    log_memory_usage_now("After reading reference genome")
     graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
+    del reference_sequences
     log_memory_usage_now("Made graph")
+
     if np.max(node_mapping.n_alleles_per_variant) >= 2**variant_window:
         logging.warning("Some variants have more alleles than supported by current window size (%d)" % variant_window)
-        raise Exception("Something wrong")
-        possible_windows = [w for w in range(8) if 2**w > np.max(node_mapping.n_alleles_per_variant)]
-        if len(possible_windows) == 0:
-            logging.error("Could not find a window large enough. There are too many alleles (max alleles on a variant is %d)" % np.max(node_mapping.n_alleles_per_variant))
-            raise Exception("Too many alleles")
-        else:
-            variant_window = min(possible_windows)
-            logging.warning("Increased window to %d" % variant_window)
+        raise Exception("Something went wrong.")
 
     if len(graph.genome.sequence[-1]) < k:
         # pad genome
@@ -98,7 +90,7 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     #variant_stream = VariantStream.from_vcf(vcf_file_name, buffer_type=bnp.io.vcf_buffers.PhasedHaplotypeVCFMatrixBuffer, min_chunk_size=500000000)
     variant_stream = FilteredVariantStream.from_vcf_with_snps_indels_inside_svs_removed(vcf_file_name,
                                                                                         buffer_type=bnp.io.vcf_buffers.PhasedHaplotypeVCFMatrixBuffer,
-                                                                                        min_chunk_size=500000000,
+                                                                                        min_chunk_size=100000000,
                                                                                         sv_size_limit=50
                                                                                         )
     log_memory_usage_now("Variant stream 1 done")
@@ -125,7 +117,7 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     helper_model_process, helper_model_result_name = make_helper_model_seperate_process(biallelic_haplotype_matrix)
     del biallelic_haplotype_matrix
 
-    scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=0, modulo=modulo * 10)
+    scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=0, modulo=modulo * 40 + 11)
     assert np.all(scorer.values >= 0)
 
     log_memory_usage_now("After scorer")
@@ -233,7 +225,8 @@ def make_helper_model(biallelic_haplotype_matrix, write_to_result_shared_memory_
 def make_index_cli(args):
     r = make_index(args.reference, args.vcf, args.out_base_name,
                       args.kmer_size, modulo=args.modulo,
-                      variant_window=args.variant_window)
+                      variant_window=args.variant_window,
+                    vcf_no_genotypes=args.vcf_no_genotypes)
     remove_shared_memory_in_session()
     return r
 

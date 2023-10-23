@@ -123,6 +123,7 @@ class MultiAllelicSignatures:
 
         #logging.info("Removed %d non-unique kmers" % np.sum(~mask))
         # use mask to create a new data structure
+        """
         keep = ak.ravel(signatures)[flat_mask]
         # find number of kmers to keep per allele
         mask_by_alleles = nps.RaggedArray(flat_mask, ak.to_numpy(ak.num(ak.flatten(signatures))))
@@ -131,6 +132,25 @@ class MultiAllelicSignatures:
         n_alleles_per_variant = ak.num(signatures)
         new = ak.unflatten(new, n_alleles_per_variant)
         #logging.info("Done filtering")
+        self.signatures = new
+        """
+        self.signatures = signatures  # new sorting
+        self.filter(flat_mask)
+
+    def filter(self, flat_mask: np.ndarray):
+        """
+        Replaces signatures by keeping only those in keep.
+        flat_mask : flat np array where True are signatures to keep
+        """
+        signatures = self.signatures
+        keep = ak.ravel(self.signatures)[flat_mask]
+        # find number of kmers to keep per allele
+        mask_by_alleles = nps.RaggedArray(flat_mask, ak.to_numpy(ak.num(ak.flatten(signatures))))
+        n_per_allele = np.sum(mask_by_alleles, axis=1)
+        new = ak.unflatten(keep, n_per_allele)
+        n_alleles_per_variant = ak.num(signatures)
+        new = ak.unflatten(new, n_alleles_per_variant)
+        # logging.info("Done filtering")
         self.signatures = new
 
     def get_as_flat_kmers(self, node_mapping: VariantAlleleToNodeMap):
@@ -180,6 +200,17 @@ class MultiAllelicSignatures:
         index = KmerIndex.from_flat_kmers(flat, skip_frequencies=True, modulo=modulo)
         index.convert_to_int32()
         return index
+
+
+    def remove_too_frequent_signatures(self, scorer, threshold=100):
+        """
+        Removes signatures that have score above threshold
+        """
+        flat_signatures = ak.to_numpy(ak.ravel(self.signatures))
+        scores = scorer[flat_signatures]
+        mask = scores > threshold
+        logging.info(f"{np.sum(mask)}/{len(flat_signatures)} signatures removed because they had score above {threshold}")
+        self.filter(~mask)
 
 
 class SignatureFinder:
@@ -1000,6 +1031,8 @@ def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_cou
         #log_memory_usage_now("After variant window kmers2")
         #logging.info("Finding best signatures for variants")
         signatures = MultiAllelicSignatureFinderV2(variant_window_kmers2, scorer=scorer, k=k).run(add_dummy_count_to_index)
+        # Removing frequent signatures is not necessary, but will speed up mapping model since more signatures are pruned from paths
+        signatures.remove_too_frequent_signatures(scorer, 100)
         all_signatures.append(signatures)
 
     for s in all_subpaths:

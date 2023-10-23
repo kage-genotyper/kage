@@ -1,5 +1,5 @@
 import logging
-import sys  
+import sys
 import platform
 from .util import vcf_pl_and_gl_header_lines, convert_string_genotypes_to_numeric_array, _write_genotype_debug_data, \
     log_memory_usage_now
@@ -431,6 +431,7 @@ def run_argument_parser(args):
     subparser = subparsers.add_parser("index")
     subparser.add_argument("-r", "--reference", required=True)
     subparser.add_argument("-v", "--vcf", required=True)
+    subparser.add_argument("-V", "--vcf-no-genotypes", required=False, help="May be specified. If specified, should be a vcf with no genotypes. Will lower memory usage when creating indexes. Will not change results.")
     subparser.add_argument("-o", "--out-base-name", required=True)
     subparser.add_argument("-k", "--kmer-size", required=False, type=int, default=31)
     subparser.add_argument("-M", "--make-helper-model", required=False, type=bool, default=False)

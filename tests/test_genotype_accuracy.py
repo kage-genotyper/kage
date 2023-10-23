@@ -3,7 +3,7 @@ from kage.analysis.genotype_accuracy import GenotypeAccuracy, read_vcf_with_geno
     IndexedGenotypes3
 import bionumpy as bnp
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
-from kage.preprocessing.variants import SimpleVcfEntry
+from kage.io import SimpleVcfEntry
 import numpy as np
 
 

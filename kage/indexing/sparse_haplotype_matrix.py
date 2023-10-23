@@ -9,6 +9,7 @@ from graph_kmer_index.nplist import NpList
 
 from kage.indexing.paths import PathCreator
 from kage.preprocessing.variants import VariantStream
+from kage.util import log_memory_usage_now
 
 
 #class SparseColumnMatrix:
@@ -125,7 +126,8 @@ class SparseHaplotypeMatrix:
             values = values.astype(np.uint8)
             assert len(values) == len(variant_ids)
         data = scipy.sparse.csc_matrix((values, (variant_ids, haplotype_ids)),
-                                       shape=(n_variants, n_haplotypes))
+                                       shape=(n_variants, n_haplotypes),
+                                       dtype=np.uint8)
         return cls(data)
 
     def get_haplotype(self, haplotype_id):
@@ -181,6 +183,7 @@ class SparseHaplotypeMatrix:
             variant_ids, haplotypes = np.where(genotypes > 0)
             haplotype_values = genotypes[variant_ids, haplotypes].ravel().astype(np.uint8)
 
+            print(haplotype_values)
             submatrix = cls.from_variants_and_haplotypes(
                 variant_ids,
                 haplotypes,
@@ -188,10 +191,12 @@ class SparseHaplotypeMatrix:
                 n_haplotypes=n_haplotypes,
                 values=haplotype_values)
             matrix.extend(submatrix)
+            logging.info(f"{len(chunk)*len(genotypes)} values, {np.sum(haplotype_values != 0)} nonzero. Size sparse matrix: {submatrix.data.data.nbytes / 1000000000} GB")
 
             if convert_multiallelic_to_biallelic:
                 n_alleles_per_variant = np.sum(chunk.alt_seq == ",", axis=1) + 1
                 matrix.to_biallelic(n_alleles_per_variant)
+            log_memory_usage_now("After chunk %d" % i)
 
         return matrix
 
