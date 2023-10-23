@@ -426,7 +426,7 @@ class MultiAllelicVariant(BiallelicVariant):
         new_alleles = [allele_mapping[self.alt_sequences[allele - 1]] + 1 if allele != 0 and allele != missing_allele_encoding
          else allele for allele in self.genotype]
         new_alleles = sorted(map(str, new_alleles))  # string sorting
-        new_alleles = map(int, new_alleles)
+        new_alleles = list(map(int, new_alleles))
 
         self.alt_sequences = new_alt_sequences
         self.genotype = new_alleles

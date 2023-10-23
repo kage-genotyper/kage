@@ -140,7 +140,7 @@ class Variants:
         This only makes sense when overlapping variants have been padded first so that they are perfectly
         overlapping.
 
-        Also returns a BiallelicToMultiallelicIndex object that maps variant id + allele to new variant IDs and alleles.
+        Also returns a VariantAlleleToNodeMap object that maps variant id + allele to new variant IDs and alleles.
         """
         sequences = []
         prev_pos = -1
@@ -180,9 +180,22 @@ class Variants:
 
         n_alleles_per_variant = [len(s) for s in sequences]
 
+        log_memory_usage_now("Before creating MultiAllelicVariantSequences object from list")
         return MultiAllelicVariantSequences.from_list(sequences), \
             VariantAlleleToNodeMap.from_n_alleles_per_variant(n_alleles_per_variant), \
             Interval.from_entry_tuples(intervals)
+
+    def group_by_chromosome(self):
+        """
+        Returns an Iterable of Variants-objects by chromosomes. Assumes this variant object is sorted by chromosome
+        """
+        # Todo: The tolist approach might be slow/memory intensive
+        chromosomes = np.array(self.chromosome.tolist())
+        splits = np.where(chromosomes[1:] != chromosomes[:-1])[0] + 1
+        splits = np.insert(splits, 0, 0)
+        splits = np.append(splits, len(chromosomes))
+        for start, end in zip(splits[:-1], splits[1:]):
+            yield self[start:end]
 
 
 @dataclass
@@ -214,10 +227,12 @@ class VariantAlleleToNodeMap:
 
     def get_variant_to_nodes(self):
         return VariantToNodes(self.biallelic_ref_nodes, self.biallelic_alt_nodes)
+
     def n_alleles_per_variant(self):
         return self.node_ids.shape[1]
     def haplotypes_to_node_ids(self, haplotypes):
         return self.node_ids[np.arange(len(self.node_ids)), haplotypes]
+
     @property
     def n_alleles_per_variant(self):
         return self.node_ids.shape[1]
@@ -543,7 +558,7 @@ class VariantStream:
 class FilteredVariantStream(VariantStream):
     """Subclass of VariantStream with a mask of what to keep.
     Will only give entries that are to be kept according to mask"""
-    def __init__(self, stream: VariantStream, to_keep: np.ndarray):
+    def __init__(self, stream: NpDataclassStream, to_keep: np.ndarray):
         self._stream = stream
         self._to_keep = to_keep
 
@@ -566,6 +581,7 @@ class FilteredVariantStream(VariantStream):
 
         to_keep = np.concatenate(to_keep)
         logging.info(f"{np.sum(~to_keep)} snps/indels inside SVs filtered out")
+        logging.info(f"{np.sum(to_keep)} variants kept")
         return cls(VariantStream.from_vcf(vcf_file_name, buffer_type=buffer_type, min_chunk_size=min_chunk_size).raw(), to_keep)
 
 
@@ -632,4 +648,25 @@ class FilteredOnMaxAllelesVariantStream2(VariantStream):
 
             logging.info("Filtering away %d variants because more than %d alleles" % (np.sum(filter), self._max_alleles))
             yield chunk[~filter]
+
+
+def filter_variants_with_more_alleles_than(biallelic_padded_variants: Variants, original_vcf_variants, n_alleles_per_original_variant, max_alleles: int):
+
+    filters = []
+    for chromosome_chunk in biallelic_padded_variants.group_by_chromosome():
+        start_positions = chromosome_chunk.position
+        n_overlapping = np.bincount(start_positions)
+
+        filter = n_overlapping[start_positions] > max_alleles
+        filters.append(filter)
+
+    filter = np.concatenate(filters)
+    logging.info(f"{np.sum(filter)} variants overlap so that they end up with more than {max_alleles} alleles. These will be ignored")
+
+    # Find out which original vcf variants these filtered correspond to
+    mask = nps.RaggedArray(filter, n_alleles_per_original_variant-1)
+    filter_original = np.any(mask, axis=1)
+
+    return biallelic_padded_variants[~filter], original_vcf_variants[~filter_original], n_alleles_per_original_variant[~filter_original], filter_original
+
 

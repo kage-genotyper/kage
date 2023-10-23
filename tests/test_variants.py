@@ -3,8 +3,9 @@ logging.basicConfig(level=logging.INFO)
 import pytest
 import numpy as np
 import bionumpy as bnp
-from kage.preprocessing.variants import Variants, SimpleVcfEntry, VariantStream, FilteredOnMaxAllelesVariantStream2
-
+from kage.preprocessing.variants import Variants, SimpleVcfEntry, VariantStream, FilteredOnMaxAllelesVariantStream2, \
+    VariantAlleleToNodeMap, filter_variants_with_more_alleles_than
+import npstructures as nps
 
 def test_variants_from_multialellic_vcf():
     vcf = bnp.open("multiallelic.vcf").read()
@@ -90,3 +91,35 @@ def test_variant_filter_max_alleles():
     for chunk in filtered_stream.read_chunks():
         print(chunk)
         assert len(chunk) == 2
+
+
+def test_find_variants_with_more_alleles_than():
+    biallelic_variants = Variants.from_entry_tuples(
+        [
+            ("chr1", 4, "A", "T"),
+            ("chr1", 6, "ATG", "T"),
+            ("chr1", 6, "ATG", "G"),
+            ("chr1", 6, "ATG", "C"),
+            ("chr2", 8, "A", "C"),
+            ("chr2", 8, "A", "G"),
+        ]
+    )
+    original_variants = Variants.from_entry_tuples(
+        [
+            ("chr1", 4, "A", "T"),
+            ("chr1", 6, "ATG", "T,G,C"),
+            ("chr2", 8, "A", "C,G"),
+        ]
+    )
+    n_alleles_per_original_variant = np.array([2, 4, 3])
+
+    new_biallelic, new_original, new_n_alleles, filter = filter_variants_with_more_alleles_than(biallelic_variants, original_variants,
+                                                    n_alleles_per_original_variant, 2)
+
+    assert np.all(filter == [False, True, False])
+    assert len(new_original) == 2
+    assert len(new_biallelic) == 3
+    assert np.all(new_n_alleles == [2, 3])
+
+    print(filter)
+

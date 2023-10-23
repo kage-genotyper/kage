@@ -20,7 +20,7 @@ from kage.models.mapping_model import convert_model_to_sparse
 from kage.util import log_memory_usage_now
 import bionumpy as bnp
 from ..preprocessing.variants import get_padded_variants_from_vcf, VariantStream, FilteredVariantStream, \
-    FilteredOnMaxAllelesVariantStream, FilteredOnMaxAllelesVariantStream2
+    FilteredOnMaxAllelesVariantStream, FilteredOnMaxAllelesVariantStream2, filter_variants_with_more_alleles_than
 from kage.models.helper_model import make_helper_model_from_genotype_matrix
 from multiprocessing import Process
 
@@ -40,17 +40,41 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     variant_stream = FilteredVariantStream.from_vcf_with_snps_indels_inside_svs_removed(vcf_file_name,
                                                                                         min_chunk_size=500000000,
                                                                                         sv_size_limit=50)
-    variant_stream = FilteredOnMaxAllelesVariantStream2(variant_stream, max_alleles=2**variant_window-2)
+    #variant_stream = FilteredOnMaxAllelesVariantStream2(variant_stream, max_alleles=2**variant_window-2)
+    # convert variants to biallelic variants, keep track of how many alleles original variants had
     variants, vcf_variants, n_alleles_per_original_variant = get_padded_variants_from_vcf(variant_stream,
                                                                                           reference_file_name,
                                                                                           True,
                                                                                           remove_indel_padding=False)
+
+    n_orig_variants_before_filtering = len(vcf_variants)
+    print("N orig variants: ", n_orig_variants_before_filtering)
+    # find variants with more alleles (use "variants" which are padded biallelic and look for variants starting
+    # at same position).
+    # filter away variants with too many alleles and filte vcf_variants and n_alleles_per_original_variant accordingly
+    # Keep a filter of what has been filtered and use that filter later when getting haplotype matrix
+    #filter_on_max_alleles = n_alleles_per_original_variant >= 2**variant_window-2
+    variants, vcf_variants, n_alleles_per_original_variant, filter = filter_variants_with_more_alleles_than(variants,
+                                                                                                            vcf_variants,
+                                                                                                            n_alleles_per_original_variant,
+                                                                                                            2**variant_window-2)
+    assert len(filter) == n_orig_variants_before_filtering
+    print("Filter", filter, len(filter))
+
+    """
+    variants = variants[~filter_on_max_alleles]
+    vcf_variants = vcf_variants[~filter_on_max_alleles]
+    n_alleles_per_original_variant = n_alleles_per_original_variant[~filter_on_max_alleles]
+    logging.info(f"{np.sum(filter_on_max_alleles)} variants have more alleles than window size allow. Will ignore these")
+    """
+
     log_memory_usage_now("After getting variants")
     assert len(variants) == np.sum(n_alleles_per_original_variant-1), f"{len(variants)} != {np.sum(n_alleles_per_original_variant-1)}"
     assert len(vcf_variants) == len(n_alleles_per_original_variant), f"{len(vcf_variants)} != {len(n_alleles_per_original_variant)}"
 
     logging.info("N biallelic variants: %d" % len(variants))
     logging.info("N original variants: %d" % len(vcf_variants))
+    logging.info("Max alleles on original variant: %d" % np.max(n_alleles_per_original_variant))
 
     graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
     log_memory_usage_now("Made graph")
@@ -78,7 +102,8 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
                                                                                         sv_size_limit=50
                                                                                         )
     log_memory_usage_now("Variant stream 1 done")
-    variant_stream = FilteredOnMaxAllelesVariantStream2(variant_stream, max_alleles=2**variant_window-2)
+    variant_stream = FilteredVariantStream(variant_stream.read_chunks(), ~filter)
+    #variant_stream = FilteredOnMaxAllelesVariantStream2(variant_stream, max_alleles=2**variant_window-2)
     log_memory_usage_now("Done variant stream")
 
     haplotype_matrix_original_vcf = SparseHaplotypeMatrix.from_vcf(variant_stream)

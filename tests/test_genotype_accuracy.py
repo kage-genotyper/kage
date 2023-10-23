@@ -119,11 +119,11 @@ def test_multiallelic_variant():
 
     other = MultiAllelicVariant("chr1", 10, "A", ["C", "G"], (127, 1))
     other.normalize_using_reference_variant(ref)
-    assert other.genotype == [2, 127]
+    assert other.genotype == [127, 2]  # missing is first when string sorting
 
     other = MultiAllelicVariant("chr1", 10, "A", ["C", "G"], (127, 2))
     other.normalize_using_reference_variant(ref)
-    assert other.genotype == [3, 127]
+    assert other.genotype == [127, 3]
 
     ref = MultiAllelicVariant("chr2", 4, "A", ["ACTACTACACT", "AAAA", "T"], (0, 0))
     other = MultiAllelicVariant("chr2", 4, "A", ["T"], (1, 0))
