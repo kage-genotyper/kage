@@ -1,4 +1,5 @@
 import logging
+logging.basicConfig(level=logging.INFO)
 import time
 
 from obgraph.numpy_variants import NumpyVariants

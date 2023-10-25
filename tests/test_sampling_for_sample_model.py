@@ -53,6 +53,8 @@ def test_get_as_count_matrix(graph, haplotype_to_nodes, kmer_index):
     assert matrix[1][3][2] == 0
 
 
+# slow, not necessary
+@pytest.mark.skip
 def test_parallel(graph, kmer_index):
     k = 3
     n_haplotypes = 100

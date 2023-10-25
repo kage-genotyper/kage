@@ -8,7 +8,6 @@ from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 from kage.preprocessing.variants import Variants
 import tqdm
 
-logging.basicConfig(level=logging.INFO)
 from typing import Dict, List, Tuple, Optional, Literal, Union
 
 import bionumpy as bnp
