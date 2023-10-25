@@ -584,3 +584,24 @@ class IndexedGenotypes3(IndexedGenotypes2):
     def __len__(self):
         return len(self._variants)
 
+
+
+
+def genotype_accuracy_cli(args):
+    """
+    Simple cli for genotype accuracy when truth vcf and sample are biallelic and have the exact same variants.
+    Sample can miss variants, they will be assumed to be 0/0
+    """
+    logging.info("Reading truth")
+    truth = IndexedGenotypes2.from_biallelic_vcf(args.truth)
+    logging.info("Reading sample")
+    sample = IndexedGenotypes2.from_biallelic_vcf(args.genotypes)
+
+    accuracy = GenotypeAccuracy(truth, sample, limit_to=args.limit_type_to)
+    recall = accuracy.recall()
+    precision = accuracy.precision()
+    f1_score = accuracy.f1()
+    weighted_genotype_concordance = accuracy.weighted_concordance
+    weighted_genotype_concordance_pangenie_definition = accuracy.weighted_concordance_pangenie_definition
+
+    print(f"Recall: {recall}, One minus precision: {1 - precision}, F1 score: {f1_score}, Weighted concordance: {weighted_genotype_concordance}. Weighted concordance pangenie definition: {weighted_genotype_concordance_pangenie_definition}")

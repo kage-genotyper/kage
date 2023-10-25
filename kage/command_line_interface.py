@@ -36,6 +36,8 @@ import gc
 from .analysis.debugging import debug_cli
 from kage.io import create_vcf_header_with_sample_name, write_multiallelic_vcf_with_biallelic_numeric_genotypes
 from kage.benchmarking.vcf_preprocessing import preprocess_sv_vcf, get_cn0_ref_alt_sequences_from_vcf, filter_snps_indels_covered_by_svs_cli
+from kage.analysis.genotype_accuracy import genotype_accuracy_cli
+
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -447,6 +449,14 @@ def run_argument_parser(args):
     subparser.add_argument("-r", "--report", required=True)
     subparser.add_argument("-n", "--node-counts", required=True)
     subparser.set_defaults(func=debug_cli)
+
+
+    subparser = subparsers.add_parser("genotype_accuracy")
+    subparser.add_argument("-t", "--truth", required=True)
+    subparser.add_argument("-g", "--genotypes", required=True)
+    subparser.add_argument("-v", "--limit-type-to", required=False, default="all")
+    subparser.set_defaults(func=genotype_accuracy_cli)
+
 
     #subparser = subparsers.add_parser("pad_vcf")
     #subparser.add_argument("-v", "--vcf-file-name", required=True)

@@ -91,7 +91,8 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     variant_stream = FilteredVariantStream.from_vcf_with_snps_indels_inside_svs_removed(vcf_file_name,
                                                                                         buffer_type=bnp.io.vcf_buffers.PhasedHaplotypeVCFMatrixBuffer,
                                                                                         min_chunk_size=100000000,
-                                                                                        sv_size_limit=50
+                                                                                        sv_size_limit=50,
+                                                                                        filter_using_other_vcf=vcf_no_genotypes
                                                                                         )
     log_memory_usage_now("Variant stream 1 done")
     variant_stream = FilteredVariantStream(variant_stream.read_chunks(), ~filter)
