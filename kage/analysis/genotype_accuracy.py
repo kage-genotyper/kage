@@ -222,10 +222,13 @@ class GenotypeAccuracy:
             "false_positive": 0,
             "false_negative": 0,
             "hetero": 0,
+            "hetero_without_truth_missing": 0,
             "hetero_correct": 0,
             "homo_ref": 0,
+            "homo_ref_without_truth_missing": 0,
             "homo_ref_correct": 0,
             "homo_alt": 0,
+            "homo_alt_without_truth_missing": 0,
             "homo_alt_correct": 0,
             "missing": 0,
             "missing_correct": 0
@@ -259,14 +262,20 @@ class GenotypeAccuracy:
                     self._confusion_matrix["missing_correct"] += 1
             elif t == "0/0":
                 self._confusion_matrix["homo_ref"] += 1
+                if not "." in g:
+                    self._confusion_matrix["homo_ref_without_truth_missing"] += 1
                 if g == "0/0":
                     self._confusion_matrix["homo_ref_correct"] += 1
             elif t.startswith("0/"):
                 self._confusion_matrix["hetero"] += 1
+                if not "." in g:
+                    self._confusion_matrix["hetero_without_truth_missing"] += 1
                 if g == t:
                     self._confusion_matrix["hetero_correct"] += 1
             else:
                 self._confusion_matrix["homo_alt"] += 1
+                if not "." in g:
+                    self._confusion_matrix["homo_alt_without_truth_missing"] += 1
                 if g == t:
                     self._confusion_matrix["homo_alt_correct"] += 1
 
@@ -324,16 +333,34 @@ class GenotypeAccuracy:
         return self._confusion_matrix["hetero_correct"] / self._confusion_matrix["hetero"] if self._confusion_matrix["hetero"] > 0 else 0
 
     @property
+    def concordance_hetero_pangenie_definition(self):
+        return self._confusion_matrix["hetero_correct"] / self._confusion_matrix["hetero_without_truth_missing"] if self._confusion_matrix["hetero_without_truth_missing"] > 0 else 0
+
+    @property
     def concordance_homo_ref(self):
         return self._confusion_matrix["homo_ref_correct"] / self._confusion_matrix["homo_ref"] if self._confusion_matrix["homo_ref"] > 0 else 0
+
+    @property
+    def concordance_homo_ref_pangenie_definition(self):
+        return self._confusion_matrix["homo_ref_correct"] / self._confusion_matrix["homo_ref_without_truth_missing"] if self._confusion_matrix["homo_ref_without_truth_missing"] > 0 else 0
 
     @property
     def concordance_homo_alt(self):
         return self._confusion_matrix["homo_alt_correct"] / self._confusion_matrix["homo_alt"] if self._confusion_matrix["homo_alt"] > 0 else 0
 
     @property
+    def concordance_homo_alt_pangenie_definition(self):
+        return self._confusion_matrix["homo_alt_correct"] / self._confusion_matrix["homo_alt_without_truth_missing"] if \
+            self._confusion_matrix["homo_alt_without_truth_missing"] > 0 else 0
+
+    @property
     def weighted_concordance(self):
         return (self.concordance_hetero + self.concordance_homo_alt + self.concordance_homo_ref) / 3
+
+    @property
+    def weighted_concordance_pangenie_definition(self):
+        return (self.concordance_hetero_pangenie_definition + self.concordance_homo_alt_pangenie_definition
+                + self.concordance_homo_ref_pangenie_definition) / 3
 
     @property
     def false_negative(self):

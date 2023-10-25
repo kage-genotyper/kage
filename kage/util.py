@@ -17,8 +17,9 @@ def log_memory_usage_now(logplace=""):
 def vcf_pl_and_gl_header_lines():
     return ['##FILTER=<ID=LowQUAL,Description="Quality is low">',
      '##FORMAT=<ID=PL,Number=G,Type=Integer,Description="PHRED-scaled genotype likelihoods.">',
-     '##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype likelihoods.">'
-     ]
+     '##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype likelihoods.">',
+     '##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality: phred scaled probability that the genotype is wrong.">'
+    ]
 
 
 def convert_string_genotypes_to_numeric_array(genotypes):

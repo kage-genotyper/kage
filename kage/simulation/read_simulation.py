@@ -19,7 +19,8 @@ def get_haplotype_genomes(individual_vcf, reference_fasta):
                                                                                           remove_indel_padding=False)
     graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
 
-    haplotype_matrix_original_vcf = SparseHaplotypeMatrix.from_vcf(individual_vcf)
+    logging.info("Max n_alleles: %d" % np.max(n_alleles_per_original_variant))
+    haplotype_matrix_original_vcf = SparseHaplotypeMatrix.from_vcf(individual_vcf, dtype=np.uint16)
     biallelic_haplotype_matrix = haplotype_matrix_original_vcf.to_biallelic(n_alleles_per_original_variant)
     n_alleles_per_variant = node_mapping.n_alleles_per_variant
     haplotype_matrix = biallelic_haplotype_matrix.to_multiallelic(n_alleles_per_variant)

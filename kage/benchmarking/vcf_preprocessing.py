@@ -9,6 +9,7 @@ import bionumpy as bnp
 import typing as tp
 import numpy as np
 import re
+from ..io import CustomVCFBuffer, VcfEntryWithSingleIndividualGenotypes, VcfWithSingleIndividualBuffer
 
 
 def find_end_in_info_string(info_string: str) -> int:
@@ -109,7 +110,7 @@ def preprocess_sv_vcf(vcf_file_name, reference_file_name):
     # print(reference)
 
     # first read vcf and find what to keep and new ref/alt sequences
-    vcf = bnp.open(vcf_file_name)
+    vcf = bnp.open(vcf_file_name, buffer_type=VcfWithSingleIndividualBuffer)
     for chunk in vcf.read_chunks(min_chunk_size=200000000):
         mask, cn0 = _get_sv_mask_and_cn0_mask(chunk)
         to_keep.append(mask)

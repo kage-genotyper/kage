@@ -551,6 +551,8 @@ class FilteredVariantStream(VariantStream):
     def _read_chunks(self):
         prev = 0
         for chunk in self._stream:
+            logging.info(f"{len(chunk)}, {prev}, {prev+len(chunk)}")
+            assert prev + len(chunk) <= len(self._to_keep)
             yield chunk[self._to_keep[prev:prev+len(chunk)]]
             prev += len(chunk)
 
@@ -559,9 +561,11 @@ class FilteredVariantStream(VariantStream):
     @classmethod
     def from_vcf_with_snps_indels_inside_svs_removed(cls, vcf_file_name, sv_size_limit=50,
                                                      buffer_type=bnp.io.vcf_buffers.VCFBuffer,
-                                                     min_chunk_size=10000000):
+                                                     min_chunk_size=10000000,
+                                                     filter_using_other_vcf=None):
         to_keep = []
-        stream = VariantStream.from_vcf(vcf_file_name, buffer_type=CustomVCFBuffer)  # only need some simple VCFBuffer for filtering
+        vcf = filter_using_other_vcf if filter_using_other_vcf is not None else vcf_file_name
+        stream = VariantStream.from_vcf(vcf, buffer_type=CustomVCFBuffer)  # only need some simple VCFBuffer for filtering
         #for chromosome, chunk in stream.read_by_chromosome():
         for chunk in stream.read_chunks():
             to_keep.append(~find_snps_indels_covered_by_svs(chunk, sv_size_limit=sv_size_limit, allow_approx=True))

@@ -71,7 +71,13 @@ class SparseHaplotypeMatrix:
         row_indexes, allele_indexes = make_row_indexes(n_alt_alleles_per_variant)
         allele_indexes_matrix = np.tile(allele_indexes, (self.n_haplotypes, 1)).T
         new_matrix = matrix[row_indexes, :]
-        new_matrix = (new_matrix == allele_indexes_matrix).astype(np.uint8)
+        new_matrix = (new_matrix == allele_indexes_matrix)
+        if self.data.dtype == np.uint8:
+            assert np.all(new_matrix) < 256
+        elif self.data.dtype == np.uint16:
+            assert np.all(new_matrix) < 10000
+        new_matrix = new_matrix.astype(self.data.dtype)
+
 
         @numba.jit(nopython=True)
         def fill_missing(multiallelic_matrix, biallelic_matrix, n_alleles_per_variant, missing_data_encoding):
@@ -106,7 +112,6 @@ class SparseHaplotypeMatrix:
     @classmethod
     def from_nonsparse_matrix(cls, matrix):
         matrix = np.asarray(matrix)
-        assert np.all(matrix <= 128), "Too high values"
         assert np.all(matrix >= 0), "Values below 0"
         return cls(scipy.sparse.csc_matrix(matrix))
 
@@ -114,20 +119,20 @@ class SparseHaplotypeMatrix:
         return self.data.toarray()
 
     @classmethod
-    def from_variants_and_haplotypes(cls, variant_ids, haplotype_ids, n_variants, n_haplotypes, values=None):
+    def from_variants_and_haplotypes(cls, variant_ids, haplotype_ids, n_variants, n_haplotypes, values=None, dtype=np.uint8):
         """
         variant_ids: np.array of variant ids
         haplotype_ids: np.array of haplotype ids (which haplotypes have the variant allele)
         values: If None, will be filled with ones
         """
         if values is None:
-            values = np.ones(len(variant_ids), dtype=np.uint8)
+            values = np.ones(len(variant_ids), dtype=dtype)
         else:
-            values = values.astype(np.uint8)
+            values = values.astype(dtype)
             assert len(values) == len(variant_ids)
         data = scipy.sparse.csc_matrix((values, (variant_ids, haplotype_ids)),
                                        shape=(n_variants, n_haplotypes),
-                                       dtype=np.uint8)
+                                       dtype=dtype)
         return cls(data)
 
     def get_haplotype(self, haplotype_id):
@@ -165,7 +170,7 @@ class SparseHaplotypeMatrix:
 
 
     @classmethod
-    def from_vcf2(cls, vcf_file_name, convert_multiallelic_to_biallelic=False) -> 'SparseHaplotypeMatrix':
+    def from_vcf2(cls, vcf_file_name, convert_multiallelic_to_biallelic=False, dtype=np.uint8) -> 'SparseHaplotypeMatrix':
         # Uses haplotypeencoding
         if isinstance(vcf_file_name, str):
             variants = bnp.open(vcf_file_name, buffer_type=bnp.io.vcf_buffers.PhasedHaplotypeVCFMatrixBuffer).read_chunks(min_chunk_size=500000000)
@@ -181,7 +186,7 @@ class SparseHaplotypeMatrix:
             genotypes = chunk.genotypes.raw()
             n_haplotypes = genotypes.shape[1]
             variant_ids, haplotypes = np.where(genotypes > 0)
-            haplotype_values = genotypes[variant_ids, haplotypes].ravel().astype(np.uint8)
+            haplotype_values = genotypes[variant_ids, haplotypes].ravel().astype(dtype)
 
             print(haplotype_values)
             submatrix = cls.from_variants_and_haplotypes(
@@ -201,8 +206,8 @@ class SparseHaplotypeMatrix:
         return matrix
 
     @classmethod
-    def from_vcf(cls, vcf_file_name) -> 'SparseHaplotypeMatrix':
-        return cls.from_vcf2(vcf_file_name)
+    def from_vcf(cls, vcf_file_name, dtype=np.uint8) -> 'SparseHaplotypeMatrix':
+        return cls.from_vcf2(vcf_file_name, dtype=dtype)
 
 
 @dataclass

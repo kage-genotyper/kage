@@ -4,6 +4,7 @@ from typing import Optional
 
 import bionumpy as bnp
 import numpy as np
+import scipy
 from bionumpy.bnpdataclass import bnpdataclass
 import npstructures as nps
 from shared_memory_wrapper import to_file, from_file
@@ -115,20 +116,30 @@ def write_vcf(variants: SimpleVcfEntry, string_genotypes: bnp.EncodedRaggedArray
         genotype_likelihoods[genotype_likelihoods < -60] = -60
         genotype_likelihoods[genotype_likelihoods == 0] = -0.0001
         gl_strings = (",".join(str(p) if p != 0 else "-0.01" for p in genotype_likelihoods[i]) for i in range(len(variants)))
-        genotypes = [f"{genotype}:{gl}" for genotype, gl in zip(genotypes, gl_strings)]
-        format = ["GT:GL" for i in range(len(variants))]
+        format = ["GT:GL:GQ" for i in range(len(variants))]
+
+        # genotype quality (probability that the call is incorrect)
+        genotype_likelihoods_matrix = np.array(genotype_likelihoods)
+        #genotype_qualities = (np.max(genotype_likelihoods_matrix, axis=1) - scipy.special.logsumexp(genotype_likelihoods_matrix, axis=1))
+        sorted_gls = np.sort(genotype_likelihoods_matrix, axis=1)
+        genotype_qualities = -scipy.special.logsumexp(sorted_gls[:, 0:2], axis=1).astype(int)  # sum of prob of two other genotypes
+        #genotype_qualities = -(np.max(genotype_likelihoods_matrix, axis=1) - scipy.special.logsumexp(genotype_likelihoods_matrix, axis=1))
+        logging.info("GEnotype likelihoods")
+        logging.info(genotype_qualities)
+
+        genotypes = [f"{genotype}:{gl}:{gq}" for genotype, gl, gq in zip(genotypes, gl_strings, map(str, genotype_qualities))]
 
     entry = VcfEntryWithSingleIndividualGenotypes(
         variants.chromosome,
         variants.position,
-        ["variant" + str(i) for i in range(len(variants))],
+        bnp.as_encoded_array(["variant" + str(i) for i in range(len(variants))]),
         variants.ref_seq,
         variants.alt_seq,
-        ["." for i in range(len(variants))],
-        ["." for i in range(len(variants))],
-        ["." for i in range(len(variants))],
-        format,
-        genotypes
+        bnp.as_encoded_array(["." for i in range(len(variants))]),
+        bnp.as_encoded_array(["." for i in range(len(variants))]),
+        bnp.as_encoded_array(["." for i in range(len(variants))]),
+        bnp.as_encoded_array(format),
+        bnp.as_encoded_array(genotypes)
     )
 
     if ignore_homo_ref:
