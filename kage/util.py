@@ -48,8 +48,9 @@ def _write_genotype_debug_data(genotypes, numpy_genotypes, out_name, variant_to_
 
 
 def zip_sequences(a: bnp.EncodedRaggedArray, b: bnp.EncodedRaggedArray):
-    """Utility function for merging encoded ragged arrays ("zipping" rows)"""
-    assert len(a) == len(b)+1
+    """Utility function for merging encoded ragged arrays ("zipping" rows).
+    a and b should either be equal size or a can be 1 element longer than b (then first and last element will be from a)"""
+    assert len(a) == len(b)+1 or len(a) == len(b)
 
     row_lengths = np.zeros(len(a)+len(b))
     row_lengths[0::2] = a.shape[1]
@@ -61,7 +62,10 @@ def zip_sequences(a: bnp.EncodedRaggedArray, b: bnp.EncodedRaggedArray):
         bnp.EncodedArray(np.zeros(int(np.sum(row_lengths)), dtype=np.uint8), bnp.DNAEncoding),
         row_lengths)
     new[0::2] = a
-    new[1:-1:2] = b
+    if len(a) == len(b) + 1:
+        new[1:-1:2] = b
+    else:
+        new[1::2] = b
     return new
 
 

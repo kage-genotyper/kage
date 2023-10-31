@@ -187,6 +187,9 @@ def run_argument_parser(args):
                         read_length=args.read_length,
                        snp_error_rate=args.snp_error_rate,
                        random_seed=args.random_seed,
+                       paired_end=args.paired_end,
+                       paired_end_insert_size=args.paired_end_insert_size,
+                       paired_end_insert_sd=args.paired_end_insert_sd,
                        )
 
     subparser = subparsers.add_parser("simulate_reads")
@@ -197,6 +200,9 @@ def run_argument_parser(args):
     subparser.add_argument("-s", "--random-seed", type=int, required=False, default=1)
     subparser.add_argument("-e", "--snp-error-rate", type=float, required=False, default=0.001)
     subparser.add_argument("-l", "--read-length", type=int, required=False, default=150)
+    subparser.add_argument("-p", "--paired-end", type=bool, required=False, default=False)
+    subparser.add_argument("-i", "--paired-end-insert-size", type=int, required=False, default=500)
+    subparser.add_argument("-d", "--paired-end-insert-sd", type=int, required=False, default=50)
     subparser.set_defaults(func=simulate_reads_cli)
 
     def preprocess_sv_vcf_cli(args):
