@@ -9,20 +9,22 @@ from kage.util import zip_sequences
 
 from ..indexing.graph import make_multiallelic_graph
 from ..indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
-from ..preprocessing.variants import get_padded_variants_from_vcf
+from ..preprocessing.variants import get_padded_variants_from_vcf, VariantStreamWithoutVariantsWithSymbolicAlleles
 
 
 def get_haplotype_genomes(individual_vcf, reference_fasta):
     """Yields two GenomicSequences object (one for each haplotype) containing the sequences of the haplotypes."""
     reference_sequences = bnp.open(reference_fasta).read()
-    variants, vcf_variants, n_alleles_per_original_variant = get_padded_variants_from_vcf(individual_vcf,
+    variant_stream = VariantStreamWithoutVariantsWithSymbolicAlleles.from_vcf(individual_vcf)
+    variants, vcf_variants, n_alleles_per_original_variant = get_padded_variants_from_vcf(variant_stream,
                                                                                           reference_fasta,
                                                                                           True,
                                                                                           remove_indel_padding=False)
     graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
 
     logging.info("Max n_alleles: %d" % np.max(n_alleles_per_original_variant))
-    haplotype_matrix_original_vcf = SparseHaplotypeMatrix.from_vcf(individual_vcf, dtype=np.uint16)
+    variant_stream = VariantStreamWithoutVariantsWithSymbolicAlleles.from_vcf(individual_vcf, buffer_type=bnp.io.vcf_buffers.PhasedHaplotypeVCFMatrixBuffer)
+    haplotype_matrix_original_vcf = SparseHaplotypeMatrix.from_vcf(variant_stream, dtype=np.uint16)
     biallelic_haplotype_matrix = haplotype_matrix_original_vcf.to_biallelic(n_alleles_per_original_variant)
     n_alleles_per_variant = node_mapping.n_alleles_per_variant
     haplotype_matrix = biallelic_haplotype_matrix.to_multiallelic(n_alleles_per_variant)
@@ -30,8 +32,9 @@ def get_haplotype_genomes(individual_vcf, reference_fasta):
     haplotype0 = haplotype_matrix.get_haplotype(0)
     haplotype1 = haplotype_matrix.get_haplotype(1)
 
-    sequence1 = graph.sequence(haplotype0).ravel()
-    sequence2 = graph.sequence(haplotype1).ravel()
+    # Use ACGTn-encoding because some variants may have N in them and we want to support that
+    sequence1 = graph.sequence(haplotype0, encoding=bnp.encodings.ACGTnEncoding).ravel()
+    sequence2 = graph.sequence(haplotype1, encoding=bnp.encodings.ACGTnEncoding).ravel()
 
     return sequence1, sequence2
 
@@ -109,7 +112,7 @@ def simulate_reads(individual_vcf: str, reference_fasta: str, out_file_name: str
                                                                                 snp_error_rate, rng,
                                                                                 paired_end_insert_size,
                                                                                 paired_end_insert_sd)
-                    reads = zip_sequences(reads1, reads2)
+                    reads = zip_sequences(reads1, reads2, encoding=bnp.encodings.ACGTnEncoding)
                     names = bnp.as_encoded_array(
                         list(itertools.chain.from_iterable(zip(
                             [f"{sequence_name_prefix}{i} 1" for i in range(n_simulated, n_simulated + len(reads1))],

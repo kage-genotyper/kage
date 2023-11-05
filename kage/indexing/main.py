@@ -1,7 +1,8 @@
 import logging
 logging.basicConfig(level=logging.INFO)
 import time
-
+import npstructures as nps
+from dataclasses import dataclass
 from obgraph.numpy_variants import NumpyVariants
 import numpy as np
 from kage.indexing.index_bundle import IndexBundle
@@ -40,16 +41,21 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     # n_alleles_per_variant lets us convert genotypes on variants (which are biallelic) to multiallelic where necessary
     if vcf_no_genotypes is None:
         vcf_no_genotypes = vcf_file_name
-    variant_stream = FilteredVariantStream.from_vcf_with_snps_indels_inside_svs_removed(vcf_no_genotypes,
-                                                                                        min_chunk_size=500000000,
+    variant_stream = FilteredVariantStream.from_vcf_with_snps_indels_inside_svs_removed(vcf_file_name,
+                                                                                        min_chunk_size=500_000_000,
                                                                                         sv_size_limit=50,
-                                                                                        buffer_type=CustomVCFBuffer)
+                                                                                        buffer_type=CustomVCFBuffer,
+                                                                                        filter_using_other_vcf=vcf_no_genotypes)
+    #variant_stream = VariantStream.from_vcf(vcf_file_name, buffer_type=CustomVCFBuffer, min_chunk_size=500_000_000)
     #variant_stream = FilteredOnMaxAllelesVariantStream2(variant_stream, max_alleles=2**variant_window-2)
     # convert variants to biallelic variants, keep track of how many alleles original variants had
     variants, vcf_variants, n_alleles_per_original_variant = get_padded_variants_from_vcf(variant_stream,
                                                                                           reference_file_name,
                                                                                           True,
                                                                                           remove_indel_padding=False)
+
+    for variant in variants[0:20]:
+        print(variant.position, variant.ref_seq.to_string(), variant.alt_seq.to_string())
 
     n_orig_variants_before_filtering = len(vcf_variants)
     print("N orig variants: ", n_orig_variants_before_filtering)
@@ -91,10 +97,11 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     #variant_stream = VariantStream.from_vcf(vcf_file_name, buffer_type=bnp.io.vcf_buffers.PhasedHaplotypeVCFMatrixBuffer, min_chunk_size=500000000)
     variant_stream = FilteredVariantStream.from_vcf_with_snps_indels_inside_svs_removed(vcf_file_name,
                                                                                         buffer_type=bnp.io.vcf_buffers.PhasedHaplotypeVCFMatrixBuffer,
-                                                                                        min_chunk_size=100000000,
+                                                                                        min_chunk_size=500_000_000,
                                                                                         sv_size_limit=50,
                                                                                         filter_using_other_vcf=vcf_no_genotypes
                                                                                         )
+    #variant_stream = VariantStream.from_vcf(vcf_file_name, buffer_type=bnp.io.vcf_buffers.PhasedHaplotypeVCFMatrixBuffer, min_chunk_size=500_000_000)
     log_memory_usage_now("Variant stream 1 done")
     variant_stream = FilteredVariantStream(variant_stream.read_chunks(), ~filter)
     #variant_stream = FilteredOnMaxAllelesVariantStream2(variant_stream, max_alleles=2**variant_window-2)
@@ -139,7 +146,7 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     signatures_chunk_size = 2000
     if len(variants) > 1000000:
         signatures_chunk_size = 4000
-    signatures = get_signatures(k, paths, scorer, chunk_size=signatures_chunk_size, spacing=k//2)
+    signatures = get_signatures(k, paths, scorer, chunk_size=signatures_chunk_size, spacing=0)   #k//2)
 
     kmer_index = signatures.get_as_kmer_index(node_mapping=node_mapping, modulo=modulo, k=k)
 
@@ -160,9 +167,18 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     #tricky_variants = find_tricky_variants_with_count_model(signatures, count_model)
     logging.info("Finding tricky variants")
     log_memory_usage_now("Finding tricky variants")
-    tricky_variants = find_tricky_variants_from_multiallelic_signatures(signatures, node_mapping.n_biallelic_variants)
+    tricky_variants, tricky_ref1, tricky_alt1 = find_tricky_variants_from_multiallelic_signatures(signatures, node_mapping.n_biallelic_variants, also_find_tricky_alleles=True)
+    logging.info(f"{np.sum(tricky_ref1.tricky_variants)} tricky ref alleles because no kmers")
+    logging.info(f"{np.sum(tricky_alt1.tricky_variants)} tricky alt alleles because no kmers")
     log_memory_usage_now("Finding tricky variants 2")
-    tricky_alleles = find_tricky_ref_and_var_alleles_from_count_model(count_model, node_mapping)
+    tricky_ref, tricky_alt = find_tricky_ref_and_var_alleles_from_count_model(count_model, node_mapping)
+
+    tricky_ref.add(tricky_ref1)
+    tricky_alt.add(tricky_alt1)
+    logging.info(f"{np.sum(tricky_ref.tricky_variants)} total tricky ref alleles")
+    logging.info(f"{np.sum(tricky_alt.tricky_variants)} total tricky alt alleles")
+
+    tricky_alleles = (tricky_ref, tricky_alt)
     log_memory_usage_now("Finding tricky variants 3")
 
     from ..models.mapping_model import refine_sampling_model_noncli
@@ -180,7 +196,8 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
             "tricky_alleles": tricky_alleles,
             "vcf_header": bnp.open(vcf_file_name).read_chunk().get_context("header"),
             "vcf_variants": vcf_variants,
-            "n_alleles_per_variant": n_alleles_per_original_variant
+            "n_alleles_per_variant": n_alleles_per_original_variant,
+            "multiallelic_map": MultiAllelicMap.from_n_alleles_per_variant(n_alleles_per_variant)
         }
     # helper model
     #helper_model, combo_matrix = make_helper_model(biallelic_haplotype_matrix)
@@ -198,6 +215,8 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     paths.remove_tmp_files()
 
     logging.info("Making indexes took %.2f sec" % (time.perf_counter() - t_start))
+
+    return index, signatures
 
 
 
@@ -231,4 +250,19 @@ def make_index_cli(args):
                     vcf_no_genotypes=args.vcf_no_genotypes)
     remove_shared_memory_in_session()
     return r
+
+
+
+@dataclass
+class MultiAllelicMap:
+    """
+    Data is a ragged array where ids of variants that are part of same
+    multiallelic variant are on the same row
+    """
+    data: nps.RaggedArray
+
+    @classmethod
+    def from_n_alleles_per_variant(cls, n_alleles_per_variant):
+        tot = np.sum(n_alleles_per_variant-1)
+        return nps.RaggedArray(np.arange(tot), n_alleles_per_variant-1)
 

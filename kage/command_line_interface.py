@@ -90,6 +90,10 @@ def genotype(args):
 
     genotyper = CombinationModelGenotyper(0, max_variant_id, node_counts, index, config=config)
     genotypes, probs, count_probs = genotyper.genotype()
+    print(genotypes)
+    from kage.genotyping.multiallelic import postprocess_multiallelic_calls
+    # Numeric genotypes: 1: 0/0, 2: 1/1, 3: 0/1
+    genotypes, probs = postprocess_multiallelic_calls(genotypes, index.multiallelic_map, probs)
 
     t = time.perf_counter()
     numpy_genotypes = convert_string_genotypes_to_numeric_array(genotypes)
@@ -101,7 +105,7 @@ def genotype(args):
     if "vcf_variants" in index:
         from kage.io import write_vcf
         # new setup: Storing SimpleVcfEntry object in index, use this to write vcf
-        logging.info("Writing vcf using Vcf entry")
+        logging.info("Writing vcf using Vcf entry to %s" % args.out_file_name)
         write_multiallelic_vcf_with_biallelic_numeric_genotypes(
             index.vcf_variants, genotypes, args.out_file_name,
             index.n_alleles_per_variant,

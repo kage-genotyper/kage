@@ -8,6 +8,7 @@ np.seterr(all="ignore")
 import random
 from kage.indexing.main import make_index
 from kage.command_line_interface import genotype
+from kage.util import make_args_for_genotype_command
 
 
 @pytest.mark.skip(reason="outdated")
@@ -23,7 +24,7 @@ def test_simple():
 
 
 # too much memory for github actions?
-@pytest.mark.skip
+#@pytest.mark.skip
 def test_saccer3():
     """
     Tests full indexing and genotyping using CLI on a small sample
@@ -39,24 +40,7 @@ def test_saccer3():
                variant_window=5,
                n_threads=4)
 
-    Args = namedtuple("args", ["index_bundle",
-                               "reads",
-                               "out_file_name",
-                               "kmer_size",
-                               "average_coverage",
-                               "debug",
-                               "n_threads",
-                               "use_naive_priors",
-                               "ignore_helper_model",
-                               "ignore_helper_variants",
-                               "min_genotype_quality",
-                               "sample_name_output",
-                               "ignore_homo_ref",
-                               "do_not_write_genotype_likelihoods",
-                               "gpu",
-                               "counts"])
-    args = Args("test_index.npz", reads, "test_genotypes.vcf", 31, 15, False, 4,
-                False, False, False, 0, "sample", False, True, False, None)
+    args = make_args_for_genotype_command("test_index.npz", reads)
     genotype(args)
 
     truth = IndexedGenotypes2.from_biallelic_vcf(truth)

@@ -116,6 +116,8 @@ def preprocess_sv_vcf(vcf_file_name, reference_file_name):
         to_keep.append(mask)
         cn0_mask.append(cn0)
         logging.info(f"{np.sum(cn0)} variants with <cn0> alt")
+        if np.sum(cn0) == 0:
+            continue
         ref, alt = get_cn0_ref_alt_sequences_from_vcf(chunk[cn0], reference)
         new_ref.extend(ref)
         new_alt.extend(alt)
@@ -128,6 +130,7 @@ def preprocess_sv_vcf(vcf_file_name, reference_file_name):
     # read vcf again, filter, change ref/alt
     cn0_index = 0
     n_wrong = 0
+    n_all_genotypes_missing = 0
     with igzip.open(vcf_file_name, "rb") as f:
         i = -1
         for line in f:
@@ -156,9 +159,15 @@ def preprocess_sv_vcf(vcf_file_name, reference_file_name):
                 n_wrong += 1
                 continue
 
+            # Skip variants where all genotypes are missing
+            if all(g == "./." or g == "." for g in line[10:]):
+                n_all_genotypes_missing += 1
+                continue
+
             print("\t".join(line))
 
     logging.info(f"{n_wrong} variants had wrong ref sequence and were ignored ")
+    logging.info(f"{n_all_genotypes_missing} variants had all genotypes missing and were ignored ")
 
 
 def find_snps_indels_covered_by_svs(variants: bnp.datatypes.VCFEntry, sv_size_limit: int = 50, allow_approx=False) -> np.ndarray:

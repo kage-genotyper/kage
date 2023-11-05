@@ -3,11 +3,15 @@ from collections import defaultdict
 import bionumpy as bnp
 import numpy as np
 import pickle
+
+from kage.analysis.genotype_accuracy import IndexedGenotypes2
+from kage.io import VcfWithSingleIndividualBuffer
+
 from ..indexing.index_bundle import IndexBundle
 from graph_kmer_index import kmer_hash_to_sequence
 
 def pretty_variant(variant):
-    return f"{variant.chromosome}:{variant.position} {variant.ref_seq.to_string()}/{variant.alt_seq.to_string()} {variant.genotypes[0]}"
+    return f"{variant.chromosome}:{variant.position} {variant.ref_seq.to_string()}/{variant.alt_seq.to_string()} {variant.genotype}"
 
 class Debugger:
     def __init__(self, genotype_report, kage_index, truth_vcf, genotypes_vcf, node_counts):
@@ -20,10 +24,15 @@ class Debugger:
         self.count_model = self.kage_index["count_model"]
         self.variant_to_nodes = self.kage_index["variant_to_nodes"]
         self.tricky_variants = self.kage_index["tricky_variants"]
+        self.tricky_alleles = self.kage_index["tricky_alleles"]
+        self.tricky_ref, self.tricky_alt = self.tricky_alleles
         self.kmer_index = self.kage_index["kmer_index"]
 
-        self.genotypes = bnp.open(genotypes_vcf, buffer_type=bnp.io.vcf_buffers.PhasedVCFMatrixBuffer).read()
-        self.truth = bnp.open(truth_vcf, buffer_type=bnp.io.vcf_buffers.PhasedVCFMatrixBuffer).read()
+        #self.genotypes = bnp.open(genotypes_vcf, buffer_type=bnp.io.vcf_buffers.PhasedVCFMatrixBuffer).read()
+        #self.genotypes = bnp.open(genotypes_vcf, buffer_type=VcfWithSingleIndividualBuffer).read()
+        #self.truth = bnp.open(truth_vcf, buffer_type=VcfWithSingleIndividualBuffer).read()
+        self.genotypes = IndexedGenotypes2.from_biallelic_vcf(genotypes_vcf)
+        self.truth = IndexedGenotypes2.from_biallelic_vcf(truth_vcf)
         self.reverse_kmer_index = self.get_reverse_kmer_index()
 
     def get_reverse_kmer_index(self):
@@ -39,20 +48,27 @@ class Debugger:
 
         return index
 
-    def print_variant_info(self, id, with_helper=True):
+    def print_variant_info(self, variant_id, variant_number, with_helper=True):
+        id = variant_number
         ref_node = self.variant_to_nodes.ref_nodes[id]
         var_node = self.variant_to_nodes.var_nodes[id]
-        print(id, "Nodes: ", ref_node, var_node)
-        print("Called", pretty_variant(self.genotypes[id]))
-        print("Trtuh ", pretty_variant(self.truth[id]))
+        print("-----\n", variant_id, variant_number)
+        print("Nodes: ", ref_node, var_node)
+        print("Trtuh ", id, self.truth[variant_id].genotype)
+        print("Called", self.genotypes[variant_id].genotype)
         print(f"Node counts: {self.node_counts[ref_node]}/{self.node_counts[var_node]}")
         if self.tricky_variants.is_tricky(id):
             print("IS TRICKY VARIANT")
+        if self.tricky_ref.is_tricky(id):
+            print("REF IS TRICKY")
+        if self.tricky_alt.is_tricky(id):
+            print("ALT IS TRICKY")
+
         print("Count model ref", self.count_model[0].describe_node(id))
         print("Count model alt", self.count_model[1].describe_node(id))
         print("Kmer ref: ", ",".join([str(k) + "," + kmer_hash_to_sequence(k, 31) for k in self.reverse_kmer_index[ref_node]]))
         print("Kmer alt: ", ",".join([str(k) + "," + kmer_hash_to_sequence(k, 31) for k in self.reverse_kmer_index[var_node]]))
-        if with_helper:
+        if with_helper and False:
             helper = self.helper[id]
             print("--Helper variant--")
             self.print_variant_info(helper, with_helper=False)
@@ -60,10 +76,11 @@ class Debugger:
     def run(self):
         for type in ["false_positives", "false_negatives"]:
             print(type.upper() + "----------_")
-            for id in self.report[type]:
-                self.print_variant_info(id)
-                print()
-                print()
+            for variant_id, variant_number in self.report[type]:
+                if len(variant_id) >= 50:
+                    self.print_variant_info(variant_id, variant_number)
+                    print()
+                    print()
 
 
 

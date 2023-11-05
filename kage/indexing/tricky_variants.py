@@ -23,6 +23,9 @@ class TrickyVariants:
     def is_tricky(self, id):
         return self.tricky_variants[id] == 1
 
+    def add(self, other: 'TrickyVariants'):
+        self.tricky_variants = np.logical_or(self.tricky_variants, other.tricky_variants)
+
 
 def find_variants_with_nonunique_kmers(args):
     output = np.zeros(len(args.variant_to_nodes.ref_nodes), dtype=np.uint8)

@@ -3,6 +3,7 @@ import logging
 import bionumpy as bnp
 import numpy as np
 from shared_memory_wrapper.util import interval_chunks
+from collections import namedtuple
 
 
 def get_memory_usage():
@@ -47,7 +48,7 @@ def _write_genotype_debug_data(genotypes, numpy_genotypes, out_name, variant_to_
     np.save(out_name + ".haplotype2_nodes", variant_nodes_haplotype2)
 
 
-def zip_sequences(a: bnp.EncodedRaggedArray, b: bnp.EncodedRaggedArray):
+def zip_sequences(a: bnp.EncodedRaggedArray, b: bnp.EncodedRaggedArray, encoding = bnp.DNAEncoding):
     """Utility function for merging encoded ragged arrays ("zipping" rows).
     a and b should either be equal size or a can be 1 element longer than b (then first and last element will be from a)"""
     assert len(a) == len(b)+1 or len(a) == len(b)
@@ -59,7 +60,7 @@ def zip_sequences(a: bnp.EncodedRaggedArray, b: bnp.EncodedRaggedArray):
     # empty placeholder to fill
 
     new = bnp.EncodedRaggedArray(
-        bnp.EncodedArray(np.zeros(int(np.sum(row_lengths)), dtype=np.uint8), bnp.DNAEncoding),
+        bnp.EncodedArray(np.zeros(int(np.sum(row_lengths)), dtype=np.uint8), encoding),
         row_lengths)
     new[0::2] = a
     if len(a) == len(b) + 1:
@@ -82,3 +83,24 @@ def n_unique_values_per_column(matrix: np.ndarray):
     sorted = np.sort(matrix, axis=0)
     unique = np.sum(np.diff(sorted, axis=0) != 0, axis=0) + 1
     return unique
+
+def make_args_for_genotype_command(index_file_name, reads_file_name, out_file="test_genotypes.vcf"):
+    Args = namedtuple("args", ["index_bundle",
+                               "reads",
+                               "out_file_name",
+                               "kmer_size",
+                               "average_coverage",
+                               "debug",
+                               "n_threads",
+                               "use_naive_priors",
+                               "ignore_helper_model",
+                               "ignore_helper_variants",
+                               "min_genotype_quality",
+                               "sample_name_output",
+                               "ignore_homo_ref",
+                               "do_not_write_genotype_likelihoods",
+                               "gpu",
+                               "counts"])
+    args = Args(index_file_name, reads_file_name, "test_genotypes.vcf", 31, 15, False, 4,
+                False, False, False, 0, "sample", False, True, False, None)
+    return args

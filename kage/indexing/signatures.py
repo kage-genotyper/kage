@@ -201,7 +201,6 @@ class MultiAllelicSignatures:
         index.convert_to_int32()
         return index
 
-
     def remove_too_frequent_signatures(self, scorer, threshold=100):
         """
         Removes signatures that have score above threshold
@@ -299,6 +298,11 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
     New version that uses VariantWindowKmers2 to get vectorized scoring
     """
     def __init__(self, variant_window_kmers: 'VariantWindowKmers2', scorer: Scorer, k=3, sv_min_size=40):
+        """
+        NOTE: sv_min_size referes to the minimum kmers for a variant to be considered a SV,
+        which will trigger more through kmer finding. Number of kmers might be much
+        lower than number of base pairs if spacinng has been used when selecting kmers
+        """
         self._scorer = scorer
         self._k = k
         self._chosen_kmers = []  # n_variants x n_alleles x kmers at allele
@@ -377,7 +381,7 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         signatures = self._signatures_found.signatures
         scores = self._window_scores
         is_sv = self._kmers.get_mask_of_svs(self._sv_min_size)
-        #logging.info("There are %d SVs" % np.sum(is_sv))
+        logging.info("There are %d SVs" % np.sum(is_sv))
 
         # make new MultiAllelicSignatures for single variants thare are to be changed
         # concatenate results (since ak array is immutable)
@@ -418,9 +422,13 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         self._signatures_found = MultiAllelicSignatures(new)
 
     @staticmethod
-    def manually_find_kmers(kmers: ak.Array, scores: ak.Array) -> MultiAllelicSignatures:
+    def manually_find_kmers(kmers: ak.Array, scores: ak.Array, force=True) -> MultiAllelicSignatures:
         """
+        This method "manually" finds best kmers by searching more thoroughly. To be used for tricky large variants where there are few unique kmers.
         Kmers and scores are ak.Arrays of shape n_alleles x n_paths x n_windows
+
+        if force = True, kmers will always be returned
+        if False, will not give any kmers if only bad kmers are found
         """
 
         # make a kmer scorer counting only kmers on this variant
@@ -440,6 +448,7 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
             for allele in range(n_alleles):
                 #t0 = time.perf_counter()
                 allele_kmers = ak.to_numpy(kmers[allele])  # x n_paths x n_windows
+                n_paths = len(allele_kmers)
                 n_windows = len(allele_kmers[0])  # same windows on all paths
                 # pick some window locations
                 window_locations = range(0, n_windows, max(1, n_windows // 100))
@@ -449,7 +458,12 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
                 local_scores_for_windows = np.max(
                     local_scorer[window_kmers_matrix.ravel() % local_modulo].reshape(window_kmers_matrix.shape), axis=0
                 )
-                scores_for_windows -= local_scores_for_windows
+                if np.min(local_scores_for_windows) > n_paths:
+                    # no unique kmers, higher kmer frequency than paths on this allele
+                    new_variant_kmers.append(np.empty(0, dtype=np.uint64))
+                    continue
+
+                scores_for_windows -= local_scores_for_windows * 3  # weigh local scores more than global scores. More important to find locally unique kmers
                 best_window = window_locations[np.argmax(scores_for_windows)]
 
                 """
@@ -674,9 +688,9 @@ class SignatureFinder3(SignatureFinder):
         # slower version that manually tries to pick better signatures for each sv
         # returns a Signature object where  that can be merged with another Signature object
         is_sv = np.where((variants.ref_seq.shape[1] > self._k) | (variants.alt_seq.shape[1] > self._k))[0]
-        print("N large insertions: ", np.sum(variants.alt_seq.shape[1] > self._k))
-        print("N large deletions: ", np.sum(variants.ref_seq.shape[1] > self._k))
-        print(f"There are {len(is_sv)} SVs that signatures will be adjusted for")
+        logging.info("N large insertions: ", np.sum(variants.alt_seq.shape[1] > self._k))
+        logging.info("N large deletions: ", np.sum(variants.ref_seq.shape[1] > self._k))
+        logging.info(f"There are {len(is_sv)} SVs that signatures will be adjusted for")
         n_ref_replaced = 0
         n_alt_replaced = 0
 
@@ -1026,13 +1040,13 @@ def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_cou
         #log_memory_usage_now("Before variant window kmers2")
         t0 = time.perf_counter()
         variant_window_kmers2 = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers,
-                                                                                     subpaths.variant_alleles.matrix)
+                                                                                     subpaths.variant_alleles.matrix,)
         #logging.info("Conversion took %.4f seconds" % (time.perf_counter() - t0))
         #log_memory_usage_now("After variant window kmers2")
         #logging.info("Finding best signatures for variants")
-        signatures = MultiAllelicSignatureFinderV2(variant_window_kmers2, scorer=scorer, k=k).run(add_dummy_count_to_index)
+        signatures = MultiAllelicSignatureFinderV2(variant_window_kmers2, scorer=scorer, k=k, sv_min_size=50//max(1, spacing)).run(add_dummy_count_to_index)
         # Removing frequent signatures is not necessary, but will speed up mapping model since more signatures are pruned from paths
-        signatures.remove_too_frequent_signatures(scorer, 100)
+        signatures.remove_too_frequent_signatures(scorer, 10000000000)
         all_signatures.append(signatures)
 
     for s in all_subpaths:

@@ -58,6 +58,9 @@ class IndexedGenotypes:
     def __init__(self, index: Dict[str, str]):
         self._index = index
 
+    def get_key_to_variant_number_index(self):
+        return {key: i for i, key in enumerate(self._index.keys())}
+
     @classmethod
     def from_vcf_entry(cls, vcf_entry: VcfEntry):
         """
@@ -185,6 +188,7 @@ class GenotypeAccuracy:
             "false_negatives": [],
             "false_positives": []
         }
+        self._sample_reverse_index = self._sample.get_key_to_variant_number_index()
         self._limit_to = limit_to
         if self._limit_to is None:
             self._limit_to = "all"
@@ -285,10 +289,11 @@ class GenotypeAccuracy:
                 self._confusion_matrix["true_positive"] += 1
             elif t == '0/0' and g != '0/0':
                 self._confusion_matrix["false_positive"] += 1
-                self._out_report["false_positives"].append(i)
+                self._out_report["false_positives"].append((key, self._sample_reverse_index[key]))
             elif t != '0/0' and g != t:
                 self._confusion_matrix["false_negative"] += 1
-                self._out_report["false_negatives"].append(i)
+                if key in self._sample:
+                    self._out_report["false_negatives"].append((key, self._sample_reverse_index[key]))
             elif t == "0/0" and g == "0/0":
                 self._confusion_matrix["true_negative"] += 1
             else:

@@ -194,15 +194,17 @@ def find_tricky_variants_with_count_model(signatures: Signatures, model):
     return TrickyVariants(tricky)
 
 
-def find_tricky_variants_from_multiallelic_signatures(signatures: MultiAllelicSignatures, n_biallelic_variants: int) -> TrickyVariants:
+def find_tricky_variants_from_multiallelic_signatures(signatures: MultiAllelicSignatures, n_biallelic_variants: int, also_find_tricky_alleles=False) -> TrickyVariants:
     tricky = np.zeros(n_biallelic_variants, dtype=bool)
+    tricky_ref = np.zeros(n_biallelic_variants, dtype=bool)
+    tricky_alt = np.zeros(n_biallelic_variants, dtype=bool)
 
     t0 = time.perf_counter()
     signatures = signatures.signatures
     #for multiallelic_variant in tqdm.tqdm(signatures, "Finding tricky variants"):
 
     @numba.jit(nopython=True)
-    def find(tricky, signatures):
+    def find(tricky, tricky_ref, tricky_alt, signatures):
         n_tricky_no_signature = 0
         n_tricky_shared_kmers = 0
         n_missing_model = 0
@@ -219,12 +221,26 @@ def find_tricky_variants_from_multiallelic_signatures(signatures: MultiAllelicSi
                 #    logging.error(alt_kmers)
                 #    raise Exception("All kmers should be unique")
 
-                if len(ref_kmers) == 0 or len(set(alt_kmers)) == 0:
-                    tricky[variant_id] = True
+                if len(ref_kmers) == 0:
+                    #tricky[variant_id] = True
                     n_tricky_no_signature += 1
-                elif len(ref_kmers_set.intersection(set(alt_kmers))) > 0:
-                    tricky[variant_id] = True
-                    n_tricky_shared_kmers += 1
+                    tricky_ref[variant_id] = True
+                if len(set(alt_kmers)) == 0:
+                    #tricky[variant_id] = True
+                    n_tricky_no_signature += 1
+                    tricky_alt[variant_id] = True
+                #elif len(ref_kmers_set.intersection(set(alt_kmers))) > 0:
+                #    tricky[variant_id] = True
+                #    n_tricky_shared_kmers += 1
+                #else:
+                # look for other alleles with same kmer
+                alt_kmers_set = set(alt_kmers)
+                for other_allele in range(0, len(multiallelic_variant)):
+                    if other_allele == allele:
+                        continue
+                    if len(alt_kmers_set.intersection(set(multiallelic_variant[other_allele]))) > 0:
+                        tricky[variant_id] = True
+                        break
 
                 variant_id += 1
 
@@ -232,16 +248,21 @@ def find_tricky_variants_from_multiallelic_signatures(signatures: MultiAllelicSi
         #logging.info("N tricky variants because shared kmers between ref/alt: %d" % n_tricky_shared_kmers)
         #logging.info("N tricky variants because missing data in model: %d" % n_missing_model)
 
-    find(tricky, signatures)
+    find(tricky, tricky_ref, tricky_alt, signatures)
 
+    logging.info(f"{np.sum(tricky)} tricky variants")
+    logging.info(f"{np.sum(tricky_ref)} tricky ref alleles")
+    logging.info(f"{np.sum(tricky_alt)} tricky alt alleles")
     logging.info("Finding tricky variants took %.4f seconds" % (time.perf_counter() - t0))
 
+    if also_find_tricky_alleles:
+        return TrickyVariants(tricky), TrickyVariants(tricky_ref), TrickyVariants(tricky_alt)
 
     return TrickyVariants(tricky)
 
 
 def find_tricky_ref_and_var_alleles_from_count_model(count_model: LimitedFrequencySamplingComboModel,
-                                                     node_mapping: VariantAlleleToNodeMap, max_count=8) -> Tuple[TrickyVariants]:
+                                                     node_mapping: VariantAlleleToNodeMap, max_count=4) -> Tuple[TrickyVariants]:
     """
     Finds tricky variants for ref and alt alleles isolated.
     """

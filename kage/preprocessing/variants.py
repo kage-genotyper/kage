@@ -505,7 +505,8 @@ class MultiAllelicVariantSequences(VariantAlleleSequences):
         shape = ak.to_numpy(ak.num(allele_sequences))
         # flatten, and encode
         bytes = ak.to_numpy(ak.flatten(ak.without_parameters(allele_sequences)))
-        return bnp.EncodedRaggedArray(bnp.change_encoding(bnp.EncodedArray(bytes, bnp.BaseEncoding), bnp.DNAEncoding), shape)
+        return bnp.EncodedRaggedArray(bnp.EncodedArray(bytes, bnp.BaseEncoding), shape)
+        #return bnp.EncodedRaggedArray(bnp.change_encoding(bnp.EncodedArray(bytes, bnp.BaseEncoding), bnp.DNAEncoding), shape)
 
     def get_haplotype_sequence_at_variant(self, variant, haplotype) -> bnp.EncodedArray:
         sequence = ak.to_numpy(self._data[variant, haplotype])
@@ -661,3 +662,11 @@ def filter_variants_with_more_alleles_than(biallelic_padded_variants: Variants, 
     return biallelic_padded_variants[~filter], original_vcf_variants[~filter_original], n_alleles_per_original_variant[~filter_original], filter_original
 
 
+class VariantStreamWithoutVariantsWithSymbolicAlleles(VariantStream):
+    """
+    Does not give variants where alt allele is *
+    """
+    def _read_chunks(self):
+        for chunk in self._stream:
+            mask = np.all(chunk.alt_seq != "*", axis=1)
+            yield chunk[mask]

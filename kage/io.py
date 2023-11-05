@@ -105,6 +105,7 @@ def write_vcf(variants: SimpleVcfEntry, string_genotypes: bnp.EncodedRaggedArray
     if add_genotype_likelihoods is not None:
         logging.info("Writing genotype likelyhoods to file")
         p = add_genotype_likelihoods
+        # probs are in loge, convert to minus log10 (?)
         genotype_likelihoods = p * np.log10(np.e)
         has_nan = np.where(np.any(np.isnan(genotype_likelihoods), axis=1))[0]
         if len(has_nan):

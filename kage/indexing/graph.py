@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import bionumpy as bnp
 import numpy as np
 import shared_memory_wrapper.util
+from bionumpy.encodings.exceptions import EncodingError
 from kage.preprocessing.variants import VariantAlleleSequences, MultiAllelicVariantSequences
 from kage.util import stream_ragged_array
 from ..preprocessing.variants import get_padded_variants_from_vcf, Variants
@@ -93,7 +94,8 @@ class Graph:
         return self.n_variants()*2
 
     def sequence(self, haplotypes: np.ndarray, stream=False, reverse_complement=False,
-                 from_to_variant: Optional[Tuple[int, int]]=None) -> bnp.EncodedArray:
+                 from_to_variant: Optional[Tuple[int, int]]=None,
+                 encoding = bnp.encodings.DNAEncoding) -> bnp.EncodedArray:
         """
         Returns the sequence through the graph given haplotypes for all variants
         """
@@ -106,7 +108,7 @@ class Graph:
             assert np.all(ref_sequence.shape[1] >= 0), ref_sequence.shape[1]
             assert np.all(variant_sequences.shape[1] >= 0)
             # stitch these together
-            result = zip_sequences(ref_sequence, variant_sequences)
+            result = zip_sequences(ref_sequence, variant_sequences, encoding)
 
         else:
             # sequence should start with sequence of start variant and end with sequence of end_variant-1 (exclusive end)
@@ -115,9 +117,15 @@ class Graph:
             ref_sequence = self.genome.sequence[start+1:end]
             variant_sequences = self.variants.get_haplotype_sequence(haplotypes, start, end)
             # stitch these together
-            result = zip_sequences(variant_sequences, ref_sequence)
+            result = zip_sequences(variant_sequences, ref_sequence, encoding)
 
         if reverse_complement:
+            # must ensure DNA-encoding
+            try:
+                result = bnp.change_encoding(result, bnp.encodings.DNAEncoding)
+            except EncodingError:
+                logging.error("Getting reverse complement requires that sequences only contains A, C, G and T")
+                raise
             result = bnp.sequence.get_reverse_complement(result)[::-1]  # reverse rows so that ravel() will be correct
 
         assert np.all(result.shape[1] >= 0), result.shape[1]
