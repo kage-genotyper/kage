@@ -54,7 +54,7 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
                                                                                           True,
                                                                                           remove_indel_padding=False)
 
-    for variant in variants[0:20]:
+    for variant in variants[0:150]:
         print(variant.position, variant.ref_seq.to_string(), variant.alt_seq.to_string())
 
     n_orig_variants_before_filtering = len(vcf_variants)
@@ -120,6 +120,7 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     haplotype_matrix = biallelic_haplotype_matrix.to_multiallelic(n_alleles_per_variant)
     logging.info(f"{haplotype_matrix.n_variants} variants after converting to multiallelic")
 
+    np.save("haplotyp_matrix", haplotype_matrix.to_matrix())
 
     log_memory_usage_now("After graph")
     # Start seperate process for helper model
@@ -140,9 +141,14 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
                         use_new_allele_matrix=True
                         ).run(n_alleles_per_variant)
 
+    np.save("path_alleles", paths.variant_alleles.matrix.copy())
+
     logging.info("Made %d paths to cover variants" % (len(paths.paths)))
 
     variant_to_nodes = node_mapping.get_variant_to_nodes()
+    #to_file(node_mapping, "node_mapping")
+    #to_file(node_mapping.node_ids, "node_ids")
+
     signatures_chunk_size = 2000
     if len(variants) > 1000000:
         signatures_chunk_size = 4000
@@ -156,7 +162,7 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
                                                  haplotype_matrix,
                                                  k=k,
                                                  paths_allele_matrix=paths.variant_alleles,
-                                                 window=variant_window-2,
+                                                 window=3,
                                                  max_count=20,
                                                  node_map=node_mapping,
                                                  n_nodes=len(variants)*2,
@@ -171,7 +177,7 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     logging.info(f"{np.sum(tricky_ref1.tricky_variants)} tricky ref alleles because no kmers")
     logging.info(f"{np.sum(tricky_alt1.tricky_variants)} tricky alt alleles because no kmers")
     log_memory_usage_now("Finding tricky variants 2")
-    tricky_ref, tricky_alt = find_tricky_ref_and_var_alleles_from_count_model(count_model, node_mapping)
+    tricky_ref, tricky_alt = find_tricky_ref_and_var_alleles_from_count_model(count_model, node_mapping, max_count=10)
 
     tricky_ref.add(tricky_ref1)
     tricky_alt.add(tricky_alt1)
@@ -182,14 +188,14 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     log_memory_usage_now("Finding tricky variants 3")
 
     from ..models.mapping_model import refine_sampling_model_noncli
-    count_model = refine_sampling_model_noncli(count_model, variant_to_nodes)
+    refined_count_model = refine_sampling_model_noncli(count_model, variant_to_nodes, prior_empty_data=0.1)
     logging.info("Converting to sparse model")
-    convert_model_to_sparse(count_model)
+    convert_model_to_sparse(refined_count_model)
 
     #numpy_variants = NumpyVariants.from_vcf(vcf_no_genotypes_file_name)
     indexes = {
             "variant_to_nodes": variant_to_nodes,
-            "count_model": count_model,
+            "count_model": refined_count_model,
             "kmer_index": kmer_index,
             #"numpy_variants": numpy_variants,
             "tricky_variants": tricky_variants,
@@ -197,7 +203,8 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
             "vcf_header": bnp.open(vcf_file_name).read_chunk().get_context("header"),
             "vcf_variants": vcf_variants,
             "n_alleles_per_variant": n_alleles_per_original_variant,
-            "multiallelic_map": MultiAllelicMap.from_n_alleles_per_variant(n_alleles_per_variant)
+            "multiallelic_map": MultiAllelicMap.from_n_alleles_per_variant(n_alleles_per_variant),
+            "orig_count_model": count_model
         }
     # helper model
     #helper_model, combo_matrix = make_helper_model(biallelic_haplotype_matrix)
@@ -216,7 +223,7 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
 
     logging.info("Making indexes took %.2f sec" % (time.perf_counter() - t_start))
 
-    return index, signatures
+    return index, signatures, count_model
 
 
 

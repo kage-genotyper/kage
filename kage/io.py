@@ -55,6 +55,23 @@ class VcfWithSingleIndividualBuffer(VCFBuffer):
 
 
 @bnpdataclass
+class VcfEntryWithInfo:
+    chromosome: str
+    position: int
+    id: str
+    ref_seq: str
+    alt_seq: str
+    quality: str
+    filter: str
+    info: str
+
+
+class VcfWithInfoBuffer(VCFBuffer):
+    dataclass = VcfEntryWithInfo
+
+
+
+@bnpdataclass
 class SimpleVcfEntry:
     chromosome: str
     position: int

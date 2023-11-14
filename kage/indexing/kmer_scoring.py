@@ -117,7 +117,7 @@ def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: Spar
     # also add the reference and a haplotype with all variants
     haplotype_nodes = itertools.chain(haplotype_nodes,
                                       [np.zeros(haplotype_matrix.n_variants, dtype=np.uint8),
-                                        np.ones(haplotype_matrix.n_variants, dtype=np.uint8)
+                                       np.ones(haplotype_matrix.n_variants, dtype=np.uint8)
                                        ])
 
     for i, nodes in tqdm.tqdm(enumerate(haplotype_nodes), desc="Estimating global kmer counts", total=len(chosen_haplotypes), unit="haplotype"):

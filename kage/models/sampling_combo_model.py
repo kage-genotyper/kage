@@ -44,6 +44,10 @@ class SimpleSamplingComboModel:
 class LimitedFrequencySamplingComboModel(Model):
     # stores only number of individuals having counts up to a given limit
     diplotype_counts: List[np.ndarray]  # list of matrices, each matrix is n_variants x max count supported
+    _tricky_alleles: np.ndarray = None
+
+    def set_tricky_alleles(self, tricky_alleles):
+        self._tricky_alleles = tricky_alleles
 
     def as_sparse(self):
         return SparseLimitedFrequencySamplingComboModel.from_non_sparse(self)
@@ -118,6 +122,8 @@ class LimitedFrequencySamplingComboModel(Model):
         prob = logsumexp(np.log(counts / np.sum(counts, axis=-1)[:, None]) +
                          fast_poisson_logpmf(observed_counts[:, None].astype(np.float16), poisson_lambda)
                          , axis=-1)
+        # prob where there are no counts should be 0 (-inf)
+        prob[np.sum(counts, axis=-1) == 0] = -np.inf
         return prob
 
     @staticmethod
@@ -166,6 +172,11 @@ class LimitedFrequencySamplingComboModel(Model):
                 LimitedFrequencySamplingComboModel._logpmf2, n_threads, (observed_counts, counts, base_lambda, error_rate)
             )
         logging.info("Logpmf took %.4f sec" % (time.perf_counter()-t0))
+
+        if self._tricky_alleles is not None:
+            # if there are tricky alleles, we set the prob to 1/3
+            prob[self._tricky_alleles] = np.log(1/3)
+
         return prob
 
     def describe_node(self, node):
@@ -182,6 +193,8 @@ class LimitedFrequencySamplingComboModel(Model):
         t = time.perf_counter()
         logging.info("Prior is %.4f" % prior)
         expected_counts = []
+        m0, m1, m2 = self.diplotype_counts
+
         for diplotype in [0, 1, 2]:
             logging.info("Computing expected counts for genotype %d" % diplotype)
             m = self.diplotype_counts[diplotype]
@@ -193,7 +206,6 @@ class LimitedFrequencySamplingComboModel(Model):
         # add priors
         # assume naively counts for 1 is 1 more than expected as 0. Counts at 2 is 2 more than expected at 1
         e0, e1, e2 = expected_counts
-        m0, m1, m2 = self.diplotype_counts
         max_count = m0.shape[1]-1
         logging.debug("Adding priors")
         logging.debug("Size of e: %s" % (e1.shape))
@@ -206,8 +218,45 @@ class LimitedFrequencySamplingComboModel(Model):
         m1[rows,np.minimum(max_count, np.round(e0).astype(int) + 1)] += prior
         m2[rows,np.minimum(max_count, np.round(e0).astype(int) + 2)] += prior
 
-        assert all([np.all(np.sum(c, axis=-1) > 0) for c in self.diplotype_counts])
+        if prior > 0:
+            assert all([np.all(np.sum(c, axis=-1) > 0) for c in self.diplotype_counts])
         logging.debug("Filling empty data took %.2f sec " % (time.perf_counter()-t))
+
+    def fill_empty_data2(self, prior=1.0):
+        """
+        Fills by interpolating counts.
+        Assumes there's never more than one genotype that has missing data.
+        if c0, c1, c2 are counts for having 0, 1 or 2 copies of the allele then
+        c2 = c1 + (c1 - c0)
+        c1 = c0 + (c2 - c0) / 2
+        c0 = c1 - (c2 - c1)
+        """
+        # find expected counts for all
+        m0, m1, m2 = self.diplotype_counts
+        missing0 = np.all(m0 == 0, axis=1)
+        missing1 = np.all(m1 == 0, axis=1)
+        missing2 = np.all(m2 == 0, axis=1)
+
+        expected_counts = []
+
+        for diplotype in [0, 1, 2]:
+            logging.info("Computing expected counts for genotype %d" % diplotype)
+            m = self.diplotype_counts[diplotype]
+            not_missing = np.where(np.sum(m, axis=-1) > 0)[0]
+            expected = np.zeros(m.shape[0], dtype=float)
+            expected[not_missing] = np.sum(np.arange(m.shape[1]) * m[not_missing], axis=-1) / np.sum(m[not_missing],
+                                                                                                     axis=-1)
+            expected_counts.append(expected)
+
+        e0, e1, e2 = expected_counts
+        expected_on_missing2 = e1[missing2] + (e1[missing2] - e0[missing2])
+        expected_on_missing1 = e0[missing1] + (e2[missing1] - e0[missing1]) / 2
+        expected_on_missing0 = e1[missing0] - (e2[missing0] - e1[missing0])
+
+        max_count = m0.shape[1]-1
+        m0[missing0, np.minimum(expected_on_missing0.astype(int), max_count)] = 1
+        m1[missing1, np.minimum(expected_on_missing1.astype(int), max_count)] = 1
+        m2[missing2, np.minimum(expected_on_missing2.astype(int), max_count)] = 1
 
     def has_no_data(self, idx, threshold=2):
         missing = [np.sum(c[idx]) == 0 for c in self.diplotype_counts]
@@ -283,9 +332,10 @@ class SparseObservedCounts:
 
     def parallel_logpmf(self, observed_counts, base_lambda, error_rate, n_threads=4):
         observed_counts_name = object_to_shared_memory(observed_counts)
+        # not true if not all rows have values
         assert len(observed_counts) == self.indexes[0][-1]+1  # last index should be last row
 
-        splits = [int(i) for i in np.linspace(0, self.indexes[0][-1], n_threads+1)]
+        splits = [int(i) for i in np.linspace(0, self.indexes[0][-1], min(n_threads+1, self.indexes[0][-1]+1))]
         splits[-1] += 1  # last index must be at end
         splits = np.searchsorted(self.indexes[0], splits, side='left')
         chunks = [(a, b) for a, b in zip(splits[0:-1], splits[1:])]
@@ -321,7 +371,7 @@ class SparseLimitedFrequencySamplingComboModel(Model):
     def set_tricky_alleles(self, tricky_alleles):
         self._tricky_alleles = tricky_alleles
 
-    def logpmf(self, observed_counts, genotype, base_lambda=1.0, error_rate=0.01, gpu=False, n_threads=16):
+    def logpmf(self, observed_counts, genotype, base_lambda=1.0, error_rate=0.01, gpu=False, n_threads=1):
         # todo:
         # if there are less than one individual for all genotypes at a variant, we are not able to predict
         # then set the prob to 1/3
@@ -399,7 +449,7 @@ class RaggedFrequencySamplingComboModel:
 
         return description
 
-    def fill_empty_data(self):
+    def fill_empty_data(self, prior=None):
         # fill in estimates where there is missing data
         # assuming all entries are only missing at most one of the three
         # if missing at 2:
@@ -424,6 +474,7 @@ class RaggedFrequencySamplingComboModel:
 
         assert np.sum(missing1 & missing2 & missing0) == 0, "Cannot have mising data for all genotypes"
 
+        """
         # if both 0 and 2 are missing, we set 2 to double of 1
         c2[missing0 & missing2] = 2 * c1[missing0 & missing2]
         missing2[missing0 & missing2] = False
@@ -436,6 +487,11 @@ class RaggedFrequencySamplingComboModel:
         mean_of_c1 = np.mean(c1[~missing1])
         c1[missing1 & missing2] = np.mean(c1[~missing1])
         missing1[missing1 & missing2] = False  # 1 is now not missing at these positions anymore
+        """
+        # only correct cases where one is missin
+        missing0 = missing0 & ~missing1 & ~missing2
+        missing1 = missing1 & ~missing0 & ~missing2
+        missing2 = missing2 & ~missing0 & ~missing1
 
         # compute new expected where only one is missing
         c0[missing0] = 2 * c1[missing0] - c2[missing0]

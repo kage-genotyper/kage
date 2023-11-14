@@ -234,6 +234,9 @@ def find_tricky_variants_from_multiallelic_signatures(signatures: MultiAllelicSi
                 #    n_tricky_shared_kmers += 1
                 #else:
                 # look for other alleles with same kmer
+
+                # Try to skip this, allow same kmer on multiple alleles
+                """
                 alt_kmers_set = set(alt_kmers)
                 for other_allele in range(0, len(multiallelic_variant)):
                     if other_allele == allele:
@@ -241,7 +244,7 @@ def find_tricky_variants_from_multiallelic_signatures(signatures: MultiAllelicSi
                     if len(alt_kmers_set.intersection(set(multiallelic_variant[other_allele]))) > 0:
                         tricky[variant_id] = True
                         break
-
+                """
                 variant_id += 1
 
         #logging.info("N tricky variants because no kmers: %d " % n_tricky_no_signature)
@@ -260,9 +263,8 @@ def find_tricky_variants_from_multiallelic_signatures(signatures: MultiAllelicSi
 
     return TrickyVariants(tricky)
 
-
 def find_tricky_ref_and_var_alleles_from_count_model(count_model: LimitedFrequencySamplingComboModel,
-                                                     node_mapping: VariantAlleleToNodeMap, max_count=4) -> Tuple[TrickyVariants]:
+                                                     node_mapping: VariantAlleleToNodeMap, max_count=20) -> Tuple[TrickyVariants]:
     """
     Finds tricky variants for ref and alt alleles isolated.
     """
@@ -272,8 +274,20 @@ def find_tricky_ref_and_var_alleles_from_count_model(count_model: LimitedFrequen
     sum_of_counts = count_model.diplotype_counts[0] + count_model.diplotype_counts[1] + count_model.diplotype_counts[2]
     variant_counts = np.sum(sum_of_counts, axis=1)
     variant_counts_high = np.sum(sum_of_counts[:, max_count:], axis=1)
-    tricky_ref = (variant_counts_high[ref_nodes] >= max_count) | (variant_counts[ref_nodes] == 0)
-    tricky_var = (variant_counts_high[alt_nodes] >= max_count) | (variant_counts[alt_nodes] == 0)
+    tricky_ref = (variant_counts_high[ref_nodes] > 0) | (variant_counts[ref_nodes] == 0)
+    tricky_var = (variant_counts_high[alt_nodes] > 0) | (variant_counts[alt_nodes] == 0)
     logging.info("Found %d tricky ref alleles and %d tricky var alleles" % (np.sum(tricky_ref), np.sum(tricky_var)))
+
+    # Should also be tricky if counts are missing 2 out of 3 genotypes
+    n_genotypes_missing_ref = 0
+    n_genotypes_missing_alt = 0
+    for allele_count in range(3):
+        n_genotypes_missing_ref += np.all(count_model.diplotype_counts[allele_count][ref_nodes] == 0, axis=1)
+        n_genotypes_missing_alt += np.all(count_model.diplotype_counts[allele_count][alt_nodes] == 0, axis=1)
+    #    tricky_ref |= (np.all(count_model.diplotype_counts[allele_count][ref_nodes] == 0, axis=1))
+    #    tricky_var |= (np.all(count_model.diplotype_counts[allele_count][alt_nodes] == 0, axis=1))
+    tricky_ref |= n_genotypes_missing_ref >= 2
+    tricky_var |= n_genotypes_missing_alt >= 2
+
     return (TrickyVariants(tricky_ref), TrickyVariants(tricky_var))
 

@@ -15,8 +15,6 @@ from bionumpy.streams import NpDataclassStream
 from kage.io import CustomVCFBuffer, SimpleVcfEntry
 from kage.util import log_memory_usage_now
 
-from kage.benchmarking.vcf_preprocessing import find_snps_indels_covered_by_svs
-
 
 @dataclass
 class VariantToNodes:
@@ -670,3 +668,28 @@ class VariantStreamWithoutVariantsWithSymbolicAlleles(VariantStream):
         for chunk in self._stream:
             mask = np.all(chunk.alt_seq != "*", axis=1)
             yield chunk[mask]
+
+
+def find_snps_indels_covered_by_svs(variants: bnp.datatypes.VCFEntry, sv_size_limit: int = 50, allow_approx=False) -> np.ndarray:
+    """
+    Returns a boolean mask where True are SNPs/indels that are covered by a SV.
+    Assumes all variants are on the same chromosome.
+    """
+    if not allow_approx:
+        assert variants.chromosome[0].to_string() == variants.chromosome[-1].to_string()
+    is_snp_indel = (variants.ref_seq.shape[1] <= sv_size_limit) & (variants.alt_seq.shape[1] <= sv_size_limit)
+    is_sv = ~is_snp_indel
+    logging.info(f"{np.sum(is_sv)} SVs, {np.sum(is_snp_indel)} SNPs/indels")
+
+    is_any_indel = (variants.ref_seq.shape[1] > 1) | (variants.alt_seq.shape[1] > 1)
+    starts = variants.position
+    starts[is_any_indel] += 1  # indels are padded with one base
+    ends = starts + variants.ref_seq.shape[1] - 1
+
+    sv_position_mask = np.zeros(np.max(ends) + 1, dtype=bool)
+    indexes_of_covered_by_sv = nps.ragged_slice(np.arange(len(sv_position_mask)), starts[is_sv], ends[is_sv]).ravel()
+    sv_position_mask[indexes_of_covered_by_sv] = True
+
+    is_covered = (sv_position_mask[starts] | sv_position_mask[ends]) & is_snp_indel
+
+    return is_covered

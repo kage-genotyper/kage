@@ -196,15 +196,15 @@ def convert_model_to_sparse(model):
         model[i] = model[i].as_sparse()
 
 
-def refine_sampling_model_noncli(model, variant_to_nodes):
+def refine_sampling_model_noncli(model, variant_to_nodes, prior_empty_data=0.1):
     models = [
         model.subset_on_nodes(variant_to_nodes.ref_nodes),
         model.subset_on_nodes(variant_to_nodes.var_nodes)
     ]
     logging.info("Filling missing data")
     for m in models:
+        m.fill_empty_data2(prior_empty_data)
         m.astype(np.float16)
-        m.fill_empty_data()
     return models
 
 def refine_sampling_model(args):

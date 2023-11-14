@@ -4,12 +4,14 @@ from isal import igzip
 from tqdm import tqdm
 import npstructures as nps
 
+from ..preprocessing.variants import VariantStream, get_padded_variants_from_vcf, find_snps_indels_covered_by_svs
+
 logging.basicConfig(level=logging.INFO)
 import bionumpy as bnp
 import typing as tp
 import numpy as np
-import re
-from ..io import CustomVCFBuffer, VcfEntryWithSingleIndividualGenotypes, VcfWithSingleIndividualBuffer
+from ..io import VcfWithSingleIndividualBuffer, \
+    VcfWithInfoBuffer, CustomVCFBuffer
 
 
 def find_end_in_info_string(info_string: str) -> int:
@@ -19,6 +21,25 @@ def find_end_in_info_string(info_string: str) -> int:
     value = fields[0].split("=")[1]
     return int(value)
 
+
+def get_af_from_info_string_in_vcf_chunk(chunk) -> np.ndarray:
+    # hacky way to get allele frequency fast
+    info_fields = bnp.io.strops.join(chunk.info, ";")
+    info_fields = bnp.io.strops.split(info_fields, sep=";")
+    af_strings = info_fields[bnp.str_equal(info_fields[:, 0:3], "AF=")]
+    assert len(af_strings) == len(chunk), "Not all lines contain AF=?"
+
+    # afs = np.array([float(af_string.to_string()) for af_string in af_strings[:, 3:]])
+    afs = (af_string.to_string() for af_string in af_strings[:, 3:])
+    afs = nps.RaggedArray(
+        [
+            [float(af) for af in af_string.split(",")]
+            for af_string in afs
+        ]
+    )
+    # use highest af
+    afs = np.max(afs, axis=-1)
+    return afs
 
 def get_cn0_ref_alt_sequences_from_vcf(variants: bnp.datatypes.VCFEntry,
                                        reference_genome: bnp.genomic_data.GenomicSequence) -> tp.Tuple[
@@ -170,31 +191,6 @@ def preprocess_sv_vcf(vcf_file_name, reference_file_name):
     logging.info(f"{n_all_genotypes_missing} variants had all genotypes missing and were ignored ")
 
 
-def find_snps_indels_covered_by_svs(variants: bnp.datatypes.VCFEntry, sv_size_limit: int = 50, allow_approx=False) -> np.ndarray:
-    """
-    Returns a boolean mask where True are SNPs/indels that are covered by a SV.
-    Assumes all variants are on the same chromosome.
-    """
-    if not allow_approx:
-        assert variants.chromosome[0].to_string() == variants.chromosome[-1].to_string()
-    is_snp_indel = (variants.ref_seq.shape[1] <= sv_size_limit) & (variants.alt_seq.shape[1] <= sv_size_limit)
-    is_sv = ~is_snp_indel
-    logging.info(f"{np.sum(is_sv)} SVs, {np.sum(is_snp_indel)} SNPs/indels")
-
-    is_any_indel = (variants.ref_seq.shape[1] > 1) | (variants.alt_seq.shape[1] > 1)
-    starts = variants.position
-    starts[is_any_indel] += 1  # indels are padded with one base
-    ends = starts + variants.ref_seq.shape[1] - 1
-
-    sv_position_mask = np.zeros(np.max(ends) + 1, dtype=bool)
-    indexes_of_covered_by_sv = nps.ragged_slice(np.arange(len(sv_position_mask)), starts[is_sv], ends[is_sv]).ravel()
-    sv_position_mask[indexes_of_covered_by_sv] = True
-
-    is_covered = (sv_position_mask[starts] | sv_position_mask[ends]) & is_snp_indel
-
-    return is_covered
-
-
 def filter_snps_indels_covered_by_svs_cli(args):
     variants = bnp.open(args.vcf).read_chunks(min_chunk_size=200000000)
 
@@ -215,3 +211,92 @@ def filter_snps_indels_covered_by_svs_cli(args):
             if not remove[0]:
                 print(line)
             remove = remove[1:]
+
+def find_multiallelic_alleles_with_low_allele_frequency_by_padding_variants(vcf_file_name, reference_fasta, min_allele_frequency: float = 0.05):
+    """
+    Same as function below, but pads variants in order to find multiallelic overlaps
+    """
+    variant_stream = VariantStream.from_vcf(vcf_file_name, buffer_type=CustomVCFBuffer)
+    variants, vcf_variants, n_alleles_per_original_variant = get_padded_variants_from_vcf(variant_stream,
+                                                                                          reference_fasta,
+                                                                                          True,
+                                                                                          remove_indel_padding=False)
+    assert len(variants) == len(vcf_variants), "This is only supported when input is biallelic"
+
+    # todo: This should be done by chromosome
+    # need to get info from raw variants so that we know allele frequency
+    # can be done chunk by chunk
+    afs = []
+    raw_variants = bnp.open(vcf_file_name, buffer_type=VcfWithInfoBuffer)
+    for chunk in raw_variants:
+        logging.info("Getting afs")
+        afs.append(get_af_from_info_string_in_vcf_chunk(chunk))
+    afs = np.concatenate(afs)
+    #variants.info = raw_variants.info  # need info field for filtering
+    #filter = find_multiallelic_alleles_with_low_allele_frequency(variants, min_allele_frequency)
+    filter = filter_variants_on_same_pos_on_af(afs, min_allele_frequency, variants)
+    print_filtered_vcf(filter, vcf_file_name)
+
+
+def find_multiallelic_alleles_with_low_allele_frequency(biallelic_vcf_entry, min_allele_frequency: float = 0.05, only_deletions=False):
+    """
+    Returns a boolean mask where True are alleles with frequency lower than min_allele_frequency
+    Will only mark variants that are part of multiallelic variants. Will always keep
+    at least one biallelic allele (the one with highest allele frequency)
+    """
+    vcf_entry = biallelic_vcf_entry
+    allele_frequencies = get_af_from_info_string_in_vcf_chunk(vcf_entry)
+    return filter_variants_on_same_pos_on_af(allele_frequencies, min_allele_frequency, vcf_entry, only_deletions=only_deletions)
+
+
+def filter_variants_on_same_pos_on_af(allele_frequencies: np.ndarray, min_allele_frequency, vcf_entry, only_deletions=False):
+    filter = np.zeros(len(vcf_entry), dtype=bool)
+    index = 0
+    for pos, variant_group in bnp.groupby(vcf_entry, "position"):
+        group_af = allele_frequencies[index:index + len(variant_group)]
+        filter_out = group_af < min_allele_frequency
+        if only_deletions:
+            filter_out = filter_out & (variant_group.alt_seq.shape[1] == 1)
+        # always keep best if there are more than 1 variant
+        if len(variant_group) > 1:
+            filter_out[np.argmax(group_af)] = False
+        filter[index:index + len(variant_group)] = filter_out
+        index += len(variant_group)
+    logging.info(f"Removing {np.sum(filter)} variants")
+    return filter
+
+
+def filter_low_frequency_alleles_on_multiallelic_variants(vcf_file_name, min_allele_frequency: float = 0.05, only_deletions=False):
+    """
+    Writes to stdout
+    """
+    chunks = bnp.open(vcf_file_name, buffer_type=VcfWithInfoBuffer).read_chunks()
+    all_filters = []
+    for chromosome, chromosome_chunk in bnp.groupby(chunks, "chromosome"):
+        filter = find_multiallelic_alleles_with_low_allele_frequency(chromosome_chunk, min_allele_frequency, only_deletions=only_deletions)
+        logging.info(f"Removing {np.sum(filter)} variants on chromosome {chromosome}")
+        all_filters.append(filter)
+
+    all_filters = np.concatenate(all_filters)
+    print_filtered_vcf(all_filters, vcf_file_name)
+
+
+def print_filtered_vcf(all_filters, vcf_file_name):
+    i = 0
+    with igzip.open(vcf_file_name, "rb") as f:
+        for line in f:
+            line = line.decode("utf-8")
+            if line.startswith("#"):
+                print(line.strip())
+                continue
+            if not all_filters[i]:
+                print(line.strip())
+            i += 1
+
+
+def filter_low_frequency_alleles_on_multiallelic_variants_cli(args):
+    if args.reference is not None and False:
+        logging.info("Will pad variants")
+        find_multiallelic_alleles_with_low_allele_frequency_by_padding_variants(args.vcf_file_name, args.reference, args.min_frequency)
+    else:
+        filter_low_frequency_alleles_on_multiallelic_variants(args.vcf_file_name, args.min_frequency, only_deletions=args.only_deletions)

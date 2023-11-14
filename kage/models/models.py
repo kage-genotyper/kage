@@ -5,7 +5,6 @@ from scipy.special import logsumexp
 from scipy.stats import binom
 import logging
 from ..util import log_memory_usage_now
-
 MAIN = -1
 HELPER = -2
 M = MAIN
@@ -32,7 +31,7 @@ class Model:
 
 
 class ComboModelBothAlleles(Model):
-    def __init__(self, model_ref, model_alt):
+    def __init__(self, model_ref: 'SparseLimitedFrequencySamplingComboModel', model_alt: 'SparseLimitedFrequencySamplingComboModel'):
         self._model_ref = model_ref
         self._model_alt = model_alt
         self._logpmf_cache = {}

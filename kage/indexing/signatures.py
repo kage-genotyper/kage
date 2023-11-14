@@ -458,10 +458,10 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
                 local_scores_for_windows = np.max(
                     local_scorer[window_kmers_matrix.ravel() % local_modulo].reshape(window_kmers_matrix.shape), axis=0
                 )
-                if np.min(local_scores_for_windows) > n_paths:
-                    # no unique kmers, higher kmer frequency than paths on this allele
-                    new_variant_kmers.append(np.empty(0, dtype=np.uint64))
-                    continue
+                #if np.min(local_scores_for_windows) > n_paths:
+                #    # no unique kmers, higher kmer frequency than paths on this allele
+                #    new_variant_kmers.append(np.empty(0, dtype=np.uint64))
+                #    continue
 
                 scores_for_windows -= local_scores_for_windows * 3  # weigh local scores more than global scores. More important to find locally unique kmers
                 best_window = window_locations[np.argmax(scores_for_windows)]

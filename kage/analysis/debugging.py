@@ -14,7 +14,7 @@ def pretty_variant(variant):
     return f"{variant.chromosome}:{variant.position} {variant.ref_seq.to_string()}/{variant.alt_seq.to_string()} {variant.genotype}"
 
 class Debugger:
-    def __init__(self, genotype_report, kage_index, truth_vcf, genotypes_vcf, node_counts):
+    def __init__(self, genotype_report, kage_index, truth_vcf, genotypes_vcf, node_counts, probs, count_probs, numeric_genotypes=None):
         self.report = genotype_report
         self.kage_index = kage_index
         self.truth_vcf = truth_vcf
@@ -27,6 +27,12 @@ class Debugger:
         self.tricky_alleles = self.kage_index["tricky_alleles"]
         self.tricky_ref, self.tricky_alt = self.tricky_alleles
         self.kmer_index = self.kage_index["kmer_index"]
+        self.probs = probs
+        self.count_probs = count_probs
+        self.numeric_genotypes = numeric_genotypes
+        self.orig_count_model = None
+        if "orig_count_model" in self.kage_index:
+            self.orig_count_model = self.kage_index["orig_count_model"]
 
         #self.genotypes = bnp.open(genotypes_vcf, buffer_type=bnp.io.vcf_buffers.PhasedVCFMatrixBuffer).read()
         #self.genotypes = bnp.open(genotypes_vcf, buffer_type=VcfWithSingleIndividualBuffer).read()
@@ -66,8 +72,15 @@ class Debugger:
 
         print("Count model ref", self.count_model[0].describe_node(id))
         print("Count model alt", self.count_model[1].describe_node(id))
+        if self.orig_count_model is not None:
+            print("Orig count model ref", self.orig_count_model.describe_node(ref_node))
+            print("Orig count model alt", self.orig_count_model.describe_node(var_node))
+
         print("Kmer ref: ", ",".join([str(k) + "," + kmer_hash_to_sequence(k, 31) for k in self.reverse_kmer_index[ref_node]]))
         print("Kmer alt: ", ",".join([str(k) + "," + kmer_hash_to_sequence(k, 31) for k in self.reverse_kmer_index[var_node]]))
+        print("Probs", self.probs[id])
+        print("Count probs", self.count_probs[id])
+        print("Numeric genotype", self.numeric_genotypes[id])
         if with_helper and False:
             helper = self.helper[id]
             print("--Helper variant--")
@@ -87,5 +100,8 @@ class Debugger:
 def debug_cli(args):
     debugger = Debugger(pickle.load(open(args.report, "rb")),
                         IndexBundle.from_file(args.index), args.truth, args.genotypes,
-                        np.load(args.node_counts))
+                        np.load(args.node_counts),
+                        np.load(args.probs),
+                        np.load(args.count_probs),
+                        np.load(args.numeric_genotypes))
     debugger.run()

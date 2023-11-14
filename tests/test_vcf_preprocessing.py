@@ -1,4 +1,6 @@
-from kage.benchmarking.vcf_preprocessing import preprocess_sv_vcf, get_cn0_ref_alt_sequences_from_vcf, find_snps_indels_covered_by_svs
+from kage.benchmarking.vcf_preprocessing import preprocess_sv_vcf, get_cn0_ref_alt_sequences_from_vcf, \
+    find_multiallelic_alleles_with_low_allele_frequency
+from kage.preprocessing.variants import find_snps_indels_covered_by_svs
 import pytest
 import bionumpy as bnp
 import numpy as np
@@ -52,3 +54,22 @@ def test_find_snps_indels_covered_by_svs(variants2):
     is_covered = find_snps_indels_covered_by_svs(variants2, sv_size_limit=3)
     assert np.all(is_covered == [False, False, False, True, False, True])
 
+
+
+
+def test_find_multiallelic_alleles_with_low_allele_frequency():
+    variants = bnp.datatypes.VCFEntry.from_entry_tuples(
+        [
+            ("chr1", 1, ".", "A", "T", ".", ".", "AF=0.001"),
+            ("chr1", 3, ".", "A", "T", ".", ".", "AF=0.01"),
+            ("chr1", 3, ".", "A", "T", ".", ".", "AF=0.1"),
+            ("chr1", 4, ".", "A", "T", ".", ".", "AF=0.1"),
+            ("chr1", 5, ".", "A", "T", ".", ".", "AF=0.001"),
+            ("chr1", 5, ".", "A", "T", ".", ".", "AF=0.002"),
+            ("chr1", 5, ".", "A", "T", ".", ".", "AF=0.003"),
+        ]
+    )
+
+    filter = find_multiallelic_alleles_with_low_allele_frequency(variants, 0.05)
+    assert np.all(filter == [False, True, False, False, True, True, False])
+    print(filter)

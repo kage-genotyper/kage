@@ -31,8 +31,10 @@ def convert_string_genotypes_to_numeric_array(genotypes):
 
 def _write_genotype_debug_data(genotypes, numpy_genotypes, out_name, variant_to_nodes, probs, count_probs):
 
+    np.save(out_name + ".genotypes", genotypes)
     np.save(out_name + ".probs", probs)
     np.save(out_name + ".count_probs", count_probs)
+    return
 
     # Make arrays with haplotypes
     haplotype_array1 = np.zeros(len(numpy_genotypes), dtype=np.uint8)
@@ -84,7 +86,7 @@ def n_unique_values_per_column(matrix: np.ndarray):
     unique = np.sum(np.diff(sorted, axis=0) != 0, axis=0) + 1
     return unique
 
-def make_args_for_genotype_command(index_file_name, reads_file_name, out_file="test_genotypes.vcf"):
+def make_args_for_genotype_command(index_file_name, reads_file_name, out_file="test_genotypes.vcf", average_coverage=15, kmer_size=31):
     Args = namedtuple("args", ["index_bundle",
                                "reads",
                                "out_file_name",
@@ -100,7 +102,8 @@ def make_args_for_genotype_command(index_file_name, reads_file_name, out_file="t
                                "ignore_homo_ref",
                                "do_not_write_genotype_likelihoods",
                                "gpu",
-                               "counts"])
-    args = Args(index_file_name, reads_file_name, "test_genotypes.vcf", 31, 15, False, 4,
-                False, False, False, 0, "sample", False, True, False, None)
+                               "counts",
+                               "write_debug_data"])
+    args = Args(index_file_name, reads_file_name, "test_genotypes.vcf", kmer_size, average_coverage, True, 4,
+                False, False, False, 0, "sample", False, False, False, None, True)
     return args

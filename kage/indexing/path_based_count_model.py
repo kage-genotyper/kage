@@ -131,7 +131,7 @@ class PathKmers:
             new.append(pruned_kmers)
             #logging.info("Pruning took %.5f sec" % (time.perf_counter() - t0))
             log_memory_usage_now("Pruning %d" % i)
-
+            
         log_memory_usage_now("After pruning kmers")
         self.kmers = new
 
@@ -276,8 +276,17 @@ class PathBasedMappingModelCreator(MappingModelCreator):
             haplotype2_nodes = self._node_map.haplotypes_to_node_ids(haplotype2)
         #logging.info("Getting node ids took %.5f sec" % (time.perf_counter() - t0))
 
+
         t0 = time.perf_counter()
-        node_counts = self._kmer_index.map_kmers(np.concatenate(all_kmers), self._n_nodes)
+        map_kmers = np.concatenate(all_kmers)
+        node_counts = self._kmer_index.map_kmers(map_kmers, self._n_nodes)
+        """
+        if np.any(haplotype1_nodes == 13379):
+            logging.info("MATCH on haplotype %d" % (i * 2))
+            logging.info(np.sum(map_kmers == 1462005292078768776))
+            logging.info(node_counts[13379])
+        """
+
         #logging.info("Mapping took %.5f sec" % (time.perf_counter() - t0))
         t0 = time.perf_counter()
         self._add_node_counts(haplotype1_nodes, haplotype2_nodes, node_counts)
@@ -309,16 +318,32 @@ def get_haplotypes_as_paths(haplotype_matrix: SparseHaplotypeMatrix, path_allele
     return out
 
 @ray.remote
-def _get_single_haplotype_as_paths(path_signatures, haplotype_matrix, haplotype_id, window_size):
+def _get_single_haplotype_as_paths(path_signatures, haplotype_matrix, haplotype_id, max_window_size):
     #log_memory_usage_now("_get_single_haplotype_as_paths_start")
     haplotype = haplotype_matrix.get_haplotype(haplotype_id)
 
-    haplotype_signatures = sliding_window_view(np.append(haplotype, np.zeros(window_size - 1)), window_size)
+    # try to match first with small window size, then bigger up to max window size
+    # We prefer match with biggest window size if possible
+    did_match = np.zeros(len(haplotype), dtype=bool)
     matching_paths = np.zeros(len(haplotype), dtype=np.uint8)
-    assert path_signatures.shape[0] <= 256, "Too many paths for uint8"
+    for window_size in range(1, max_window_size+1):
+        haplotype_signatures = sliding_window_view(np.append(haplotype, np.zeros(window_size - 1)), window_size)
+        assert path_signatures.shape[0] <= 256, "Too many paths for uint8"
 
-    for i in range(path_signatures.shape[0]):
-        matching_paths[np.all(path_signatures[i] == haplotype_signatures, axis=1)] = i
+        for i in range(path_signatures.shape[0]):
+            match = np.all(path_signatures[i, :, :window_size] == haplotype_signatures, axis=1)
+            matching_paths[match] = i
+            did_match[match] = True
+
+    #assert np.all(did_match), f"{np.sum(~did_match)}"
+
+    logging.info("Haplotype %d matched %d/%d variants" % (haplotype_id, np.sum(did_match), len(did_match)))
+    if np.sum(did_match) != len(did_match):
+        for idx in np.where(~did_match)[0]:
+            logging.info("Variant %d" % idx)
+            logging.info("Path signatures: %s,\nHaplotype: %s" % (path_signatures[:, idx], haplotype_signatures[idx]))
+        raise Exception("Haplotype did not get matches against paths on all variants. Too few paths? Try increasing window size")
+
     #log_memory_usage_now("_get_single_haplotype_as_paths_end")
 
     return HaplotypeAsPaths(matching_paths)
@@ -328,7 +353,6 @@ def get_haplotypes_as_paths_parallel(haplotype_matrix: SparseHaplotypeMatrix, pa
                                      window_size, n_threads=8):
     t0 = time.perf_counter()
     ray.init(num_cpus=n_threads, ignore_reinit_error=True)
-    print("Time init", time.perf_counter()-t0)
 
     out = []
     t0 = time.perf_counter()

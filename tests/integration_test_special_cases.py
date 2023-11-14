@@ -1,4 +1,7 @@
+import numpy as np
 import pytest
+from graph_kmer_index import kmer_hash_to_sequence
+
 from kage.indexing.main import make_index
 from kage.command_line_interface import genotype
 from kage.util import make_args_for_genotype_command
@@ -68,5 +71,105 @@ def test5():
 
     signatures.describe(31)
 
+    tricky_ref, tricky_alt = index.tricky_alleles
+    assert np.sum(tricky_ref.tricky_variants) > 0
+    assert np.sum(tricky_alt.tricky_variants) > 0
+    print(tricky_ref)
+    print(tricky_alt)
+
+
+def test6():
+    vcf = "tricky_variants17.vcf"
+    ref = "ref_for_tricky_variants17.fa"
+    #ref = "21.fa"
+
+    index, signatures, orig_count_model = make_index(ref, vcf, "test_index.npz",
+                                   k=31, modulo=2000033,
+                                   variant_window=7,
+                                   n_threads=4)
+    signatures.describe(31)
+
+    tricky_ref, tricky_alt = index.tricky_alleles
+    print(tricky_ref.tricky_variants)
+    print(tricky_alt.tricky_variants)
+
+    count_model_ref, count_model_alt = index.count_model
+    for variant_id in range(len(index.vcf_variants)):
+        print("Variant", variant_id)
+        print(count_model_ref.describe_node(variant_id))
+        print(count_model_alt.describe_node(variant_id))
+
+        print("Original count model")
+        ref_node = index.variant_to_nodes.ref_nodes[variant_id]
+        alt_node = index.variant_to_nodes.var_nodes[variant_id]
+        print(orig_count_model.describe_node(ref_node))
+        print(orig_count_model.describe_node(alt_node))
+
+
+def test_copy_number():
+    # two variants with different number of a kmer
+    vcf = "tricky_variants8.vcf"
+    ref = "ref_for_tricky_variants8.fa"
+    k = 4
+
+    index, signatures, orig_count_model = make_index(ref, vcf, "test_index.npz",
+                                   k=k, modulo=2000033,
+                                   variant_window=7,
+                                   n_threads=4)
+
+    signatures.describe(k)
+
+    print("Kmer index")
+    print(index.kmer_index._kmers)
+    print([kmer_hash_to_sequence(kmer, k) for kmer in index.kmer_index._kmers])
+    print(index.kmer_index._nodes)
+
+    count_model_ref, count_model_alt = index.count_model
+    for variant_id in range(2):
+        print("Variant", variant_id)
+        print(count_model_ref.describe_node(variant_id))
+        print(count_model_alt.describe_node(variant_id))
+
+        print("Original count model")
+        ref_node = index.variant_to_nodes.ref_nodes[variant_id]
+        alt_node = index.variant_to_nodes.var_nodes[variant_id]
+        print(orig_count_model.describe_node(ref_node))
+        print(orig_count_model.describe_node(alt_node))
+
+    args = make_args_for_genotype_command("test_index.npz",
+                                          "reads_for_tricky_variants8.fa",
+                                          out_file="test_genotypes.vcf",
+                                          average_coverage=4.0,
+                                          kmer_size=k)
+
+    genotype(args)
+
+    probs = np.load("test_genotypes.vcf.probs.npy")
+    count_probs = np.load("test_genotypes.vcf.count_probs.npy")
+    node_counts = np.load("test_genotypes.vcf.node_counts.npy")
+    numeric_genotypes = np.load("test_genotypes.vcf.genotypes.npy")
+    print(numeric_genotypes)
+
+    print("PROBS")
+    print(probs)
+    print("Count probs")
+    print(count_probs)
+
+    print("Node counts")
+    print(node_counts)
+
+    assert np.all(numeric_genotypes == [2, 1])  # 1/1, 0/0
+
+
+
+def test_copy_number():
+    vcf = "tricky_variants13.vcf"
+    # todo implement
+    # variants have different frequencies of kmers
+    # challenge is to find kmers that have different frequency on the two alleles,
+    # which may not be kmers that have the lowest overall frequency
+    pass
+
 if __name__ == "__main__":
-   test5()
+    test6()
+    #test_copy_number()

@@ -37,7 +37,7 @@ from .analysis.debugging import debug_cli
 from kage.io import create_vcf_header_with_sample_name, write_multiallelic_vcf_with_biallelic_numeric_genotypes
 from kage.benchmarking.vcf_preprocessing import preprocess_sv_vcf, get_cn0_ref_alt_sequences_from_vcf, filter_snps_indels_covered_by_svs_cli
 from kage.analysis.genotype_accuracy import genotype_accuracy_cli
-
+from kage.benchmarking.vcf_preprocessing import filter_low_frequency_alleles_on_multiallelic_variants_cli
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -93,13 +93,13 @@ def genotype(args):
     print(genotypes)
     from kage.genotyping.multiallelic import postprocess_multiallelic_calls
     # Numeric genotypes: 1: 0/0, 2: 1/1, 3: 0/1
-    genotypes, probs = postprocess_multiallelic_calls(genotypes, index.multiallelic_map, probs)
+    #genotypes, probs = postprocess_multiallelic_calls(genotypes, index.multiallelic_map, probs)
 
     t = time.perf_counter()
     numpy_genotypes = convert_string_genotypes_to_numeric_array(genotypes)
     logging.debug("Converting string genotypes to numeric took %.4f sec" % (time.perf_counter()-t))
 
-    if args.debug:
+    if args.write_debug_data:
         _write_genotype_debug_data(genotypes, numpy_genotypes, args.out_file_name, index.variant_to_nodes, probs, count_probs)
 
     if "vcf_variants" in index:
@@ -163,6 +163,7 @@ def run_argument_parser(args):
     subparser.add_argument("-b", "--ignore-homo-ref", required=False, type=bool, default=False, help="Set to True to not write homo ref variants to output vcf")
     subparser.add_argument("-B", "--do-not-write-genotype-likelihoods", required=False, type=bool, default=False, help="Set to True to not write genotype likelihoods to output vcf")
     subparser.add_argument("-d", "--debug", type=bool, default=False)
+    subparser.add_argument("-D", "--write-debug-data", type=bool, default=False)
     subparser.set_defaults(func=genotype)
 
     subparser = subparsers.add_parser("analyse_variants")
@@ -458,6 +459,9 @@ def run_argument_parser(args):
     subparser.add_argument("-g", "--genotypes", required=True)
     subparser.add_argument("-r", "--report", required=True)
     subparser.add_argument("-n", "--node-counts", required=True)
+    subparser.add_argument("-p", "--probs", required=True)
+    subparser.add_argument("-c", "--count-probs", required=True)
+    subparser.add_argument("-G", "--numeric-genotypes", required=True)
     subparser.set_defaults(func=debug_cli)
 
 
@@ -467,7 +471,13 @@ def run_argument_parser(args):
     subparser.add_argument("-v", "--limit-type-to", required=False, default="all")
     subparser.set_defaults(func=genotype_accuracy_cli)
 
-
+    subparser = subparsers.add_parser("filter_low_freq_alleles")
+    subparser.add_argument("-v", "--vcf-file-name", required=True)
+    subparser.add_argument("-f", "--min-frequency", required=True, type=float)
+    subparser.add_argument("-r", "--reference", required=False, default=None)
+    subparser.add_argument("-d", "--only-deletions", required=False, default=False, type=bool)
+    subparser.set_defaults(func=filter_low_frequency_alleles_on_multiallelic_variants_cli)
+    
     #subparser = subparsers.add_parser("pad_vcf")
     #subparser.add_argument("-v", "--vcf-file-name", required=True)
     #subparser.add_argument("-r", "--reference", required=True)
