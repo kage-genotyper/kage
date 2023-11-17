@@ -16,7 +16,7 @@ from shared_memory_wrapper import to_file, remove_shared_memory_in_session, obje
 
 from .paths import PathCreator
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix, GenotypeMatrix
-from kage.models.helper_model import HelperVariants, CombinationMatrix
+from kage.models.helper_model import HelperVariants, CombinationMatrix, get_variants_that_can_be_used_as_helper_variants
 from .path_based_count_model import PathBasedMappingModelCreator
 from kage.models.mapping_model import convert_model_to_sparse
 from kage.util import log_memory_usage_now
@@ -120,11 +120,14 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     haplotype_matrix = biallelic_haplotype_matrix.to_multiallelic(n_alleles_per_variant)
     logging.info(f"{haplotype_matrix.n_variants} variants after converting to multiallelic")
 
-    np.save("haplotyp_matrix", haplotype_matrix.to_matrix())
+    np.save("haplotype_matrix", haplotype_matrix.to_matrix())
+    np.save("biallelic_haplotype_matrix", biallelic_haplotype_matrix.to_matrix())
 
     log_memory_usage_now("After graph")
     # Start seperate process for helper model
-    helper_model_process, helper_model_result_name = make_helper_model_seperate_process(biallelic_haplotype_matrix)
+    only_consider_variants_for_helper_model = get_variants_that_can_be_used_as_helper_variants(n_alleles_per_variant)
+    logging.info("Only consider variants for helper model: %s" % only_consider_variants_for_helper_model)
+    helper_model_process, helper_model_result_name = make_helper_model_seperate_process(biallelic_haplotype_matrix, only_consider_variants_for_helper_model)
     del biallelic_haplotype_matrix
 
     scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=0, modulo=modulo * 40 + 11)
@@ -227,21 +230,29 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
 
 
 
-def make_helper_model_seperate_process(biallelic_haplotype_matrix):
+def make_helper_model_seperate_process(biallelic_haplotype_matrix, variant_filter):
     result_name = str(id(biallelic_haplotype_matrix))
     logging.info("Making helper model in seperate process")
-    p = Process(target=make_helper_model, args=(object_to_shared_memory(biallelic_haplotype_matrix), result_name))
+    p = Process(target=make_helper_model,
+                args=(object_to_shared_memory(biallelic_haplotype_matrix),
+                      object_to_shared_memory(variant_filter),
+                      result_name))
     p.start()
     return p, result_name
 
-def make_helper_model(biallelic_haplotype_matrix, write_to_result_shared_memory_name=None):
+
+def make_helper_model(biallelic_haplotype_matrix, variant_filter, write_to_result_shared_memory_name=None):
     t0 = time.perf_counter()
     if isinstance(biallelic_haplotype_matrix, str):
         biallelic_haplotype_matrix = object_from_shared_memory(biallelic_haplotype_matrix)
+    if isinstance(variant_filter, str):
+        variant_filter = object_from_shared_memory(variant_filter)
     genotype_matrix = GenotypeMatrix.from_haplotype_matrix(biallelic_haplotype_matrix)
     logging.info("Making helper model")
     helper_model, combo_matrix = make_helper_model_from_genotype_matrix(
-        genotype_matrix.matrix, None, dummy_count=1.0, window_size=100)
+        genotype_matrix.matrix, None, dummy_count=1.0, window_size=100,
+        only_consider_variants=variant_filter
+    )
 
     logging.info("Making helper model took %.2f sec" % (time.perf_counter() - t0))
     if write_to_result_shared_memory_name is not None:

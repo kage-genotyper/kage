@@ -283,7 +283,8 @@ def test_integration_from_variants_to_signatures(bnp_reference_sequences, bnp_va
     tricky_variants = find_tricky_variants_from_multiallelic_signatures(signatures,
                                                                         node_mapping.n_biallelic_variants)
 
-    assert tricky_variants.tricky_variants[3] == True
+    # shared kmers not tricky anymore
+    #assert tricky_variants.tricky_variants[3] == True
 
 
 def test_that_fewer_signatures_are_preferred_integration():

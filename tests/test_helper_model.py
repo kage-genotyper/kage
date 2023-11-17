@@ -1,5 +1,6 @@
 from kage.models.models import *
 import numpy as np
+from kage.indexing.div import get_filter_of_variants_part_of_multiallelic_variant
 
 class DummyBoth:
 
@@ -65,3 +66,11 @@ class Mockup:
     _min_variant_id = 1
     _max_variant_id = 3
     
+
+def test_get_filter_of_variants_part_of_multiallelic():
+    n_alleles = np.array([2, 2, 4, 2, 5])
+    filter = get_filter_of_variants_part_of_multiallelic_variant(n_alleles)
+    correct = [False, False, True, True, True, False, True, True, True, True]
+
+    assert np.all(filter == correct)
+

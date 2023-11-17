@@ -21,6 +21,7 @@ class Debugger:
         self.genotypes_vcf = genotypes_vcf
         self.node_counts = node_counts
         self.helper = self.kage_index["helper_variants"]
+        self.combination_matrix = self.kage_index["combination_matrix"]
         self.count_model = self.kage_index["count_model"]
         self.variant_to_nodes = self.kage_index["variant_to_nodes"]
         self.tricky_variants = self.kage_index["tricky_variants"]
@@ -81,10 +82,13 @@ class Debugger:
         print("Probs", self.probs[id])
         print("Count probs", self.count_probs[id])
         print("Numeric genotype", self.numeric_genotypes[id])
-        if with_helper and False:
+        if with_helper:
             helper = self.helper[id]
-            print("--Helper variant--")
-            self.print_variant_info(helper, with_helper=False)
+            print("Most similar variant: %d" % helper)
+            print("Combination matrix: \n%s" % self.combination_matrix[id])
+            print("Genotype probs most similar (log): %s" % self.probs[helper])
+            #print("--Helper variant--")
+            #self.print_variant_info(helper, with_helper=False)
 
     def run(self):
         for type in ["false_positives", "false_negatives"]:

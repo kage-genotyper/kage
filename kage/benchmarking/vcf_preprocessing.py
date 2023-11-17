@@ -256,9 +256,12 @@ def filter_variants_on_same_pos_on_af(allele_frequencies: np.ndarray, min_allele
         group_af = allele_frequencies[index:index + len(variant_group)]
         filter_out = group_af < min_allele_frequency
         if only_deletions:
-            filter_out = filter_out & (variant_group.alt_seq.shape[1] == 1)
-        # always keep best if there are more than 1 variant
-        if len(variant_group) > 1:
+            filter_out = filter_out & (variant_group.ref_seq.shape[1] > 1)
+        else:
+            # only if not only deletion:
+            # always keep best if there are more than 1 variant
+            #if len(variant_group) > 1:
+            # always keep the best
             filter_out[np.argmax(group_af)] = False
         filter[index:index + len(variant_group)] = filter_out
         index += len(variant_group)

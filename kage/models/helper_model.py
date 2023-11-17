@@ -5,6 +5,7 @@ from .helper_index_using_duplicate_counts import (
     get_weighted_calc_func,
     get_prob_weights,
 )
+from kage.indexing.div import get_filter_of_variants_part_of_multiallelic_variant
 
 MAIN = -1
 HELPER = -2
@@ -153,6 +154,7 @@ def make_helper_model_from_genotype_matrix(
     dummy_count=1,
     score_func=calc_likelihood,
     window_size=1000,
+    only_consider_variants=None,
 ):
     # rows in genotype matrix are variants?
     # genotype_matrix = convert_genotype_matrix(genotype_matrix)
@@ -171,6 +173,7 @@ def make_helper_model_from_genotype_matrix(
             score_func,
             len(genotype_matrix),
             with_model=score_func != calc_likelihood,
+            only_consider_variants=only_consider_variants,
         )
 
     helper_counts = genotype_matrix[helpers] * 3
@@ -202,7 +205,7 @@ def make_helper_model_from_genotype_matrix(
     return helpers, population_posterior
 
 
-def find_best_helper(combined, score_func, N, with_model=False):
+def find_best_helper(combined, score_func, N, with_model=False, only_consider_variants=None):
     best_idx, best_score = np.zeros(N, dtype="int"), -np.inf * np.ones(N)
     for j, counts in enumerate(combined, 1):
         if j < 4:
@@ -210,9 +213,17 @@ def find_best_helper(combined, score_func, N, with_model=False):
         if j % 50 == 0:
             logging.info("Window %d" % j)
         scores = score_func(counts, j) if with_model else score_func(counts)
+        if only_consider_variants is not None:
+            #do_update = do_update & only_consider_variants[j:]
+            scores[~only_consider_variants[:-j]] = -np.inf
+
         do_update = scores > best_score[j:]
+        #if only_consider_variants is not None:
+        #    do_update[~only_consider_variants[do_update]] = False
+
         best_score[j:][do_update] = scores[do_update]
         best_idx[j:][do_update] = np.flatnonzero(do_update)
+
         # reverse
         rev_scores = (
             score_func(counts.swapaxes(-2, -1), -j)
@@ -220,6 +231,19 @@ def find_best_helper(combined, score_func, N, with_model=False):
             else score_func(counts.swapaxes(-2, -1))
         )
         do_update = rev_scores >= best_score[:-j]
+        if only_consider_variants is not None:
+            rev_scores[~only_consider_variants[j:]] = -np.inf
+        #    #do_update = do_update & only_consider_variants[:-j]
+        #if only_consider_variants is not None:
+        #    do_update[~only_consider_variants[do_update]] = False
+
+
         best_score[:-j][do_update] = rev_scores[do_update]
         best_idx[:-j][do_update] = np.flatnonzero(do_update) + j
     return best_idx
+
+
+def get_variants_that_can_be_used_as_helper_variants(n_alleles_per_multiallelic_variant):
+    filter = get_filter_of_variants_part_of_multiallelic_variant(n_alleles_per_multiallelic_variant)
+    return ~filter
+

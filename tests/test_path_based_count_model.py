@@ -187,9 +187,10 @@ def test_benchmark_haplotype_as_paths_from_haplotype():
 
 def test_get_all_haplotypes_as_paths():
     n_variants = 3000
-    n_individuals = 50
+    n_individuals = 100
     n_paths = 128
     window = 7
+    matching_window = 4
     haplotype_matrix = SparseHaplotypeMatrix.from_nonsparse_matrix(
         np.random.randint(0, 2, (n_variants, n_individuals))
     )
@@ -197,13 +198,19 @@ def test_get_all_haplotypes_as_paths():
     paths = np.random.randint(0, 2, (n_paths, n_variants))
 
     t0 = time.perf_counter()
-    all_haplotypes_as_paths = get_haplotypes_as_paths(haplotype_matrix, paths, window)
+    all_haplotypes_as_paths = get_haplotypes_as_paths(haplotype_matrix, paths, matching_window)
     print("Time", time.perf_counter()-t0)
 
 
     t0 = time.perf_counter()
-    all_haplotypes_as_paths2 = get_haplotypes_as_paths_parallel(haplotype_matrix, paths, window, n_threads=8)
+    all_haplotypes_as_paths2 = get_haplotypes_as_paths_parallel(haplotype_matrix, paths, matching_window, n_threads=8)
     print("Time", time.perf_counter()-t0)
 
     for h1, h2 in zip(all_haplotypes_as_paths, all_haplotypes_as_paths2):
-        assert np.all(h1.paths == h2.paths)
+        h1 = h1.paths.astype(np.uint8)
+        h2 = h2.paths
+
+        mismatch = np.where(h1 != h2)[0]
+        #print(mismatch, h1[mismatch], h2[mismatch])
+        assert np.all((h1 == h2) | (h1 == 0))  # h1 can be 0 (no match) where h2 finds a match. The new matching matches more
+

@@ -129,3 +129,28 @@ def test_benchmark_variant_window_kmers():
 
     print(path_kmers.kmers)
     print(kmers2)
+
+
+def test_find_kmers_only_inside_big_alleles():
+    paths = PathSequences.from_list(
+        [
+            ["AAAA", "TGGGGGGGGGGGC", "AAAA", "CC", "ACTG"],
+            ["ACTG", "GG", "ACTG", "CC", "ACTG"],
+        ]
+    )
+
+    kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths, k=3, only_pick_kmers_inside_big_alleles=True)
+
+    path_alleles = np.array([
+        [0, 0],
+        [1, 1]
+    ])
+
+    signatures = VariantWindowKmers2.from_matrix_variant_window_kmers(kmers, path_alleles)
+
+    string_kmers = signatures.to_kmer_list(k=3)
+
+    assert string_kmers[0][0][0][0] == "tgg", "First kmer on first allele of first variant should be beginning of first allele"
+    assert string_kmers[0][0][0][-1] == "ggc"  # last kmer
+    assert string_kmers[0][1][0][0] == "tgg"  # short alleles should have kmer starting before allele
+    print(string_kmers)

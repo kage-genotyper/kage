@@ -78,9 +78,10 @@ def test5():
     print(tricky_alt)
 
 
+@pytest.mark.skip
 def test6():
-    vcf = "tricky_variants17.vcf"
-    ref = "ref_for_tricky_variants17.fa"
+    vcf = "tricky_variants21.vcf"
+    ref = "ref_for_tricky_variants21.fa"
     #ref = "21.fa"
 
     index, signatures, orig_count_model = make_index(ref, vcf, "test_index.npz",
@@ -89,13 +90,20 @@ def test6():
                                    n_threads=4)
     signatures.describe(31)
 
+    biallelic_kmers = signatures.to_biallelic_list_of_sequences(k=31)
+
     tricky_ref, tricky_alt = index.tricky_alleles
     print(tricky_ref.tricky_variants)
     print(tricky_alt.tricky_variants)
 
     count_model_ref, count_model_alt = index.count_model
-    for variant_id in range(len(index.vcf_variants)):
-        print("Variant", variant_id)
+    print("Helper variants:")
+    print(index.helper_variants.helper_variants)
+    for variant_id, v in enumerate(index.vcf_variants):
+        print("Variant", variant_id, v)
+        print("\n".join(
+            [", ".join(k) for k in biallelic_kmers[variant_id]]
+        ))
         print(count_model_ref.describe_node(variant_id))
         print(count_model_alt.describe_node(variant_id))
 

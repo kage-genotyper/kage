@@ -2,7 +2,7 @@ import logging
 import time
 from dataclasses import dataclass
 import bionumpy as bnp
-from graph_kmer_index import KmerIndex
+from graph_kmer_index import KmerIndex, kmer_hash_to_sequence
 import npstructures as nps
 import numpy as np
 import tqdm
@@ -80,6 +80,17 @@ class MultiAllelicSignatures:
                 allele_kmers = [kmer_hash_to_sequence(kmer, k) for kmer in allele]
                 variant_kmers.append(allele_kmers)
             out.append(variant_kmers)
+        return out
+
+    def to_biallelic_list_of_sequences(self, k):
+        # for testing purposes only
+        from graph_kmer_index import kmer_hash_to_sequence
+        out = []
+        for variant_id, variant in enumerate(self.signatures):
+            ref_kmers = [kmer_hash_to_sequence(kmer, k) for kmer in variant[0]]
+            for allele_id, allele in enumerate(variant[1:]):
+                allele_kmers = [kmer_hash_to_sequence(kmer, k) for kmer in allele]
+                out.append((ref_kmers, allele_kmers))
         return out
 
     @classmethod
@@ -759,6 +770,20 @@ class VariantWindowKmers2:
     def from_list(cls, l) -> 'VariantWindowKmers2':
         return cls(ak.Array(l))
 
+    def to_kmer_list(self, k):
+        return [
+                [
+                    [
+                        [
+                            kmer_hash_to_sequence(window_kmer, k) for window_kmer in window_kmers
+                        ]
+                        for window_kmers in path_kmers
+                    ]
+                    for path_kmers in allele_kmers
+                ]
+                for allele_kmers in self.kmers
+            ]
+
     @property
     def n_variants(self):
         return len(self.kmers[0])
@@ -908,7 +933,11 @@ class MatrixVariantWindowKmers:
         return cls(matrix)
 
     @classmethod
-    def from_paths_with_flexible_window_size(cls, path_sequences: PathSequences, k, spacing=0):
+    def from_paths_with_flexible_window_size(cls, path_sequences: PathSequences, k, spacing=0, only_pick_kmers_inside_big_alleles=False):
+        """
+        IF only_pick_kmers_inside_big_alleles is True, then for big alleles, kmers will only be chosen so that they are inside
+        the allele
+        """
         # uses different windows for each variant, stores in an awkward array
         kmers_found = []  # one RaggedArray for each path. Each element in ragged array represents a variant allele
 
@@ -927,6 +956,11 @@ class MatrixVariantWindowKmers:
             # for each variant, find the kmers for this path and fill into the window
             starts = path._shape.starts[1::2]
             window_starts = starts - k + 1
+
+            if only_pick_kmers_inside_big_alleles:
+                window_starts[variant_sizes > k] += (k-1)
+                window_sizes[variant_sizes > k] -= (k-1)*2
+
             window_ends = window_starts + window_sizes
             assert np.all(window_ends > window_starts)
             assert np.all(window_ends <= len(path.ravel())), "Window end %d > length of path %d" % (np.max(window_ends), len(path.ravel()))
@@ -1033,7 +1067,12 @@ def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_cou
 
         #logging.info("Making variant window kmers from paths (finding kmer candidates)")
         t0 = time.perf_counter()
-        variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(subpaths.paths, k, spacing=spacing)
+        variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(
+            subpaths.paths,
+            k,
+            spacing=spacing,
+            only_pick_kmers_inside_big_alleles=True
+        )
         #logging.info("Making signature kmers from paths took %.4f seconds" % (time.perf_counter() - t0))
         #log_memory_usage_now("After MatrixVariantWindowKmers")
         #logging.info("Converting variant window kmers to new data structure")

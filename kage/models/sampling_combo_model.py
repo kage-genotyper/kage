@@ -254,9 +254,9 @@ class LimitedFrequencySamplingComboModel(Model):
         expected_on_missing0 = e1[missing0] - (e2[missing0] - e1[missing0])
 
         max_count = m0.shape[1]-1
-        m0[missing0, np.minimum(expected_on_missing0.astype(int), max_count)] = 1
-        m1[missing1, np.minimum(expected_on_missing1.astype(int), max_count)] = 1
-        m2[missing2, np.minimum(expected_on_missing2.astype(int), max_count)] = 1
+        m0[missing0, np.minimum(np.round(expected_on_missing0).astype(int), max_count)] = 1
+        m1[missing1, np.minimum(np.round(expected_on_missing1).astype(int), max_count)] = 1
+        m2[missing2, np.minimum(np.round(expected_on_missing2).astype(int), max_count)] = 1
 
     def has_no_data(self, idx, threshold=2):
         missing = [np.sum(c[idx]) == 0 for c in self.diplotype_counts]

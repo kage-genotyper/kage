@@ -141,3 +141,11 @@ def test_sparse_haplotype_matrix_with_missing_data():
 
 
 #def test_sparse_haplotype_matrix_to_biallelic_with_missing_data():
+
+
+def test_convert_biallelic_to_multiallelic():
+    matrix = np.load("test_biallelic_haplotype_matrix.npy")
+    n_alleles_per_variant = np.array([14])
+    biallelic = SparseHaplotypeMatrix.from_nonsparse_matrix(matrix)
+    multiallelic = biallelic.to_multiallelic(n_alleles_per_variant)
+    print(multiallelic.to_matrix())
