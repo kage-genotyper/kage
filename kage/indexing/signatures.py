@@ -933,10 +933,17 @@ class MatrixVariantWindowKmers:
         return cls(matrix)
 
     @classmethod
-    def from_paths_with_flexible_window_size(cls, path_sequences: PathSequences, k, spacing=0, only_pick_kmers_inside_big_alleles=False):
+    def from_paths_with_flexible_window_size(cls,
+                                             path_sequences: PathSequences,
+                                             k,
+                                             spacing=0,
+                                             only_pick_kmers_inside_big_alleles=False,
+                                             minimum_overlap_with_variant=1):
         """
         IF only_pick_kmers_inside_big_alleles is True, then for big alleles, kmers will only be chosen so that they are inside
         the allele
+        minimum_overlap_with_variant is minimum number of base pairs a kmer needs to overlap with variant allele
+        Should be at least 2 if indels have flanking bases
         """
         # uses different windows for each variant, stores in an awkward array
         kmers_found = []  # one RaggedArray for each path. Each element in ragged array represents a variant allele
@@ -950,16 +957,16 @@ class MatrixVariantWindowKmers:
         for i, path in enumerate(path_sequences.iter_path_sequences()):
             t0 = time.perf_counter()
             variant_sizes = path[1::2].shape[1]
-            window_sizes = variant_sizes + (k-1)*2
+            window_sizes = variant_sizes + (k-minimum_overlap_with_variant) + (k-1)  # left part outside + right part outside
             n_kmers_in_each_window = window_sizes - k + 1
             assert np.all(n_kmers_in_each_window > 0)
             # for each variant, find the kmers for this path and fill into the window
             starts = path._shape.starts[1::2]
-            window_starts = starts - k + 1
+            window_starts = starts - k + minimum_overlap_with_variant
 
             if only_pick_kmers_inside_big_alleles:
-                window_starts[variant_sizes > k] += (k-1)
-                window_sizes[variant_sizes > k] -= (k-1)*2
+                window_starts[variant_sizes > k] += (k-minimum_overlap_with_variant)
+                window_sizes[variant_sizes > k] -= (k-minimum_overlap_with_variant + k-1)
 
             window_ends = window_starts + window_sizes
             assert np.all(window_ends > window_starts)
@@ -1044,7 +1051,8 @@ def awkward_unravel_like(flat_array, like_array):
     """ Utility function for unraveling a flattened ak.Array """
 
 
-def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_count_to_index=-1, spacing=0):
+def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_count_to_index=-1, spacing=0,
+                   minimum_overlap_with_variant=1):
     """Wrapper function that finds multiallelic signatures from paths"""
     log_memory_usage_now("Before MatrixVariantWindowKmers")
 
@@ -1071,7 +1079,8 @@ def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_cou
             subpaths.paths,
             k,
             spacing=spacing,
-            only_pick_kmers_inside_big_alleles=True
+            only_pick_kmers_inside_big_alleles=True,
+            minimum_overlap_with_variant=minimum_overlap_with_variant
         )
         #logging.info("Making signature kmers from paths took %.4f seconds" % (time.perf_counter() - t0))
         #log_memory_usage_now("After MatrixVariantWindowKmers")

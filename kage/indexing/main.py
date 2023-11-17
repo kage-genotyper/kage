@@ -155,7 +155,8 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     signatures_chunk_size = 2000
     if len(variants) > 1000000:
         signatures_chunk_size = 4000
-    signatures = get_signatures(k, paths, scorer, chunk_size=signatures_chunk_size, spacing=0)   #k//2)
+    signatures = get_signatures(k, paths, scorer, chunk_size=signatures_chunk_size, spacing=0,
+                                minimum_overlap_with_variant=2)   #k//2)
 
     kmer_index = signatures.get_as_kmer_index(node_mapping=node_mapping, modulo=modulo, k=k)
 

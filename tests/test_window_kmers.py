@@ -7,12 +7,16 @@ import bionumpy as bnp
 from kage.util import log_memory_usage_now, get_memory_usage
 import pytest
 
-
-def test_matrix_window_kmers_flexible_window_size():
-    path_sequences = PathSequences([
+@pytest.fixture
+def path_sequences():
+    return PathSequences([
         bnp.as_encoded_array(["AAA", "CCC", "AAA", "GGG", "AAA"], bnp.DNAEncoding),
         bnp.as_encoded_array(["AAA", "", "CCC", "T", "AAA"], bnp.DNAEncoding),
     ])
+
+
+def test_matrix_window_kmers_flexible_window_size(path_sequences):
+
     path_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(path_sequences, k=3)
 
     kmer_encoding = bnp.encodings.kmer_encodings.KmerEncoding(bnp.DNAEncoding, 3)
@@ -29,8 +33,22 @@ def test_matrix_window_kmers_flexible_window_size():
         [1, 0],
         [0, 1]
     ])
-
     assert np.all(path_kmers.get_kmers(0, 1, variant_alleles) == path_kmers.kmers[0][0])
+
+
+def test_matrix_window_kmers_flexible_window_size_and_minimum_overlap_with_variant(path_sequences):
+    # When minimum overlap with variants is 2:
+    path_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(path_sequences, k=3, minimum_overlap_with_variant=2)
+    kmer_encoding = bnp.encodings.kmer_encodings.KmerEncoding(bnp.DNAEncoding, 3)
+    kmers = [[[kmer_encoding.to_string(k) for k in kmer] for kmer in path] for path in path_kmers.kmers]
+
+    correct = [
+        [["ACC", "CCC", "CCA", "CAA"], ["AGG", "GGG", "GGA", "GAA"]],
+        [["ACC"], ["CTA", "TAA"]]
+    ]
+
+    assert kmers == correct
+
 
 
 def test_variant_window_kmers2_from_matrix_variant_window_kmers_many_alleles_on_same_variant():
