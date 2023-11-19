@@ -9,7 +9,7 @@ def get_filter_of_variants_part_of_multiallelic_variant(n_alleles_per_multiallel
     """
     filter = np.zeros(np.sum(n_alleles_per_multiallelic_variant-1), dtype=bool)
 
-    @numba.jit
+    @numba.jit(nopython=True)
     def fill(f, n_alleles):
         biallelic_id = 0
         for multiallelic in n_alleles:

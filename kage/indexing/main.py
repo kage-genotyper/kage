@@ -14,7 +14,7 @@ from kage.indexing.graph import make_multiallelic_graph
 from shared_memory_wrapper import to_file, remove_shared_memory_in_session, object_to_shared_memory, from_shared_memory, \
     object_from_shared_memory
 
-from .paths import PathCreator
+from .paths import PathCreator, PathCombinationMatrix
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix, GenotypeMatrix
 from kage.models.helper_model import HelperVariants, CombinationMatrix, get_variants_that_can_be_used_as_helper_variants
 from .path_based_count_model import PathBasedMappingModelCreator
@@ -130,19 +130,30 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     helper_model_process, helper_model_result_name = make_helper_model_seperate_process(biallelic_haplotype_matrix, only_consider_variants_for_helper_model)
     del biallelic_haplotype_matrix
 
-    scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=0, modulo=modulo * 40 + 11)
+    scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=8, modulo=modulo * 40 + 11)
     assert np.all(scorer.values >= 0)
 
     log_memory_usage_now("After scorer")
 
     logging.info("Making paths")
+    # use haplotype matrix as combination matrix, should work well when number of haplotypes <= number of paths
+    nonsparse_haplotype_matrix = haplotype_matrix.to_matrix()
+    n_variants_in_haplotype_matrix = nonsparse_haplotype_matrix.shape[0]
+    combination_matrix = PathCombinationMatrix(nonsparse_haplotype_matrix.T)
+
+    combination_matrix.add_permuted_paths(n_alleles_per_variant, 3)
+    combination_matrix.add_paths_with_missing_alleles()
+    combination_matrix.sanity_check()
+
+    np.save("path_combination_matrix", combination_matrix.matrix)
+    logging.info("Combination matrix dim: %s" % str(combination_matrix.shape))
     paths = PathCreator(graph,
                         window=variant_window,  # bigger windows to get more paths when multiallelic
                         #make_disc_backed=True,
                         make_graph_backed_sequences=True,
                         disc_backed_file_base_name=out_base_name,
                         use_new_allele_matrix=True
-                        ).run(n_alleles_per_variant)
+                        ).run(n_alleles_per_variant, with_combination_matrix=combination_matrix)
 
     np.save("path_alleles", paths.variant_alleles.matrix.copy())
 
@@ -166,7 +177,7 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
                                                  haplotype_matrix,
                                                  k=k,
                                                  paths_allele_matrix=paths.variant_alleles,
-                                                 window=3,
+                                                 window=4,
                                                  max_count=20,
                                                  node_map=node_mapping,
                                                  n_nodes=len(variants)*2,
@@ -207,7 +218,7 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
             "vcf_header": bnp.open(vcf_file_name).read_chunk().get_context("header"),
             "vcf_variants": vcf_variants,
             "n_alleles_per_variant": n_alleles_per_original_variant,
-            "multiallelic_map": MultiAllelicMap.from_n_alleles_per_variant(n_alleles_per_variant),
+            "multiallelic_map": MultiAllelicMap.from_n_alleles_per_variant(n_alleles_per_original_variant),
             "orig_count_model": count_model
         }
     # helper model
@@ -282,6 +293,25 @@ class MultiAllelicMap:
 
     @classmethod
     def from_n_alleles_per_variant(cls, n_alleles_per_variant):
+        assert np.all(n_alleles_per_variant >= 2)
         tot = np.sum(n_alleles_per_variant-1)
         return nps.RaggedArray(np.arange(tot), n_alleles_per_variant-1)
 
+    @classmethod
+    def from_variants_by_position(cls, vcf_entry):
+        n_alleles = []
+        prev_chrom = ""
+        prev_pos = 0
+        for variant in vcf_entry:
+            chrom = variant.chromosome.to_string()
+            pos = int(variant.position)
+
+            if chrom != prev_chrom or pos != prev_pos:
+                n_alleles.append(2)
+            else:
+                n_alleles[-1] += 1
+
+            prev_chrom = chrom
+            prev_pos = pos
+
+        return cls.from_n_alleles_per_variant(np.array(n_alleles))

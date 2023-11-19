@@ -47,7 +47,8 @@ class CombinationModelGenotyper:
         self._predicted_genotypes = np.zeros(max_variant_id - min_variant_id + 1, dtype=np.uint8)
         self._prob_correct = np.zeros(max_variant_id - min_variant_id + 1, dtype=float)
         self._haplotype_coverage = self.config.avg_coverage / 2
-        self._estimated_mapped_haplotype_coverage = self._haplotype_coverage * 0.75 * 0.85
+        #self._estimated_mapped_haplotype_coverage = self._haplotype_coverage * 0.75 * 0.85
+        self._estimated_mapped_haplotype_coverage = self._haplotype_coverage * 0.85
         self.marginal_probs = None
 
     def predict(self):

@@ -80,8 +80,8 @@ def test5():
 
 @pytest.mark.skip
 def test6():
-    vcf = "tricky_variants21.vcf"
-    ref = "ref_for_tricky_variants21.fa"
+    vcf = "tricky_variants23.vcf"
+    ref = "ref_for_tricky_variants23.fa"
     #ref = "21.fa"
 
     index, signatures, orig_count_model = make_index(ref, vcf, "test_index.npz",

@@ -101,6 +101,35 @@ class PathCombinationMatrix:
     def __len__(self):
         return len(self.matrix)
 
+    def sanity_check(self):
+        for variant in range(self.shape[1]):
+            alleles = self.matrix[:,variant]
+            assert np.min(alleles) == 0, ",".join(alleles)
+            assert len(np.unique(alleles)) == np.max(alleles)+1, "All alleles should be supported: " + ",".join(map(str, np.unique(alleles)))
+
+    def add_paths_with_missing_alleles(self):
+        """
+        Extends with new paths to cover alleles that are not supported in current
+        matrix. Will assume alleles lower than max allele at a variant that are not in any paths are missing
+        """
+        # Todo: all this is slow an can be sped up easily with numba
+        missing = [
+            np.setdiff1d(np.arange(np.max(self.matrix[:, variant]) + 1), self.matrix[:, variant])
+            for variant in range(self.shape[1])
+        ]
+        max_missing = max(len(m) for m in missing)
+        if max_missing > 0:
+            new_paths = np.array([
+                [m[min(len(m)-1, i)] if len(m) > 0 else 0 for m in missing]
+                for i in range(max_missing)
+            ], dtype=np.uint8)
+            logging.info("Adding paths: %s" % new_paths)
+
+            self.matrix = np.concatenate([self.matrix, new_paths])
+
+    def add_permuted_paths(self, n_alleles_at_each_variant, window_size=3):
+        permuted_paths = PathCreator.make_combination_matrix_multi_allele_v3(n_alleles_at_each_variant, window_size)
+        self.matrix = np.concatenate([self.matrix, permuted_paths.matrix])
 
 @dataclass
 class Paths:
@@ -331,8 +360,11 @@ class PathCreator:
             assert disc_backed_file_base_name is not None
             self._disc_backed_file_base_name = disc_backed_file_base_name
 
-    def run(self, n_alleles_at_each_variant=None) -> Paths:
-        if n_alleles_at_each_variant is None:
+    def run(self, n_alleles_at_each_variant=None, with_combination_matrix=None) -> Paths:
+        if with_combination_matrix is not None:
+            combinations = with_combination_matrix
+            n_paths = len(combinations)
+        elif n_alleles_at_each_variant is None:
             logging.info("Assuming all variants are biallelic")
             alleles = [0, 1]  # possible alleles, assuming biallelic variants
             n_paths = len(alleles)**self._window
@@ -376,10 +408,9 @@ class PathCreator:
         for i, c in enumerate(combinations):
             combination_matrix[i] = np.array(list(c))
 
-
-
         return PathCombinationMatrix(combination_matrix)
 
+    @staticmethod
     def make_combination_matrix_multi_allele_v3(n_alleles: np.ndarray, window) -> PathCombinationMatrix:
         """
         First make a biallelic with same shape, then replace columns with more than two alleles

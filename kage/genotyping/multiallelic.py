@@ -44,9 +44,12 @@ def postprocess_multiallelic_calls(genotypes: np.ndarray, multiallelic_map: Mult
             # if this is 1/1, set all others to 0/0
             # if this is 0/1, check if any others is 0/1 and keep those two as 0/1 and set rest to 0/0
 
-            most_likely_non_homo_ref = np.argmax(np.max(variant_probs, axis=1), axis=0)
+            # find variant with highest prob on not 0/0 (1:)
+            most_likely_non_homo_ref = np.argmax(np.max(variant_probs[:, 1:], axis=1), axis=0)
             g = variant_genotypes[most_likely_non_homo_ref]
 
+            # this happens if the variant with highest prob of not 0/0 itself has highest prob of 0/0
+            # then we can set all to 0/0
             if g == 0 or g == 1:
                 genotypes[biallelic_id:biallelic_id+len(multiallelic)] = 1
                 n_changed += 1

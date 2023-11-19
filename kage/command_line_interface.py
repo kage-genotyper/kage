@@ -38,6 +38,7 @@ from kage.io import create_vcf_header_with_sample_name, write_multiallelic_vcf_w
 from kage.benchmarking.vcf_preprocessing import preprocess_sv_vcf, get_cn0_ref_alt_sequences_from_vcf, filter_snps_indels_covered_by_svs_cli
 from kage.analysis.genotype_accuracy import genotype_accuracy_cli
 from kage.benchmarking.vcf_preprocessing import filter_low_frequency_alleles_on_multiallelic_variants_cli
+from kage.indexing.main import MultiAllelicMap
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -93,7 +94,9 @@ def genotype(args):
     print(genotypes)
     from kage.genotyping.multiallelic import postprocess_multiallelic_calls
     # Numeric genotypes: 1: 0/0, 2: 1/1, 3: 0/1
-    #genotypes, probs = postprocess_multiallelic_calls(genotypes, index.multiallelic_map, probs)
+    #multiallelic_map = index.multiallelic_map
+    multiallelic_map = MultiAllelicMap.from_variants_by_position(index.vcf_variants)
+    genotypes, probs = postprocess_multiallelic_calls(genotypes, multiallelic_map, probs)
 
     t = time.perf_counter()
     numpy_genotypes = convert_string_genotypes_to_numeric_array(genotypes)
