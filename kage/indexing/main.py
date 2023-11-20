@@ -34,22 +34,23 @@ from multiprocessing import Process
 
 
 def validate_input_vcf(vcf_file_name):
+    logging.info("Validating input vcf")
     with bnp.open(vcf_file_name) as f:
         for chunk in f:
-            if np.any(chunk.alt_seq == ",", axis=1):
+            if np.any(chunk.alt_seq == ","):
                 logging.error("VCF contains multiallelic variants. Please split multiallelic variants, e.g. using "
-                              "bcftools norm -m -any <input.vcf>")
+                              "bcftools norm -m -any <input.vcf> before running kage index")
                 sys.exit()
 
-            if np.any(chunk.ref_seq == "<", axis=1) or np.any(chunk.alt_seq == "*", axis=1):
-                logging.error("Input VCF needs to contain only A, C, G, T or N in reference and alt sequences")
+            if np.any(chunk.alt_seq == "<") or np.any(chunk.alt_seq == "*"):
+                logging.error("Input VCF needs to contain only A, C, G, T or N in reference and alt sequences. Some alleles did not.")
                 sys.exit()
 
             if not hasattr(chunk.info, "AF"):
                 logging.error("VCF needs to contain the AF field in the INFO column (allele frequency used internally "
                               "by KAGE")
-                logging.error("Please add AF to the INFO column, e.g. by using  bcftools +fill-tags in.bcf -Ob -o "
-                              "out.bcf -- -t AF")
+                logging.error("Please add AF to the INFO column, e.g. by using  bcftools +fill-tags in.vcf -Ob -o "
+                              "out.vcf -- -t AF")
                 sys.exit()
 
 def make_index(
@@ -60,10 +61,13 @@ def make_index(
        modulo=20000033,
        variant_window=6,
        n_threads=16,
-       vcf_no_genotypes=None):
+       vcf_no_genotypes=None,
+       min_af_deletions_filter=0.1
+):
     """
     Makes all indexes and writes to an index bundle.
     """
+    validate_input_vcf(vcf_file_name)
     t_start = time.perf_counter()
     # vcf_variants are original vcf variants, needed when writing final vcf after genotyping
     # n_alleles_per_variant lets us convert genotypes on variants (which are biallelic) to multiallelic where necessary
@@ -80,7 +84,7 @@ def make_index(
                                                                                           reference_file_name,
                                                                                           True,
                                                                                           remove_indel_padding=False,
-                                                                                          remove_sequence_from_low_af_deletions=0.1)
+                                                                                          remove_sequence_from_low_af_deletions=min_af_deletions_filter)
 
     n_orig_variants_before_filtering = len(vcf_variants)
 
@@ -284,7 +288,8 @@ def make_index_cli(args):
     r = make_index(args.reference, args.vcf, args.out_base_name,
                       args.kmer_size, modulo=args.modulo,
                       variant_window=args.variant_window,
-                    vcf_no_genotypes=args.vcf_no_genotypes)
+                    vcf_no_genotypes=args.vcf_no_genotypes,
+                   min_af_deletions_filter=args.min_af_deletions_filter)
     remove_shared_memory_in_session()
     return r
 

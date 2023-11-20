@@ -449,9 +449,9 @@ def run_argument_parser(args):
     subparser.add_argument("-V", "--vcf-no-genotypes", required=False, help="May be specified. If specified, should be a vcf with no genotypes. Will lower memory usage when creating indexes. Will not change results.")
     subparser.add_argument("-o", "--out-base-name", required=True)
     subparser.add_argument("-k", "--kmer-size", required=False, type=int, default=31)
-    subparser.add_argument("-M", "--make-helper-model", required=False, type=bool, default=False)
     subparser.add_argument("-m", "--modulo", required=False, type=int, default=200000033)
-    subparser.add_argument("-w", "--variant-window", required=False, type=int, default=4, help="Max neighbouring variants to consider. Indexing increases with this number")
+    subparser.add_argument("-w", "--variant-window", required=False, type=int, default=7, help="Max neighbouring variants to consider when selecting kmers. Indexing increases with this number. 6 or 7 should work fine for most cases.")
+    subparser.add_argument("-a", "--min-af-deletions-filter", required=False, type=float, default=0.1, help="Deletions with lower allele frequency than this will not be indexed, to avoid too many duplicate alleles. Normally this parameter does not need to be changed.")
     subparser.set_defaults(func=make_index_cli)
 
 
