@@ -1,3 +1,4 @@
+import dataclasses
 import itertools
 from dataclasses import dataclass
 import npstructures as nps
@@ -399,7 +400,10 @@ class VariantPadder:
         return Variants(self._variants.chromosome, new_positions, new_ref_sequences, new_alt_sequences)
 
 
-def get_padded_variants_from_vcf(variants: 'VariantStream', reference_file_name, also_return_original_variants=False, remove_indel_padding=True) -> Variants:
+def get_padded_variants_from_vcf(variants: 'VariantStream', reference_file_name, also_return_original_variants=False,
+                                 remove_indel_padding=True,
+                                 remove_sequence_from_low_af_deletions: float = 0.0
+                                 ) -> Variants:
     if isinstance(variants, str):
         variants = VariantStream.from_vcf(variants)
 
@@ -410,17 +414,23 @@ def get_padded_variants_from_vcf(variants: 'VariantStream', reference_file_name,
     n_alleles_per_variant = []
 
     for chromosome, raw_chromosome_variants in variants.read_by_chromosome():  #bnp.groupby(variants, "chromosome"):
+        if also_return_original_variants:
+            r = raw_chromosome_variants
+            all_vcf_variants.append(SimpleVcfEntry(r.chromosome, r.position, r.ref_seq.copy(), r.alt_seq.copy()))
+
+        if remove_sequence_from_low_af_deletions > 0:
+            raw_chromosome_variants = remove_alt_and_ref_seq_on_deletions_with_low_af(raw_chromosome_variants, remove_sequence_from_low_af_deletions)
+
         n_alleles_per_variant.append(np.sum(raw_chromosome_variants.alt_seq == ",", axis=1) + 2)
         chromosome_variants = Variants.from_multiallelic_vcf_entry(raw_chromosome_variants, remove_indel_padding=remove_indel_padding)
         log_memory_usage_now("After creating Variants")
         logging.info("Padding variants on chromosome " + chromosome)
         logging.info("%d variants" % len(chromosome_variants))
+
         padded_variants = VariantPadder(chromosome_variants, sequences[chromosome]).run()
         log_memory_usage_now("After padding")
         all_variants.append(padded_variants)
-        if also_return_original_variants:
-            r = raw_chromosome_variants
-            all_vcf_variants.append(SimpleVcfEntry(r.chromosome, r.position, r.ref_seq, r.alt_seq))
+
         log_memory_usage_now("After processing variants for chromosome %s" % chromosome)
 
     all_variants = np.concatenate(all_variants)
@@ -591,6 +601,59 @@ class FilteredOnMaxAllelesVariantStream(VariantStream):
             yield chunk[mask]
 
 
+class LowAfDeletionsReplacedVariantStream(VariantStream):
+    """
+    Replaces alleles on low-af deletions with empty sequences
+    """
+    def __init__(self, stream: VariantStream, min_af):
+        self._stream = stream
+        self._min_af = min_af
+
+    def _read_chunks(self):
+        n_filtered = 0
+        for chunk in self._stream.read_chunks():
+            #allele_frequencies = get_af_from_info_string_in_vcf_chunk(chunk)
+            filter_out = self.get_filter_of_deletions_with_low_af(chunk, self._min_af)
+            n_filtered += np.sum(filter_out)
+            logging.info(f"Filtered out {np.sum(filter_out)} deletions with AF < {self._min_af}. In total filtered {n_filtered}")
+            yield chunk[~filter_out]
+            continue
+
+
+def remove_alt_and_ref_seq_on_deletions_with_low_af(chunk, min_af):
+    filter_out = get_filter_of_deletions_with_low_af(chunk, min_af)
+    logging.info(f"{np.sum(filter_out)} deletions with AF < {min_af} will not be included in padding/kmer indexing")
+    # Set ref seq and alt seq to "" for these variants
+    new_ref = bnp.as_encoded_array([
+        seq.to_string()[0] if filter_out[i] else seq.to_string() for i, seq in enumerate(chunk.ref_seq)
+    ])
+    new_alt = bnp.as_encoded_array([
+        seq.to_string()[0] if filter_out[i] else seq.to_string() for i, seq in enumerate(chunk.alt_seq)
+    ])
+
+    """
+    new_ref_shape = chunk.ref_seq.shape[1].copy()
+    new_ref_shape[filter_out] = 0
+    new_ref = bnp.EncodedRaggedArray(bnp.EncodedArray(chunk.ref_seq[~filter_out].ravel().raw(), chunk.ref_seq.encoding), new_ref_shape)
+
+    new_alt_shape = chunk.alt_seq.shape[1].copy()
+    new_alt_shape[filter_out] = 0
+    new_alt = bnp.EncodedRaggedArray(bnp.EncodedArray(chunk.alt_seq[~filter_out].ravel().raw(), chunk.alt_seq.encoding), new_alt_shape)
+
+    #new_chunk = dataclasses.replace(chunk, ref_seq=new_ref, alt_seq=new_alt)
+    """
+    chunk.ref_seq = new_ref
+    chunk.alt_seq = new_alt
+    return chunk
+
+
+def get_filter_of_deletions_with_low_af(chunk, min_af):
+    allele_frequencies = chunk.info.AF
+    allele_frequencies = bnp.io.strops.str_to_float(allele_frequencies)
+    filter_out = (allele_frequencies < min_af) & (chunk.ref_seq.shape[1] > 1)
+    return filter_out
+
+
 class FilteredOnMaxAllelesVariantStream2(VariantStream):
     """Another version that uses a counter on the references.
     Works for biallelic.
@@ -693,3 +756,31 @@ def find_snps_indels_covered_by_svs(variants: bnp.datatypes.VCFEntry, sv_size_li
     is_covered = (sv_position_mask[starts] | sv_position_mask[ends]) & is_snp_indel
 
     return is_covered
+
+
+def find_end_in_info_string(info_string: str) -> int:
+    fields = info_string.split(";")
+    fields = [f for f in fields if f.startswith("END=")]
+    assert len(fields) == 1
+    value = fields[0].split("=")[1]
+    return int(value)
+
+
+def get_af_from_info_string_in_vcf_chunk(chunk) -> np.ndarray:
+    # hacky way to get allele frequency fast
+    info_fields = bnp.io.strops.join(chunk.info, ";")
+    info_fields = bnp.io.strops.split(info_fields, sep=";")
+    af_strings = info_fields[bnp.str_equal(info_fields[:, 0:3], "AF=")]
+    assert len(af_strings) == len(chunk), "Not all lines contain AF=?"
+
+    # afs = np.array([float(af_string.to_string()) for af_string in af_strings[:, 3:]])
+    afs = (af_string.to_string() for af_string in af_strings[:, 3:])
+    afs = nps.RaggedArray(
+        [
+            [float(af) for af in af_string.split(",")]
+            for af_string in afs
+        ]
+    )
+    # use highest af
+    afs = np.max(afs, axis=-1)
+    return afs

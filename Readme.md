@@ -3,9 +3,10 @@
 [![DOI](https://zenodo.org/badge/251419423.svg)](https://zenodo.org/badge/latestdoi/251419423)
 
 
-## Update October 16 2023
-* KAGE can now genotype structural variants
-* The indexing process has been rewritten and indexing is now much faster and requires less memory
+## Update November 20 2023
+* KAGE now has experimental support for genotyping structural variants. 
+* The indexing process has been rewritten and indexing is now much faster and requires less memory. There is now one single command for creating the indexes from an input vcf.
+* Various minor fixes for improved genotyping accuracy on SNPs and short indels.
 
 
 ## KAGE: *K*mer-based *A*lignment-free *G*raph G*e*notyper
@@ -35,14 +36,16 @@ You will need:
 * A reference genome in fasta format
 * A set of variants with genotypes of known individuals in vcf-format (`.vcf` or `.vcf.gz`)
 
-Variants can be biallelic or multiallelic and both SNPs/indels and structural variants are supported. Note however that all variants must have actual sequences in the ref and alt fields. Genotypes should be phased and there should ideally be few missing genotypes.
+Variants can be biallelic or multiallelic and both SNPs/indels and structural variants are supported. Note however that all variants must have actual sequences in the ref and alt fields. Genotypes should be phased (e.g. `0|0`, `0|1` or `1|1`) and there should ideally be few missing genotypes (e.g. `.|.` or `.`).
 
 ### Step 1: Build an index of the variants you want to genotype
-Building an index is time consuming, but only needs to be done once for each set of variants you want to genotype. Indexing time scales approximately linearly with number of variants and the size of the reference genome. Creating an index for a human pangenome with 30 million variants should take approximately a day or so.
+Building an index is somewhat time consuming, but only needs to be done once for each set of variants you want to genotype. Indexing time scales approximately linearly with number of variants and the size of the reference genome. Creating an index for a human pangenome with 30 million variants and 2000-3000 individuals should finish in less than a day. It's always a good idea to start out with a smaller set of variants, e.g. a single chromosome first to see if things work as expected.
 
 ```bash
 kage index -r reference.fa -v variants.vcf.gz -o index -k 31
 ```
+
+The above command will create an `index.npz` file.
 
 ### Step 2: Genotype
 Genotyping with kage is extremely fast once you have an index:
@@ -80,7 +83,7 @@ Note: GKAGE has been tested to work with GPUs with 4 GBs of RAM.
 
 ## Recent changes and future plans
 Recent changes:
-* October 16 2023: Indexing process rewritten and support for structural variation.
+* November 20 2023: Indexing process rewritten and experimental support for structural variation.
 * January 30 2023: Release of GPU support (version 0.0.30).
 * October 7 2022: Minor update. Now using [BioNumPy](https://gitub.com/uio-bmi/bionumpy) do parse input files and hash kmers.
 * June 2022: Release of version for manuscript in Genome Biology

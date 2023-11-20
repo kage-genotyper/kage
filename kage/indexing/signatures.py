@@ -392,17 +392,14 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
         signatures = self._signatures_found.signatures
         scores = self._window_scores
         is_sv = self._kmers.get_mask_of_svs(self._sv_min_size)
-        logging.info("There are %d SVs" % np.sum(is_sv))
 
         # make new MultiAllelicSignatures for single variants thare are to be changed
         # concatenate results (since ak array is immutable)
         changed = {}  # variant_id -> MultiAllelicSignatures
         for sv_id in np.where(is_sv)[0]:
             # check if sv has nonunique kmers
-            #all_kmers = ak.to_numpy(ak.ravel(signatures[sv_id, :, :]))
             all_kmers = ak.ravel(signatures[sv_id, :, :])
             if len(np.unique(all_kmers)) != len(all_kmers):
-                #logging.info("SV %d has nonunique kmers: %s" % (sv_id, str(all_kmers)))
 
                 # for each allele, find the kmer with best score that is not
                 # in any other allele
@@ -413,13 +410,11 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
                 to_add = MultiAllelicSignatureFinderV2.manually_find_kmers(sv_kmers, sv_scores)
                 time_spent = time.perf_counter()-t0
                 if time_spent > 0.1:
-                    print(f"Sv {sv_id} with {len(signatures[sv_id])} allele and {len(sv_kmers[0][0])} windows took {time_spent} sec")
+                    # sv took a lot of time to index, log debug
+                    logging.debug(f"Sv {sv_id} with {len(signatures[sv_id])} allele and {len(sv_kmers[0][0])} windows took {time_spent} sec")
 
-                #print(to_add)
-                #print("to add dtype", to_add.type)
                 changed[sv_id] = to_add
 
-        t0 = time.perf_counter()
         to_concatenate = []
         prev_id = 0
         for sv_id, sig in changed.items():
@@ -428,7 +423,7 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
             prev_id = sv_id + 1
         to_concatenate.append(signatures[prev_id:])
         new = np.concatenate(to_concatenate)
-        #logging.info("Concatenation took %.4f sec" % (time.perf_counter() - t0))
+
         assert len(new) == len(signatures)
         self._signatures_found = MultiAllelicSignatures(new)
 
@@ -1094,7 +1089,7 @@ def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_cou
         #logging.info("Finding best signatures for variants")
         signatures = MultiAllelicSignatureFinderV2(variant_window_kmers2, scorer=scorer, k=k, sv_min_size=50//max(1, spacing)).run(add_dummy_count_to_index)
         # Removing frequent signatures is not necessary, but will speed up mapping model since more signatures are pruned from paths
-        signatures.remove_too_frequent_signatures(scorer, 10000000000)
+        signatures.remove_too_frequent_signatures(scorer, 1000000)
         all_signatures.append(signatures)
 
     for s in all_subpaths:

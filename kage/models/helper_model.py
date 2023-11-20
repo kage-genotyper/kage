@@ -6,6 +6,7 @@ from .helper_index_using_duplicate_counts import (
     get_prob_weights,
 )
 from kage.indexing.div import get_filter_of_variants_part_of_multiallelic_variant
+from kage.models.sampling_combo_model import LimitedFrequencySamplingComboModel
 
 MAIN = -1
 HELPER = -2
@@ -247,3 +248,20 @@ def get_variants_that_can_be_used_as_helper_variants(n_alleles_per_multiallelic_
     filter = get_filter_of_variants_part_of_multiallelic_variant(n_alleles_per_multiallelic_variant)
     return ~filter
 
+
+def get_variants_with_perfect_model(ref_count_model: LimitedFrequencySamplingComboModel, alt_count_model: LimitedFrequencySamplingComboModel):
+    """
+    Returns a filter (np boolean array) with variants that have no duplicate kmer counts in model on alt or ref,
+    i.e. variants that have only individuals with 0 counts for 0 copies of an allele, 1 for 1 and 2 for 2
+    """
+    filter = np.ones(len(ref_count_model.diplotype_counts[0]), dtype=bool)
+    for model in [ref_count_model, alt_count_model]:
+        for count in range(3):
+            match = np.nonzero(model.diplotype_counts[count])
+            # all individuals with counts on other indices than count should be filtered out
+            filter[match[0]] &= (match[1] == count)
+            has_more_than_one_index = np.bincount(match[0], minlength=len(filter)) > 1
+            filter[has_more_than_one_index] = False
+            #filter &= match   # all counts should be at index count, meaning all individuals in model only have that count
+    logging.info("%d/%d variants had perfect model, i.e. no duplicate or missing counts" % (np.sum(filter), len(filter)))
+    return filter

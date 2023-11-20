@@ -289,5 +289,5 @@ def find_tricky_ref_and_var_alleles_from_count_model(count_model: LimitedFrequen
     tricky_ref |= n_genotypes_missing_ref >= 2
     tricky_var |= n_genotypes_missing_alt >= 2
 
-    return (TrickyVariants(tricky_ref), TrickyVariants(tricky_var))
+    return TrickyVariants(tricky_ref), TrickyVariants(tricky_var)
 

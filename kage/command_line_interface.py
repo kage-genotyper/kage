@@ -91,7 +91,6 @@ def genotype(args):
 
     genotyper = CombinationModelGenotyper(0, max_variant_id, node_counts, index, config=config)
     genotypes, probs, count_probs = genotyper.genotype()
-    print(genotypes)
     from kage.genotyping.multiallelic import postprocess_multiallelic_calls
     # Numeric genotypes: 1: 0/0, 2: 1/1, 3: 0/1
     #multiallelic_map = index.multiallelic_map

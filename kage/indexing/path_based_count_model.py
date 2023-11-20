@@ -8,7 +8,7 @@ from shared_memory_wrapper.util import interval_chunks
 from kage.preprocessing.variants import VariantAlleleToNodeMap
 from scipy.signal import convolve2d
 import bionumpy as bnp
-from typing import List, Union
+from typing import List, Union, Iterable, Optional
 
 from shared_memory_wrapper import to_file, object_to_shared_memory, object_from_shared_memory
 
@@ -71,7 +71,8 @@ class HaplotypeAsPaths:
 
 @dataclass
 class PathKmers:
-    kmers: List[bnp.EncodedRaggedArray]
+    kmers: Iterable[bnp.EncodedRaggedArray]
+    n_paths: Optional[int] = None
 
     @classmethod
     def from_graph_and_paths(cls, graph: Graph, path_allele_matrix: np.ndarray, k):
@@ -80,7 +81,7 @@ class PathKmers:
         n_paths = path_allele_matrix.shape[0]
         log_memory_usage_now("Before making pathkmers")
         logging.info("Making pathkmers for %d paths", n_paths)
-        return cls((graph.kmers_for_pairs_of_ref_and_variants(path_allele_matrix[i, :], k) for i in range(n_paths)))
+        return cls((graph.kmers_for_pairs_of_ref_and_variants(path_allele_matrix[i, :], k) for i in range(n_paths)), n_paths=n_paths)
 
     def get_for_haplotype(self, haplotype: HaplotypeAsPaths, include_reverse_complements=False):
         """
@@ -115,23 +116,12 @@ class PathKmers:
         """
         # first creates an approx lookup of which kmers are in kmer_index
         # then prunes away kmers that are not in kmer_index
-        logging.info("Making kmer lookup")
         lookup = kmer_index
-        #index_kmers = kmer_index.get_kmers()
-        #lookup = np.zeros(modulo, dtype=bool)
-        #lookup[index_kmers % modulo] = True
-        #lookup = ModuloFilter(lookup)
-
-        #logging.info("Pruning")
         new = []
-        for i, kmers in tqdm(enumerate(self.kmers), desc="Pruning kmers"):
-            #logging.info("Pruning path %d", i)
-            t0 = time.perf_counter()
+        for i, kmers in tqdm(enumerate(self.kmers), desc="Pruning kmers", total=self.n_paths):
             pruned_kmers = self.prune_kmers(kmers, lookup)
             new.append(pruned_kmers)
-            #logging.info("Pruning took %.5f sec" % (time.perf_counter() - t0))
-            log_memory_usage_now("Pruning %d" % i)
-            
+
         log_memory_usage_now("After pruning kmers")
         self.kmers = new
 
@@ -153,7 +143,7 @@ class PathKmers:
 
         #logging.info("Time lookup %d kmers: %.5f" % (len(raw_kmers), time.perf_counter() - t_lookup))
         mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)
-        logging.info(f"Kept {np.sum(mask)}/{len(raw_kmers)} kmers for path")
+        #logging.info(f"Kept {np.sum(mask)}/{len(raw_kmers)} kmers for path")
         kmers = raw_kmers[is_in]
         shape = np.sum(mask, axis=1)
         pruned_kmers = bnp.EncodedRaggedArray(bnp.EncodedArray(kmers, encoding), shape)
@@ -241,7 +231,6 @@ class PathBasedMappingModelCreator(MappingModelCreator):
         self._window = window
         self._all_haplotypes_as_paths = get_haplotypes_as_paths_parallel(
             self._haplotype_matrix, self._path_allele_matrix, self._window, n_threads=n_threads)
-        log_memory_usage_now("After getting haplotypes as paths")
 
     def _process_individual(self, i):
         t0 = time.perf_counter()
@@ -335,16 +324,12 @@ def _get_single_haplotype_as_paths(path_signatures, haplotype_matrix, haplotype_
             matching_paths[match] = i
             did_match[match] = True
 
-    #assert np.all(did_match), f"{np.sum(~did_match)}"
-
-    logging.info("Haplotype %d matched %d/%d variants" % (haplotype_id, np.sum(did_match), len(did_match)))
     if np.sum(did_match) != len(did_match):
         for idx in np.where(~did_match)[0]:
             logging.info("Variant %d" % idx)
             logging.info("Path signatures: %s,\nHaplotype: %s" % (path_signatures[:, idx], haplotype_signatures[idx]))
-        raise Exception("Haplotype did not get matches against paths on all variants. Too few paths? Try increasing window size")
-
-    #log_memory_usage_now("_get_single_haplotype_as_paths_end")
+        raise Exception("Haplotype did not get matches against paths on all variants. Too few paths? Try increasing "
+                        "window size")
 
     return HaplotypeAsPaths(matching_paths)
 
@@ -359,14 +344,11 @@ def get_haplotypes_as_paths_parallel(haplotype_matrix: SparseHaplotypeMatrix, pa
     n_haplotypes = haplotype_matrix.n_haplotypes
     haplotype_matrix = ray.put(haplotype_matrix)
 
-    log_memory_usage_now("Before sliding window view")
     path_signatures = sliding_window_view(
         np.append(path_allele_matrix, np.zeros((path_allele_matrix.shape[0], window_size - 1)), axis=1),
         window_size, axis=1)
-    log_memory_usage_now("After sliding window view")
 
     path_signatures = ray.put(path_signatures)
-    print("Time putting things in memory etc", time.perf_counter()-t0)
 
     for haplotype in range(n_haplotypes):
         out.append(_get_single_haplotype_as_paths.remote(path_signatures, haplotype_matrix, haplotype, window_size))
@@ -374,6 +356,4 @@ def get_haplotypes_as_paths_parallel(haplotype_matrix: SparseHaplotypeMatrix, pa
     t0 = time.perf_counter()
     results = ray.get(out)
     logging.info("After get haplotypes as paths parallel")
-    print("Time doing stuff", time.perf_counter()-t0)
-
     return results

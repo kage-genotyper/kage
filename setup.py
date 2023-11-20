@@ -1,7 +1,7 @@
 from setuptools import setup, Extension, find_packages
 
 setup(name='kage-genotyper',
-      version='0.1.14',
+      version='0.2.0',
       description='KAGE',
       long_description_content_type="text/markdown",
       url='http://github.com/ivargr/kage',

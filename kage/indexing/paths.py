@@ -101,23 +101,35 @@ class PathCombinationMatrix:
     def __len__(self):
         return len(self.matrix)
 
+    @classmethod
+    def from_sparse_haplotype_matrix(cls, haplotype_matrix: 'SparseHaplotypeMatrix', max_paths: int = 100) -> \
+            'PathCombinationMatrix':
+        nonsparse_haplotype_matrix = haplotype_matrix.to_matrix().T
+        combination_matrix = PathCombinationMatrix(nonsparse_haplotype_matrix[:max_paths])
+        return combination_matrix
+
     def sanity_check(self):
         for variant in range(self.shape[1]):
             alleles = self.matrix[:,variant]
             assert np.min(alleles) == 0, ",".join(alleles)
             assert len(np.unique(alleles)) == np.max(alleles)+1, "All alleles should be supported: " + ",".join(map(str, np.unique(alleles)))
 
-    def add_paths_with_missing_alleles(self):
+    def add_paths_with_missing_alleles(self, n_alleles_per_variant: np.ndarray = None):
         """
         Extends with new paths to cover alleles that are not supported in current
         matrix. Will assume alleles lower than max allele at a variant that are not in any paths are missing
+        (if n_alleles per variant is None, else using n_alleles_per_variant)
         """
         # Todo: all this is slow an can be sped up easily with numba
+        if n_alleles_per_variant is None:
+            n_alleles_per_variant = np.max(self.matrix, axis=0)+1
+
         missing = [
-            np.setdiff1d(np.arange(np.max(self.matrix[:, variant]) + 1), self.matrix[:, variant])
-            for variant in range(self.shape[1])
+            np.setdiff1d(np.arange(n_alleles), self.matrix[:, variant])
+            for n_alleles, variant in zip(n_alleles_per_variant, range(self.shape[1]))
         ]
         max_missing = max(len(m) for m in missing)
+        logging.info("Will create %d paths to make sure all alleles are supported" % (max_missing))
         if max_missing > 0:
             new_paths = np.array([
                 [m[min(len(m)-1, i)] if len(m) > 0 else 0 for m in missing]
@@ -130,6 +142,12 @@ class PathCombinationMatrix:
     def add_permuted_paths(self, n_alleles_at_each_variant, window_size=3):
         permuted_paths = PathCreator.make_combination_matrix_multi_allele_v3(n_alleles_at_each_variant, window_size)
         self.matrix = np.concatenate([self.matrix, permuted_paths.matrix])
+
+    def assert_all_alleles_are_supported(self, n_alleles_per_variant):
+        for i, (n_alleles, alleles) in enumerate(zip(n_alleles_per_variant, self.matrix.T)):
+            for allele in range(n_alleles):
+                assert allele in alleles, "Allele %d not found among paths at variant %d" % (allele, i)
+
 
 @dataclass
 class Paths:

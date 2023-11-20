@@ -1,8 +1,8 @@
 import dataclasses
 import logging
 from isal import igzip
+from kage.preprocessing.variants import find_end_in_info_string, get_af_from_info_string_in_vcf_chunk
 from tqdm import tqdm
-import npstructures as nps
 
 from ..preprocessing.variants import VariantStream, get_padded_variants_from_vcf, find_snps_indels_covered_by_svs
 
@@ -13,33 +13,6 @@ import numpy as np
 from ..io import VcfWithSingleIndividualBuffer, \
     VcfWithInfoBuffer, CustomVCFBuffer
 
-
-def find_end_in_info_string(info_string: str) -> int:
-    fields = info_string.split(";")
-    fields = [f for f in fields if f.startswith("END=")]
-    assert len(fields) == 1
-    value = fields[0].split("=")[1]
-    return int(value)
-
-
-def get_af_from_info_string_in_vcf_chunk(chunk) -> np.ndarray:
-    # hacky way to get allele frequency fast
-    info_fields = bnp.io.strops.join(chunk.info, ";")
-    info_fields = bnp.io.strops.split(info_fields, sep=";")
-    af_strings = info_fields[bnp.str_equal(info_fields[:, 0:3], "AF=")]
-    assert len(af_strings) == len(chunk), "Not all lines contain AF=?"
-
-    # afs = np.array([float(af_string.to_string()) for af_string in af_strings[:, 3:]])
-    afs = (af_string.to_string() for af_string in af_strings[:, 3:])
-    afs = nps.RaggedArray(
-        [
-            [float(af) for af in af_string.split(",")]
-            for af_string in afs
-        ]
-    )
-    # use highest af
-    afs = np.max(afs, axis=-1)
-    return afs
 
 def get_cn0_ref_alt_sequences_from_vcf(variants: bnp.datatypes.VCFEntry,
                                        reference_genome: bnp.genomic_data.GenomicSequence) -> tp.Tuple[

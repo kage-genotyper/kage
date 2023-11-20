@@ -1,4 +1,6 @@
 import logging
+import sys
+
 logging.basicConfig(level=logging.INFO)
 import time
 import npstructures as nps
@@ -16,23 +18,49 @@ from shared_memory_wrapper import to_file, remove_shared_memory_in_session, obje
 
 from .paths import PathCreator, PathCombinationMatrix
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix, GenotypeMatrix
-from kage.models.helper_model import HelperVariants, CombinationMatrix, get_variants_that_can_be_used_as_helper_variants
+from kage.models.helper_model import HelperVariants, CombinationMatrix, \
+    get_variants_that_can_be_used_as_helper_variants, get_variants_with_perfect_model
 from .path_based_count_model import PathBasedMappingModelCreator
 from kage.models.mapping_model import convert_model_to_sparse
 from kage.util import log_memory_usage_now
 import bionumpy as bnp
+from ..models.mapping_model import refine_sampling_model_noncli
 
-from ..io import CustomVCFBuffer
 from ..preprocessing.variants import get_padded_variants_from_vcf, VariantStream, FilteredVariantStream, \
-    FilteredOnMaxAllelesVariantStream, FilteredOnMaxAllelesVariantStream2, filter_variants_with_more_alleles_than
+    FilteredOnMaxAllelesVariantStream, FilteredOnMaxAllelesVariantStream2, filter_variants_with_more_alleles_than, \
+    LowAfDeletionsReplacedVariantStream
 from kage.models.helper_model import make_helper_model_from_genotype_matrix
 from multiprocessing import Process
 
 
-def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
-               modulo=20000033, variant_window=6,
-               n_threads=16,
-               vcf_no_genotypes=None):
+def validate_input_vcf(vcf_file_name):
+    with bnp.open(vcf_file_name) as f:
+        for chunk in f:
+            if np.any(chunk.alt_seq == ",", axis=1):
+                logging.error("VCF contains multiallelic variants. Please split multiallelic variants, e.g. using "
+                              "bcftools norm -m -any <input.vcf>")
+                sys.exit()
+
+            if np.any(chunk.ref_seq == "<", axis=1) or np.any(chunk.alt_seq == "*", axis=1):
+                logging.error("Input VCF needs to contain only A, C, G, T or N in reference and alt sequences")
+                sys.exit()
+
+            if not hasattr(chunk.info, "AF"):
+                logging.error("VCF needs to contain the AF field in the INFO column (allele frequency used internally "
+                              "by KAGE")
+                logging.error("Please add AF to the INFO column, e.g. by using  bcftools +fill-tags in.bcf -Ob -o "
+                              "out.bcf -- -t AF")
+                sys.exit()
+
+def make_index(
+       reference_file_name,
+       vcf_file_name,
+       out_base_name,
+       k=31,
+       modulo=20000033,
+       variant_window=6,
+       n_threads=16,
+       vcf_no_genotypes=None):
     """
     Makes all indexes and writes to an index bundle.
     """
@@ -44,21 +72,18 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     variant_stream = FilteredVariantStream.from_vcf_with_snps_indels_inside_svs_removed(vcf_file_name,
                                                                                         min_chunk_size=500_000_000,
                                                                                         sv_size_limit=50,
-                                                                                        buffer_type=CustomVCFBuffer,
+                                                                                        buffer_type=bnp.io.vcf_buffers.VCFBuffer,
                                                                                         filter_using_other_vcf=vcf_no_genotypes)
-    #variant_stream = VariantStream.from_vcf(vcf_file_name, buffer_type=CustomVCFBuffer, min_chunk_size=500_000_000)
-    #variant_stream = FilteredOnMaxAllelesVariantStream2(variant_stream, max_alleles=2**variant_window-2)
+
     # convert variants to biallelic variants, keep track of how many alleles original variants had
     variants, vcf_variants, n_alleles_per_original_variant = get_padded_variants_from_vcf(variant_stream,
                                                                                           reference_file_name,
                                                                                           True,
-                                                                                          remove_indel_padding=False)
-
-    for variant in variants[0:150]:
-        print(variant.position, variant.ref_seq.to_string(), variant.alt_seq.to_string())
+                                                                                          remove_indel_padding=False,
+                                                                                          remove_sequence_from_low_af_deletions=0.1)
 
     n_orig_variants_before_filtering = len(vcf_variants)
-    print("N orig variants: ", n_orig_variants_before_filtering)
+
     # find variants with more alleles (use "variants" which are padded biallelic and look for variants starting
     # at same position).
     # filter away variants with too many alleles and filte vcf_variants and n_alleles_per_original_variant accordingly
@@ -94,17 +119,14 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
         graph.genome.pad_at_end(k)
 
     logging.info("Making haplotype matrix")
-    #variant_stream = VariantStream.from_vcf(vcf_file_name, buffer_type=bnp.io.vcf_buffers.PhasedHaplotypeVCFMatrixBuffer, min_chunk_size=500000000)
     variant_stream = FilteredVariantStream.from_vcf_with_snps_indels_inside_svs_removed(vcf_file_name,
                                                                                         buffer_type=bnp.io.vcf_buffers.PhasedHaplotypeVCFMatrixBuffer,
                                                                                         min_chunk_size=500_000_000,
                                                                                         sv_size_limit=50,
                                                                                         filter_using_other_vcf=vcf_no_genotypes
                                                                                         )
-    #variant_stream = VariantStream.from_vcf(vcf_file_name, buffer_type=bnp.io.vcf_buffers.PhasedHaplotypeVCFMatrixBuffer, min_chunk_size=500_000_000)
     log_memory_usage_now("Variant stream 1 done")
     variant_stream = FilteredVariantStream(variant_stream.read_chunks(), ~filter)
-    #variant_stream = FilteredOnMaxAllelesVariantStream2(variant_stream, max_alleles=2**variant_window-2)
     log_memory_usage_now("Done variant stream")
 
     haplotype_matrix_original_vcf = SparseHaplotypeMatrix.from_vcf(variant_stream)
@@ -120,15 +142,8 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     haplotype_matrix = biallelic_haplotype_matrix.to_multiallelic(n_alleles_per_variant)
     logging.info(f"{haplotype_matrix.n_variants} variants after converting to multiallelic")
 
-    np.save("haplotype_matrix", haplotype_matrix.to_matrix())
-    np.save("biallelic_haplotype_matrix", biallelic_haplotype_matrix.to_matrix())
-
     log_memory_usage_now("After graph")
-    # Start seperate process for helper model
-    only_consider_variants_for_helper_model = get_variants_that_can_be_used_as_helper_variants(n_alleles_per_variant)
-    logging.info("Only consider variants for helper model: %s" % only_consider_variants_for_helper_model)
-    helper_model_process, helper_model_result_name = make_helper_model_seperate_process(biallelic_haplotype_matrix, only_consider_variants_for_helper_model)
-    del biallelic_haplotype_matrix
+
 
     scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=8, modulo=modulo * 40 + 11)
     assert np.all(scorer.values >= 0)
@@ -137,37 +152,29 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
 
     logging.info("Making paths")
     # use haplotype matrix as combination matrix, should work well when number of haplotypes <= number of paths
-    nonsparse_haplotype_matrix = haplotype_matrix.to_matrix()
-    n_variants_in_haplotype_matrix = nonsparse_haplotype_matrix.shape[0]
-    combination_matrix = PathCombinationMatrix(nonsparse_haplotype_matrix.T)
-
+    combination_matrix = PathCombinationMatrix.from_sparse_haplotype_matrix(haplotype_matrix)
     combination_matrix.add_permuted_paths(n_alleles_per_variant, 3)
-    combination_matrix.add_paths_with_missing_alleles()
+    combination_matrix.add_paths_with_missing_alleles(n_alleles_per_variant)
     combination_matrix.sanity_check()
+    combination_matrix.assert_all_alleles_are_supported(n_alleles_per_variant)
 
-    np.save("path_combination_matrix", combination_matrix.matrix)
-    logging.info("Combination matrix dim: %s" % str(combination_matrix.shape))
     paths = PathCreator(graph,
                         window=variant_window,  # bigger windows to get more paths when multiallelic
-                        #make_disc_backed=True,
                         make_graph_backed_sequences=True,
                         disc_backed_file_base_name=out_base_name,
                         use_new_allele_matrix=True
                         ).run(n_alleles_per_variant, with_combination_matrix=combination_matrix)
 
-    np.save("path_alleles", paths.variant_alleles.matrix.copy())
-
     logging.info("Made %d paths to cover variants" % (len(paths.paths)))
 
     variant_to_nodes = node_mapping.get_variant_to_nodes()
-    #to_file(node_mapping, "node_mapping")
-    #to_file(node_mapping.node_ids, "node_ids")
 
     signatures_chunk_size = 2000
     if len(variants) > 1000000:
         signatures_chunk_size = 4000
+
     signatures = get_signatures(k, paths, scorer, chunk_size=signatures_chunk_size, spacing=0,
-                                minimum_overlap_with_variant=2)   #k//2)
+                                minimum_overlap_with_variant=2)
 
     kmer_index = signatures.get_as_kmer_index(node_mapping=node_mapping, modulo=modulo, k=k)
 
@@ -185,14 +192,12 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     count_model = model_creator.run()
 
     # find tricky variants before count model is refined
-    #tricky_variants = find_tricky_variants_with_count_model(signatures, count_model)
-    logging.info("Finding tricky variants")
+
     log_memory_usage_now("Finding tricky variants")
     tricky_variants, tricky_ref1, tricky_alt1 = find_tricky_variants_from_multiallelic_signatures(signatures, node_mapping.n_biallelic_variants, also_find_tricky_alleles=True)
     logging.info(f"{np.sum(tricky_ref1.tricky_variants)} tricky ref alleles because no kmers")
     logging.info(f"{np.sum(tricky_alt1.tricky_variants)} tricky alt alleles because no kmers")
-    log_memory_usage_now("Finding tricky variants 2")
-    tricky_ref, tricky_alt = find_tricky_ref_and_var_alleles_from_count_model(count_model, node_mapping, max_count=10)
+    tricky_ref, tricky_alt = find_tricky_ref_and_var_alleles_from_count_model(count_model, node_mapping, max_count=7)
 
     tricky_ref.add(tricky_ref1)
     tricky_alt.add(tricky_alt1)
@@ -200,19 +205,25 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     logging.info(f"{np.sum(tricky_alt.tricky_variants)} total tricky alt alleles")
 
     tricky_alleles = (tricky_ref, tricky_alt)
-    log_memory_usage_now("Finding tricky variants 3")
 
-    from ..models.mapping_model import refine_sampling_model_noncli
     refined_count_model = refine_sampling_model_noncli(count_model, variant_to_nodes, prior_empty_data=0.1)
+
+    # Start seperate process for helper model
+    only_consider_variants_for_helper_model = get_variants_that_can_be_used_as_helper_variants(n_alleles_per_variant)
+    only_consider_variants_for_helper_model &= ~tricky_ref.tricky_variants
+    only_consider_variants_for_helper_model &= ~tricky_alt.tricky_variants
+    #only_consider_variants_for_helper_model &= get_variants_with_perfect_model(*refined_count_model)
+    logging.info("Only consider variants for helper model: %s" % only_consider_variants_for_helper_model)
+    helper_model_process, helper_model_result_name = make_helper_model_seperate_process(biallelic_haplotype_matrix,
+                                                                                        only_consider_variants_for_helper_model)
+    del biallelic_haplotype_matrix
     logging.info("Converting to sparse model")
     convert_model_to_sparse(refined_count_model)
 
-    #numpy_variants = NumpyVariants.from_vcf(vcf_no_genotypes_file_name)
     indexes = {
             "variant_to_nodes": variant_to_nodes,
             "count_model": refined_count_model,
             "kmer_index": kmer_index,
-            #"numpy_variants": numpy_variants,
             "tricky_variants": tricky_variants,
             "tricky_alleles": tricky_alleles,
             "vcf_header": bnp.open(vcf_file_name).read_chunk().get_context("header"),
@@ -221,6 +232,7 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
             "multiallelic_map": MultiAllelicMap.from_n_alleles_per_variant(n_alleles_per_original_variant),
             "orig_count_model": count_model
         }
+
     # helper model
     #helper_model, combo_matrix = make_helper_model(biallelic_haplotype_matrix)
     helper_model_process.join()
@@ -228,18 +240,13 @@ def make_index(reference_file_name, vcf_file_name, out_base_name, k=31,
     indexes["helper_variants"] = HelperVariants(helper_model)
     indexes["combination_matrix"] = CombinationMatrix(combo_matrix)
 
-
-    index = IndexBundle(
-        indexes
-    )
+    index = IndexBundle(indexes)
     logging.info("Writing indexes to file")
     index.to_file(out_base_name, compress=False)
     paths.remove_tmp_files()
 
     logging.info("Making indexes took %.2f sec" % (time.perf_counter() - t_start))
-
     return index, signatures, count_model
-
 
 
 def make_helper_model_seperate_process(biallelic_haplotype_matrix, variant_filter):

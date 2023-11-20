@@ -93,17 +93,12 @@ def write_multiallelic_vcf_with_biallelic_numeric_genotypes(variants: SimpleVcfE
                                                             ignore_homo_ref=False
                                                             ):
     assert len(n_alleles_per_variant) == len(variants)
-    print("N numeric genotypes", len(numeric_genotypes))
     if not np.all(n_alleles_per_variant == 2):
         if add_genotype_likelihoods is not None:
             logging.warning("Genotype likelihoods are not supported for multiallelic variants. Input vcf should be biallelic. Will not write genotype likelihoods")
             add_genotype_likelihoods = None
 
     string_genotypes = convert_biallelic_numeric_genotypes_to_multialellic_string_genotypes(n_alleles_per_variant, numeric_genotypes)
-
-    print("N string genotypes: ", len(string_genotypes))
-    print(string_genotypes)
-    print("N variants:", len(variants))
     write_vcf(variants, string_genotypes, out_file_name, header, add_genotype_likelihoods=add_genotype_likelihoods, ignore_homo_ref=ignore_homo_ref)
 
 
@@ -203,7 +198,6 @@ def convert_biallelic_numeric_genotypes_to_multialellic_string_genotypes(n_allel
 
     # group into multiallelic
     multialellic_genotypes = nps.RaggedArray(genotypes, n_alleles_per_variant-1)
-    print("N multiallelic variants: ", len(multialellic_genotypes))
 
     # each row should be converted into a multiallelic genotype
     out = []
@@ -236,6 +230,19 @@ class CustomVCFEntry:
     alt_seq: str
 
 
+
+@bnpdataclass
+class CustomVCFEntryWithInfo:
+    chromosome: str
+    position: int
+    id: str
+    ref_seq: str
+    alt_seq: str
+    quality: str
+    filter: str
+    info: str
+
+
 class CustomVCFBuffer(bnp.io.delimited_buffers.DelimitedBuffer):
     """
     Custom Vcf buffer that skips lazy to save memory.
@@ -262,3 +269,5 @@ class CustomVCFBuffer(bnp.io.delimited_buffers.DelimitedBuffer):
 
 
 
+class CustomVCFBufferWithInfo(CustomVCFBuffer):
+    dataclass = CustomVCFEntryWithInfo
