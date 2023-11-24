@@ -1,6 +1,7 @@
 import logging
 
 import numpy as np
+import scipy.special
 from kage.indexing.main import MultiAllelicMap
 
 
@@ -29,6 +30,10 @@ def postprocess_multiallelic_calls(genotypes: np.ndarray, multiallelic_map: Mult
     n_nan = np.sum(np.isnan(probs))
     logging.info(f"{n_nan} probs are nan. Setting them to 1/3 before postprocesing genotypes")
     probs[np.isnan(probs)] = np.log(1/3)
+
+    # normalize probs so that they sum to 1
+    # NB: This is essential when comparing probs from different variants
+    probs = probs - scipy.special.logsumexp(probs, axis=1)[:, np.newaxis]
 
     biallelic_id = 0
     n_changed = 0

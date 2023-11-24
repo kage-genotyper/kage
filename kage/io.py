@@ -110,6 +110,7 @@ def write_vcf(variants: SimpleVcfEntry, string_genotypes: bnp.EncodedRaggedArray
 
 
 
+
     #string_genotypes = ["0/0", "1/1", "0/1"]
     genotypes = string_genotypes  # [string_genotypes[g-1] for g in numeric_genotypes]
     format = ["GT" for i in range(len(variants))]
@@ -117,6 +118,10 @@ def write_vcf(variants: SimpleVcfEntry, string_genotypes: bnp.EncodedRaggedArray
     if add_genotype_likelihoods is not None:
         logging.info("Writing genotype likelyhoods to file")
         p = add_genotype_likelihoods
+        # normalize genotype likelihoods so that they sum to 1
+        p = p - scipy.special.logsumexp(p, axis=1)[:, np.newaxis]
+        logging.info("NORMALIZED: %s" % p)
+
         # probs are in loge, convert to minus log10 (?)
         genotype_likelihoods = p * np.log10(np.e)
         has_nan = np.where(np.any(np.isnan(genotype_likelihoods), axis=1))[0]
@@ -126,9 +131,9 @@ def write_vcf(variants: SimpleVcfEntry, string_genotypes: bnp.EncodedRaggedArray
                 logging.info("%s %s" % (p[n], genotype_likelihoods[n]))
                 genotype_likelihoods[n] = [-0.1, -0.1, -0.1]
 
-        genotype_likelihoods[genotype_likelihoods < -60] = -60
-        genotype_likelihoods[genotype_likelihoods == 0] = -0.0001
-        gl_strings = (",".join(str(p) if p != 0 else "-0.01" for p in genotype_likelihoods[i]) for i in range(len(variants)))
+        #genotype_likelihoods[genotype_likelihoods < -60] = -60
+        #genotype_likelihoods[genotype_likelihoods == 0] = -0.0001
+        gl_strings = (",".join(str(p) if p != 0 else "-0.00000000001" for p in genotype_likelihoods[i]) for i in range(len(variants)))
         format = ["GT:GL:GQ" for i in range(len(variants))]
 
         # genotype quality (probability that the call is incorrect)

@@ -110,6 +110,11 @@ def make_kmer_scorer_from_random_haplotypes(graph: Graph, haplotype_matrix: Spar
     """
     log_memory_usage_now("Memory before making kmer scorer")
     counter = FastApproxCounter.empty(modulo)
+
+    if n_haplotypes > haplotype_matrix.n_haplotypes:
+        logging.info("Limiting to %d haplotypes, since that is what is in population" % haplotype_matrix.n_haplotypes)
+        n_haplotypes = haplotype_matrix.n_haplotypes
+
     chosen_haplotypes = np.random.choice(np.arange(haplotype_matrix.n_haplotypes), n_haplotypes, replace=False)
     logging.info("Picked random haplotypes to make kmer scorer: %s" % chosen_haplotypes)
     haplotype_nodes = (haplotype_matrix.get_haplotype(haplotype) for haplotype in chosen_haplotypes)

@@ -84,7 +84,17 @@ def genotype(args):
     kmer_index = index.kmer_index
     assert args.reads is not None, "--reads must be specified if not node_counts is specified"
     node_counts = get_kmer_counts(kmer_index, args.kmer_size, args.reads, config.n_threads, args.gpu)
+
+
     np.save(args.out_file_name + ".node_counts.npy", node_counts.node_counts)
+
+    if args.average_coverage > 5:
+        factor = args.average_coverage // 5
+        logging.info("Before scale: %s" % node_counts.node_counts)
+        node_counts.node_counts = np.round(node_counts.node_counts / factor)
+        logging.info("After scale: %s" % node_counts.node_counts)
+        config.avg_coverage = 5
+
 
     max_variant_id = len(index.variant_to_nodes.ref_nodes) - 1
     logging.info("Max variant id is assumed to be %d" % max_variant_id)

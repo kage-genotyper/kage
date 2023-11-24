@@ -255,15 +255,20 @@ class VariantPadder:
         self._reference = reference
 
     def get_reference_mask(self, threshold=1):
-        variants_start = self._variants.position
-        variants_stop = variants_start + self._variants.ref_seq.shape[1]
-        highest_pos = np.max(variants_stop+2)
-        #print("Highest pos", highest_pos)
+        variants = self._variants
+        mask = VariantPadder.get_n_variants_on_ref(variants)
+        mask = np.cumsum(mask) >= threshold
+        return mask
 
+    @staticmethod
+    def get_n_variants_on_ref(variants):
+        variants_start = variants.position
+        variants_stop = variants_start + variants.ref_seq.shape[1]
+        highest_pos = np.max(variants_stop + 2)
+        # print("Highest pos", highest_pos)
         mask = np.zeros(highest_pos)
         mask += np.bincount(variants_start, minlength=highest_pos)
         mask -= np.bincount(variants_stop, minlength=highest_pos)
-        mask = np.cumsum(mask) >= threshold
         return mask
 
     def get_mask_of_consecutive_ref_bases(self, dir='right'):
@@ -620,8 +625,28 @@ class LowAfDeletionsReplacedVariantStream(VariantStream):
             continue
 
 
+def get_filter_of_deletions_with_low_af_only_deletions_overlapping_other_variants(chunk, min_af):
+    variant_ref_sizes = chunk.ref_seq.shape[1]
+    #max_ref_pos = np.max(chunk.position + variant_ref_sizes)
+    #n_variants_on_ref_mask = np.zeros(max_ref_pos+1)
+    #for i, variant in enumerate(chunk):
+    #    n_variants_on_ref_mask[int(variant.position):int(variant.position)+variant_ref_sizes[i]] += 1
+    large_variants = chunk[(chunk.ref_seq.shape[1] > 10) | (chunk.alt_seq.shape[1] > 10)]
+    n_variants_on_ref_mask = VariantPadder.get_n_variants_on_ref(large_variants)
+
+    filter = np.zeros(len(chunk), dtype=bool)
+    for deletion in np.nonzero(get_filter_of_deletions_with_low_af(chunk, min_af, min_size=20))[0]:
+        if np.any(n_variants_on_ref_mask[
+                  int(chunk.position[deletion]):int(chunk.position[deletion])+variant_ref_sizes[deletion]
+                  ] > 1):
+            filter[deletion] = True
+
+    return filter
+
+
 def remove_alt_and_ref_seq_on_deletions_with_low_af(chunk, min_af):
-    filter_out = get_filter_of_deletions_with_low_af(chunk, min_af)
+    #filter_out = get_filter_of_deletions_with_low_af(chunk, min_af)
+    filter_out = get_filter_of_deletions_with_low_af_only_deletions_overlapping_other_variants(chunk, min_af)
     logging.info(f"{np.sum(filter_out)} deletions with AF < {min_af} will not be included in padding/kmer indexing")
     # Set ref seq and alt seq to "" for these variants
     new_ref = bnp.as_encoded_array([
@@ -630,27 +655,15 @@ def remove_alt_and_ref_seq_on_deletions_with_low_af(chunk, min_af):
     new_alt = bnp.as_encoded_array([
         seq.to_string()[0] if filter_out[i] else seq.to_string() for i, seq in enumerate(chunk.alt_seq)
     ])
-
-    """
-    new_ref_shape = chunk.ref_seq.shape[1].copy()
-    new_ref_shape[filter_out] = 0
-    new_ref = bnp.EncodedRaggedArray(bnp.EncodedArray(chunk.ref_seq[~filter_out].ravel().raw(), chunk.ref_seq.encoding), new_ref_shape)
-
-    new_alt_shape = chunk.alt_seq.shape[1].copy()
-    new_alt_shape[filter_out] = 0
-    new_alt = bnp.EncodedRaggedArray(bnp.EncodedArray(chunk.alt_seq[~filter_out].ravel().raw(), chunk.alt_seq.encoding), new_alt_shape)
-
-    #new_chunk = dataclasses.replace(chunk, ref_seq=new_ref, alt_seq=new_alt)
-    """
     chunk.ref_seq = new_ref
     chunk.alt_seq = new_alt
     return chunk
 
 
-def get_filter_of_deletions_with_low_af(chunk, min_af):
+def get_filter_of_deletions_with_low_af(chunk, min_af, min_size=20):
     allele_frequencies = chunk.info.AF
     allele_frequencies = bnp.io.strops.str_to_float(allele_frequencies)
-    filter_out = (allele_frequencies < min_af) & (chunk.ref_seq.shape[1] >= 50)  # sv-deletions (ref allele larger than 50)
+    filter_out = (allele_frequencies < min_af) & (chunk.ref_seq.shape[1] >= min_size)  # "big" deletions
     return filter_out
 
 

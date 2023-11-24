@@ -1,6 +1,8 @@
 import logging
 import sys
 
+from kage.indexing.tricky_variants import TrickyVariants
+
 logging.basicConfig(level=logging.INFO)
 import time
 import npstructures as nps
@@ -216,8 +218,10 @@ def make_index(
     only_consider_variants_for_helper_model = get_variants_that_can_be_used_as_helper_variants(n_alleles_per_variant)
     only_consider_variants_for_helper_model &= ~tricky_ref.tricky_variants
     only_consider_variants_for_helper_model &= ~tricky_alt.tricky_variants
-    #only_consider_variants_for_helper_model &= get_variants_with_perfect_model(*refined_count_model)
-    logging.info("Only consider variants for helper model: %s" % only_consider_variants_for_helper_model)
+
+    has_perfect_model = get_variants_with_perfect_model(*refined_count_model)
+    #tricky_variants.add(TrickyVariants(~has_perfect_model))
+
     helper_model_process, helper_model_result_name = make_helper_model_seperate_process(biallelic_haplotype_matrix,
                                                                                         only_consider_variants_for_helper_model)
     del biallelic_haplotype_matrix
