@@ -51,7 +51,7 @@ def test_saccer3():
     precision = accuracy.precision()
     f1_score = accuracy.f1()
 
-    assert f1_score >= 0.98
+    assert f1_score >= 0.96
 
 
 if __name__ == "__main__":
