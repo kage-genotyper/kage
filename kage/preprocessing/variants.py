@@ -661,8 +661,9 @@ def remove_alt_and_ref_seq_on_deletions_with_low_af(chunk, min_af):
 
 
 def get_filter_of_deletions_with_low_af(chunk, min_af, min_size=20):
-    allele_frequencies = chunk.info.AF
-    allele_frequencies = bnp.io.strops.str_to_float(allele_frequencies)
+    allele_frequencies = chunk.info.AF[:, 0]
+    print(allele_frequencies)
+    #allele_frequencies = bnp.io.strops.str_to_float(allele_frequencies)
     filter_out = (allele_frequencies < min_af) & (chunk.ref_seq.shape[1] >= min_size)  # "big" deletions
     return filter_out
 
