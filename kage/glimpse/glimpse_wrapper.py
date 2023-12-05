@@ -169,9 +169,9 @@ def run_glimpse_ligate(chromosome: str, chromosome_bcf_files: List[str], out_dir
     Glimpse needs these bcf-files written to a file
     """
     logging.info("Making tmp file with names for chromosome %s: %s" % (chromosome, chromosome_bcf_files))
-    random_name = str(random.randint(0, 1000000000)) + ".txt"
-    #with NamedTemporaryFile(mode="w", delete=False) as f:
-    with open(random_name, "w") as f:
+    #random_name = str(random.randint(0, 1000000000)) + ".txt"
+    with NamedTemporaryFile(mode="w", delete=False) as f:
+    #with open(random_name, "w") as f:
         for file in chromosome_bcf_files:
             f.write(file + "\n")
 

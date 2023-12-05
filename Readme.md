@@ -36,7 +36,7 @@ You will need:
 * A reference genome in fasta format
 * A set of variants with genotypes of known individuals in vcf-format (`.vcf` or `.vcf.gz`)
 
-Variants can be biallelic or multiallelic and both SNPs/indels and structural variants are supported. Note however that all variants must have actual sequences in the ref and alt fields. Genotypes should be phased (e.g. `0|0`, `0|1` or `1|1`) and there should ideally be few missing genotypes (e.g. `.|.` or `.`).
+Variants can be biallelic or multiallelic and both SNPs/indels and structural variants are supported. Note however that all variants must have actual sequences in the ref and alt fields. Genotypes should be phased (e.g. `0|0`, `0|1` or `1|1`) and there should ideally be few missing genotypes (e.g. `.|.` or `.`). If there are structural variants present, KAGE will prioritize those, meaning that accuracy on SNPs and indels may be lower (especially for SNPs and indels that are covered by SVs). If your aim is to only genotype SNPs and indels, you should not not include SVs in your vcf.
 
 ### Step 1: Build an index of the variants you want to genotype
 Building an index is somewhat time consuming, but only needs to be done once for each set of variants you want to genotype. Indexing time scales approximately linearly with number of variants and the size of the reference genome. Creating an index for a human pangenome with 30 million variants and 2000-3000 individuals should finish in less than a day. It's always a good idea to start out with a smaller set of variants, e.g. a single chromosome first to see if things work as expected.
@@ -55,9 +55,12 @@ kage genotype -i index -f reads.fq.gz -t 16 --average-coverage 30 -k 31
 ```
 
 Note:
-* `-k` must be set to the same used when creating the index
+* `-k` must be set to the same that was used when creating the index
 * `--average-coverage` should be set to the expected average coverage of your input reads (doesn't need to be exact)
 * KAGE puts data and arrays in shared memory to speed up computation. It automatically frees this memory when finished, but KAGE gets accidentally killed or stops before finishing, you might end up with allocated memory not being freed. You can free this memory by calling `kage free_memory`.
+
+## KAGE works even better with GLIMPSE
+KAGE uses information from the population to improve accuracy, a bit similarily to imputation. However, the model used by KAGE is very simple. It works well for SNPs and indels, but for SVs, we have found that using GLIMPSE for the imputation-step works much better. To run KAGE with GLIMPSE instead of the builtin KAGE imputation, simpy add `--glimpse variants.vcf.gz` when running `kage genotype`. KAGE will automatically install GLIMPSE by downloading binaries and run GLIMPSE for you. One should expect some longer runtime, but not much.
 
 ### Prebuilt indexes
 
