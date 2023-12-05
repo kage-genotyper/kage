@@ -64,7 +64,8 @@ def make_index(
        variant_window=6,
        n_threads=16,
        vcf_no_genotypes=None,
-       min_af_deletions_filter=0.1
+       min_af_deletions_filter=0.1,
+       max_paths: int=100
 ):
     """
     Makes all indexes and writes to an index bundle.
@@ -98,7 +99,8 @@ def make_index(
     variants, vcf_variants, n_alleles_per_original_variant, filter = filter_variants_with_more_alleles_than(variants,
                                                                                                             vcf_variants,
                                                                                                             n_alleles_per_original_variant,
-                                                                                                            2**variant_window-2)
+                                                                                                            max_paths)
+                                                                                                            #2**variant_window-2)
     log_memory_usage_now("After getting variants")
     assert len(filter) == n_orig_variants_before_filtering
     assert len(variants) == np.sum(n_alleles_per_original_variant-1), f"{len(variants)} != {np.sum(n_alleles_per_original_variant-1)}"
@@ -160,6 +162,7 @@ def make_index(
     # use haplotype matrix as combination matrix, should work well when number of haplotypes <= number of paths
     combination_matrix = PathCombinationMatrix.from_sparse_haplotype_matrix(haplotype_matrix)
     combination_matrix.add_permuted_paths(n_alleles_per_variant, 3)
+    combination_matrix.add_paths_with_missing_alleles_by_changing_existing_paths(n_alleles_per_variant)
     combination_matrix.add_paths_with_missing_alleles(n_alleles_per_variant)
     combination_matrix.sanity_check()
     combination_matrix.assert_all_alleles_are_supported(n_alleles_per_variant)
@@ -180,7 +183,7 @@ def make_index(
         signatures_chunk_size = 4000
 
     signatures = get_signatures(k, paths, scorer, chunk_size=signatures_chunk_size, spacing=0,
-                                minimum_overlap_with_variant=2)
+                                minimum_overlap_with_variant=2, n_threads=n_threads)
 
     kmer_index = signatures.get_as_kmer_index(node_mapping=node_mapping, modulo=modulo, k=k)
 
@@ -219,7 +222,7 @@ def make_index(
     only_consider_variants_for_helper_model &= ~tricky_ref.tricky_variants
     only_consider_variants_for_helper_model &= ~tricky_alt.tricky_variants
 
-    has_perfect_model = get_variants_with_perfect_model(*refined_count_model)
+    #has_perfect_model = get_variants_with_perfect_model(*refined_count_model)
     #tricky_variants.add(TrickyVariants(~has_perfect_model))
 
     helper_model_process, helper_model_result_name = make_helper_model_seperate_process(biallelic_haplotype_matrix,

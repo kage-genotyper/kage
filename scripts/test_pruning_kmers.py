@@ -1,3 +1,5 @@
+import logging
+logging.basicConfig(level=logging.DEBUG)
 import time
 import ray
 import numpy as np
@@ -6,10 +8,10 @@ from shared_memory_wrapper import from_file
 import bionumpy as bnp
 
 def main():
-    n_threads = 8
+    n_threads = 1
     kmer_index = from_file("kmer_index_test.npz").copy()
     kmers = kmer_index.get_kmers()
-    n_kmers = 1000_000_000
+    n_kmers = 100_000_000
     random_kmers = np.concatenate([kmers, np.random.randint(0, 2**63, n_kmers, dtype=np.uint64)])
 
     encoding = bnp.get_kmers(bnp.as_encoded_array("G"*31, bnp.DNAEncoding), 31).encoding
@@ -22,9 +24,7 @@ def main():
 
     t0 = time.perf_counter()
     pruned = PathKmers.prune_kmers(kmers, kmer_index, n_threads=n_threads)
-    print("Time noparallel", time.perf_counter()-t0)
-
-
+    print("Time", time.perf_counter()-t0)
 
     return
     # parallel

@@ -129,7 +129,7 @@ class PathCombinationMatrix:
             for n_alleles, variant in zip(n_alleles_per_variant, range(self.shape[1]))
         ]
         max_missing = max(len(m) for m in missing)
-        logging.info("Will create %d paths to make sure all alleles are supported" % (max_missing))
+        logging.info("Will create %d extra paths to make sure all alleles are supported" % (max_missing))
         if max_missing > 0:
             new_paths = np.array([
                 [m[min(len(m)-1, i)] if len(m) > 0 else 0 for m in missing]
@@ -138,6 +138,35 @@ class PathCombinationMatrix:
             logging.info("Adding paths: %s" % new_paths)
 
             self.matrix = np.concatenate([self.matrix, new_paths])
+    def add_paths_with_missing_alleles_by_changing_existing_paths(self, n_alleles_per_variant: np.ndarray = None):
+        """
+        Tries to change some existing paths if possible, to avoid adding too many paths
+        """
+        missing = [
+            np.setdiff1d(np.arange(n_alleles), self.matrix[:, variant])
+            for n_alleles, variant in zip(n_alleles_per_variant, range(self.shape[1]))
+        ]
+        max_missing = max(len(m) for m in missing)
+        for variant_id, missing_alleles in enumerate(missing):
+            if len(missing_alleles) == 0:
+                continue
+
+            possible_alleles = np.arange(n_alleles_per_variant[variant_id])
+            # find alleles that are represented more than once, change these to those that are missing
+            n_times_allele_represented = {a: np.count_nonzero(self.matrix[:, variant_id] == a) for a in possible_alleles if a not in missing_alleles}
+            for missing_allele in missing_alleles:
+                # find allele that is represented most times
+                most_represented_allele = max(n_times_allele_represented, key=n_times_allele_represented.get)
+                if n_times_allele_represented[most_represented_allele] == 0:
+                    logging.warning("Could not find allele to change to missing allele %d at variant %d" % (missing_allele, variant_id))
+                    continue
+
+                # change one of these to missing allele
+                for path in self.matrix:
+                    if path[variant_id] == most_represented_allele:
+                        path[variant_id] = missing_allele
+                        break
+                n_times_allele_represented[most_represented_allele] -= 1
 
     def add_permuted_paths(self, n_alleles_at_each_variant, window_size=3):
         permuted_paths = PathCreator.make_combination_matrix_multi_allele_v3(n_alleles_at_each_variant, window_size)

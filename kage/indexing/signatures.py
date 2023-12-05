@@ -2,6 +2,7 @@ import logging
 import time
 from dataclasses import dataclass
 import bionumpy as bnp
+import ray
 from graph_kmer_index import KmerIndex, kmer_hash_to_sequence
 import npstructures as nps
 import numpy as np
@@ -464,65 +465,10 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
                 local_scores_for_windows = np.max(
                     local_scorer[window_kmers_matrix.ravel() % local_modulo].reshape(window_kmers_matrix.shape), axis=0
                 )
-                #if np.min(local_scores_for_windows) > n_paths:
-                #    # no unique kmers, higher kmer frequency than paths on this allele
-                #    new_variant_kmers.append(np.empty(0, dtype=np.uint64))
-                #    continue
 
                 scores_for_windows -= local_scores_for_windows * 3  # weigh local scores more than global scores. More important to find locally unique kmers
                 best_window = window_locations[np.argmax(scores_for_windows)]
-
-                """
-                for window in window_locations:
-                    window_kmers = allele_kmers[:, window]
-                    score = scores[allele, window]
-                    score -= np.max(local_scorer[window_kmers % local_modulo])
-                    if score > best_score:
-                        best_window = window
-                        best_score = score
-                """
                 chosen = np.unique(ak.to_numpy(kmers[allele, :, best_window]))
-                assert chosen.dtype == np.uint64
-                new_variant_kmers.append(chosen)
-
-            return new_variant_kmers
-
-        @numba.jit(nopython=True)
-        def _find2(kmers, local_scorer):
-            new_variant_kmers = []
-            n_alleles = len(kmers)
-            n_paths = len(kmers[0])  # same on all alleles
-            for allele in range(n_alleles):
-                #t0 = time.perf_counter()
-                allele_kmers = kmers[allele]  # x n_paths x n_windows
-                n_windows = len(allele_kmers[0])  # same windows on all paths
-                # pick some window locations
-                window_locations = range(0, n_windows, max(1, n_windows // 10))
-                best_window = 0
-                best_score = -10000000000
-                #t0 = time.perf_counter()
-                for window in window_locations:
-                    window_scores = np.zeros(n_paths)
-                    for window_kmer_i in range(n_paths):
-                        #window_kmer = kmers[int(allele), int(window_kmer_i), int(window)]
-                        window_kmer = kmers[0, 0, 0]
-                        window_scores[window_kmer_i] = local_scorer[int(window_kmer % local_modulo)]
-
-                    score = scores[allele, window]
-                    score -= np.max(window_scores)
-
-                    #window_kmers = kmers[allele, :, window]
-                    #score -= np.max(local_scorer[window_kmers % local_modulo])
-                    if score > best_score:
-                        best_window = window
-                        best_score = score
-
-                chosen = np.zeros(n_paths, dtype=np.uint64)
-                for path_i in range(n_paths):
-                    chosen[path_i] = kmers[allele, path_i, best_window]
-
-                chosen = np.unique(ak.to_numpy(chosen))
-                #chosen = np.unique(ak.to_numpy(kmers[allele, :, best_window]))
                 assert chosen.dtype == np.uint64
                 new_variant_kmers.append(chosen)
 
@@ -704,12 +650,6 @@ class SignatureFinder3(SignatureFinder):
             variant = variants[sv_id]
             current_options_ref = np.unique(self._all_possible_kmers.get_kmers(sv_id, 0))
             current_options_alt = np.unique(self._all_possible_kmers.get_kmers(sv_id, 1))
-
-            #print("Ref/alt seq")
-            #print(variant.ref_seq, variant.alt_seq)
-
-            #print("current options")
-            #print(current_options_ref, current_options_alt)
 
             # add kmers inside nodes to possible options
             new_ref = bnp.get_kmers(variant.ref_seq.ravel(), self._k).ravel().raw().astype(np.uint64)
@@ -1096,4 +1036,76 @@ def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_cou
         s.remove_tmp_files()
 
     return MultiAllelicSignatures.from_multiple(all_signatures)
+
+
+def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_count_to_index=-1, spacing=0,
+                   minimum_overlap_with_variant=1, n_threads=1):
+    """Wrapper function that finds multiallelic signatures from paths"""
+    log_memory_usage_now("Before MatrixVariantWindowKmers")
+
+    # To keep max memory usage low, create signatures for chunks of variants, concatenate in the end
+    n_variants = paths.n_variants()
+    chunks = interval_chunks(0, n_variants, n_variants//chunk_size+1)
+    logging.info("Will find signatures for %d chunks" % len(chunks))
+    all_signatures = []
+
+    all_subpaths = paths.chunk(chunks, padding=k)
+
+    t0 = time.perf_counter()
+    if n_threads == 1:
+        for chunk_index in tqdm.tqdm(range(len(all_subpaths)), desc="Finding signatures", unit="chunks", total=len(chunks)):
+            signatures = find_signatures_for_chunk(add_dummy_count_to_index, all_subpaths, chunk_index, k,
+                                                   minimum_overlap_with_variant, scorer, spacing)
+            all_signatures.append(signatures)
+    else:
+        ray.init(num_cpus=n_threads)
+        all_subpaths = ray.put(all_subpaths)
+        scorer = ray.put(scorer)
+        for chunk_index in range(len(chunks)):
+            signatures = find_signatures_for_chunk_wrapper.remote(add_dummy_count_to_index, all_subpaths, chunk_index, k, minimum_overlap_with_variant, scorer, spacing)
+            all_signatures.append(signatures)
+
+        all_signatures = ray.get(all_signatures)
+
+    logging.info("Finding signatures with %d threads took %.4f seconds" % (n_threads, time.perf_counter() - t0))
+
+    #for s in all_subpaths:
+    #    s.remove_tmp_files()
+
+    return MultiAllelicSignatures.from_multiple(all_signatures)
+
+
+@ray.remote
+def find_signatures_for_chunk_wrapper(*params):  # wrapper for ray
+    return find_signatures_for_chunk(*params)
+
+
+def find_signatures_for_chunk(add_dummy_count_to_index, all_subpaths, chunk_index, k, minimum_overlap_with_variant,
+                              scorer, spacing):
+    log_memory_usage_now("Signature loop start")
+    subpaths = all_subpaths[chunk_index]
+    t0 = time.perf_counter()
+    variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(
+        subpaths.paths,
+        k,
+        spacing=spacing,
+        only_pick_kmers_inside_big_alleles=True,
+        minimum_overlap_with_variant=minimum_overlap_with_variant
+    )
+    log_memory_usage_now("After variant window kmers")
+    logging.info("Making signature kmers from paths took %.4f seconds" % (time.perf_counter() - t0))
+    t0 = time.perf_counter()
+    variant_window_kmers2 = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers,
+                                                                                 subpaths.variant_alleles.matrix, )
+    logging.info("Conversion took %.4f seconds" % (time.perf_counter() - t0))
+    log_memory_usage_now("After variant window kmers2")
+    t0 = time.perf_counter()
+    signatures = MultiAllelicSignatureFinderV2(variant_window_kmers2, scorer=scorer, k=k,
+                                               sv_min_size=50 // max(1, spacing)).run(add_dummy_count_to_index)
+    logging.info("Finding best signatures for variants took %.4f seconds" % (time.perf_counter() - t0))
+    t0 = time.perf_counter()
+    # Removing frequent signatures is not necessary, but will speed up mapping model since more signatures are pruned from paths
+    signatures.remove_too_frequent_signatures(scorer, 10000)
+    logging.info("Removing frequent signatures took %.4f seconds" % (time.perf_counter() - t0))
+    return signatures
 

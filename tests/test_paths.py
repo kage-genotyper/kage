@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 from kage.indexing.graph import Graph, GenomeBetweenVariants
-from kage.indexing.paths import PathCreator, PathSequences, Paths
+from kage.indexing.paths import PathCreator, PathSequences, Paths, PathCombinationMatrix
 import bionumpy as bnp
 from kage.preprocessing.variants import MultiAllelicVariantSequences
 from kage.util import n_unique_values_per_column
@@ -127,6 +127,20 @@ def test_path_combination_matrix_v3():
     matrix = PathCreator.make_combination_matrix_multi_allele_v3(n_alleles_per_variant, window=3)
     assert np.all(n_unique_values_per_column(matrix) == n_alleles_per_variant)
     print(matrix)
+
+
+def test_add_paths_with_missing_alleles_v2():
+    n_alleles_per_variant = np.array([2, 3, 2, 4, 2])
+    matrix = PathCombinationMatrix([
+        [0, 0, 0, 3, 0],
+        [0, 3, 1, 3, 1],
+        [0, 0, 0, 3, 0],
+        [0, 0, 1, 2, 0],
+        [0, 0, 0, 2, 0],
+    ])
+    matrix.add_paths_with_missing_alleles_by_changing_existing_paths(n_alleles_per_variant)
+    print(matrix.matrix)
+    matrix.sanity_check()
 
 
 @pytest.fixture

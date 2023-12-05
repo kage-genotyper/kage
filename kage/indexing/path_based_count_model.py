@@ -1,3 +1,4 @@
+import itertools
 import logging
 import time
 from dataclasses import dataclass
@@ -80,8 +81,10 @@ class PathKmers:
         # the kmers for the following ref sequence before next variant
         n_paths = path_allele_matrix.shape[0]
         log_memory_usage_now("Before making pathkmers")
-        logging.info("Making pathkmers for %d paths", n_paths)
-        return cls((graph.kmers_for_pairs_of_ref_and_variants(path_allele_matrix[i, :], k) for i in range(n_paths)), n_paths=n_paths)
+        logging.info("Making pathkmers for %d paths.", n_paths)
+        kmers = cls((graph.kmers_for_pairs_of_ref_and_variants(path_allele_matrix[i, :], k) for i in range(n_paths)), n_paths=n_paths)
+        logging.info("Finished making pathkmers")
+        return kmers
 
     def get_for_haplotype(self, haplotype: HaplotypeAsPaths, include_reverse_complements=False):
         """
@@ -108,7 +111,7 @@ class PathKmers:
         return bnp.EncodedArray(np.concatenate(kmers_found), encoding)
 
 
-    def prune(self, kmer_index, n_threads=1, modulo=2_000_000_033):
+    def prune(self, kmer_index, n_threads=4, modulo=2_000_000_033):
         """
         Prunes away kmers that are not in kmer index.
         Prunes inplace.
@@ -118,11 +121,34 @@ class PathKmers:
         # then prunes away kmers that are not in kmer_index
         lookup = kmer_index
         new = []
-        for i, kmers in tqdm(enumerate(self.kmers), desc="Pruning kmers", total=self.n_paths):
-            pruned_kmers = self.prune_kmers(kmers, lookup)
-            new.append(pruned_kmers)
+        logging.info("Pruning")
+        t_start = time.perf_counter()
+        if n_threads == 1 or True:
+            for i, kmers in tqdm(enumerate(self.kmers), desc="Pruning kmers", total=self.n_paths):
+                pruned_kmers = self.prune_kmers(kmers, lookup)
+                new.append(pruned_kmers)
+
+        else:
+
+            lookup = ray.put(lookup)
+            # chunk kmers to not read too many into memory at once
+            while True:
+                t0 = time.perf_counter()
+                chunk = list(itertools.islice(self.kmers, 10))
+                logging.info("Pruning chunk of %d paths" % len(chunk))
+                if len(chunk) == 0:
+                    break
+                #remote_chunk = ray.put(chunk)
+                ts = time.perf_counter()
+                remote_chunk = object_to_shared_memory(chunk)
+                logging.info("Time to put chunk in shared memory: %.5f sec" % (time.perf_counter() - ts))
+
+                result = ray.get([_prune_wrapper.remote(remote_chunk, i, lookup) for i in range(len(chunk))])
+                new.extend(result)
+                logging.info("Pruning chunk took %.5f sec" % (time.perf_counter() - t0))
 
         log_memory_usage_now("After pruning kmers")
+        logging.info("Pruning took %.5f sec" % (time.perf_counter() - t_start))
         self.kmers = new
 
     @staticmethod
@@ -138,10 +164,10 @@ class PathKmers:
             if n_threads == 1:
                 is_in = lookup.has_kmers(raw_kmers)
             else:
-                logging.warning("Experimentatl with more than 1 thread. Probably not faster.")
+                logging.warning("Experimental with more than 1 thread. Probably not faster.")
                 is_in = parallel_kmer_index_has_kmers(raw_kmers, lookup)
 
-        #logging.info("Time lookup %d kmers: %.5f" % (len(raw_kmers), time.perf_counter() - t_lookup))
+        logging.info("Time lookup %d kmers: %.5f" % (len(raw_kmers), time.perf_counter() - t_lookup))
         mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)
         #logging.info(f"Kept {np.sum(mask)}/{len(raw_kmers)} kmers for path")
         kmers = raw_kmers[is_in]
@@ -357,3 +383,20 @@ def get_haplotypes_as_paths_parallel(haplotype_matrix: SparseHaplotypeMatrix, pa
     results = ray.get(out)
     logging.info("After get haplotypes as paths parallel")
     return results
+
+
+@ray.remote
+def _prune_wrapper(chunks, index, lookup):
+    if isinstance(chunks, str):
+        chunks = object_from_shared_memory(chunks)
+    log_memory_usage_now("Pruning chunk start")
+    kmers = chunks[index]
+    t0 = time.perf_counter()
+    #lookup = lookup.copy()
+    logging.info("Time to copy lookup: %.5f sec" % (time.perf_counter() - t0))
+    t0 = time.perf_counter()
+    result = PathKmers.prune_kmers(kmers, lookup)
+    logging.info("Time actual pruning: %.5f sec" % (time.perf_counter() - t0))
+    log_memory_usage_now("Pruning chunk end")
+    return result
+

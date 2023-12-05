@@ -39,6 +39,10 @@ from kage.benchmarking.vcf_preprocessing import preprocess_sv_vcf, get_cn0_ref_a
 from kage.analysis.genotype_accuracy import genotype_accuracy_cli
 from kage.benchmarking.vcf_preprocessing import filter_low_frequency_alleles_on_multiallelic_variants_cli
 from kage.indexing.main import MultiAllelicMap
+from kage.glimpse.glimpse_wrapper import run_glimpse_cli
+from pathlib import Path
+import os
+from .glimpse.glimpse_wrapper import run_glimpse
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -75,6 +79,13 @@ def genotype(args):
 
     logging.debug("Reading indexes took %.3f sec" % (time.perf_counter()-t))
     config = GenotypingConfig.from_command_line_args(args)
+    if args.glimpse is not None:
+        config.ignore_helper_model = True
+        config.ignore_helper_variants = True
+        logging.info("Will do imputation with glimpse")
+        assert args.glimpse.endswith(".vcf.gz"), "--glimpse parameter must point to a .vcf.gz file"
+        assert os.path.isfile(args.glimpse + ".tbi"), "A tabix index file must exist for the glimpse vcf %s" % args.glimpse
+
     if not "helper_variants" in index:
         config.ignore_helper_model = True
         config.ignore_helper_variants = True
@@ -114,31 +125,28 @@ def genotype(args):
     if args.write_debug_data:
         _write_genotype_debug_data(genotypes, numpy_genotypes, args.out_file_name, index.variant_to_nodes, probs, count_probs)
 
-    if "vcf_variants" in index:
-        from kage.io import write_vcf
-        # new setup: Storing SimpleVcfEntry object in index, use this to write vcf
-        logging.info("Writing vcf using Vcf entry to %s" % args.out_file_name)
-        write_multiallelic_vcf_with_biallelic_numeric_genotypes(
-            index.vcf_variants, genotypes, args.out_file_name,
-            index.n_alleles_per_variant,
-            header=create_vcf_header_with_sample_name(index.vcf_header, config.sample_name_output, add_genotype_likelyhoods=not config.do_not_write_genotype_likelihoods),
-            add_genotype_likelihoods=probs if not config.do_not_write_genotype_likelihoods else None,
-            ignore_homo_ref=config.ignore_homo_ref,
-        )
-    else:
+    from kage.io import write_vcf
+    # new setup: Storing SimpleVcfEntry object in index, use this to write vcf
+    logging.info("Writing vcf using Vcf entry to %s" % args.out_file_name)
+    if args.glimpse is not None:
+        out_file_name = Path(args.out_file_name).stem + "_no_imputation" + Path(args.out_file_name).suffix
 
-        numpy_variants = index.numpy_variants
 
-        t = time.perf_counter()
-        numpy_variants.to_vcf_with_genotypes(
-            args.out_file_name,
-            config.sample_name_output,
-            numpy_genotypes,
-            add_header_lines=vcf_pl_and_gl_header_lines(),
-            ignore_homo_ref=config.ignore_homo_ref,
-            add_genotype_likelyhoods=probs if not config.do_not_write_genotype_likelihoods else None,
-        )
+    write_multiallelic_vcf_with_biallelic_numeric_genotypes(
+        index.vcf_variants, genotypes, out_file_name,
+        index.n_alleles_per_variant,
+        header=create_vcf_header_with_sample_name(index.vcf_header, config.sample_name_output, add_genotype_likelyhoods=not config.do_not_write_genotype_likelihoods),
+        add_genotype_likelihoods=probs if not config.do_not_write_genotype_likelihoods else None,
+        ignore_homo_ref=config.ignore_homo_ref,
+    )
+
     logging.info("Writing to vcf took %.3f sec" % (time.perf_counter() - t))
+
+    if args.glimpse is not None:
+        t0 = time.perf_counter()
+        chromosomes = list(set([variant.chromosome.to_string() for variant in index.vcf_variants]))  # glimpse wrapper needs the unique chromosomes that we actually have variants for
+        run_glimpse(args.glimpse, out_file_name, args.out_file_name, n_threads=args.n_threads, chromosomes=chromosomes)
+        logging.info("Running GLIMPSE took %.4f sec" % (time.perf_counter()-t0))
 
     close_shared_pool()
     logging.info("Genotyping took %d sec" % (time.perf_counter() - start_time))
@@ -176,6 +184,7 @@ def run_argument_parser(args):
     subparser.add_argument("-B", "--do-not-write-genotype-likelihoods", required=False, type=bool, default=False, help="Set to True to not write genotype likelihoods to output vcf")
     subparser.add_argument("-d", "--debug", type=bool, default=False)
     subparser.add_argument("-D", "--write-debug-data", type=bool, default=False)
+    subparser.add_argument("-G", "--glimpse", default=None, help="If set to point to a population vcf, KAGE will use GLIMPSE to do imputation instead of KAGE's builtin simple imputation")
     subparser.set_defaults(func=genotype)
 
     subparser = subparsers.add_parser("analyse_variants")
@@ -489,7 +498,16 @@ def run_argument_parser(args):
     subparser.add_argument("-r", "--reference", required=False, default=None)
     subparser.add_argument("-d", "--only-deletions", required=False, default=False, type=bool)
     subparser.set_defaults(func=filter_low_frequency_alleles_on_multiallelic_variants_cli)
-    
+
+    subparser = subparsers.add_parser("glimpse", help="Wrapper around GLIMPSE 1")
+    subparser.add_argument("-p", "--population-vcf", required=True)
+    subparser.add_argument("-g", "--genotyped-vcf", required=True)
+    #subparser.add_argument("-m", "--genetic-map-directory", required=False, default="")
+    subparser.add_argument("-o", "--output-vcf", required=True, help="Will write genotypes to this vcf in bgzipped format")
+    subparser.add_argument("-c", "--chromosomes", required=True, help="Comma-separated list of chromosomes")
+    subparser.add_argument("-t", "--n-threads", type=int, required=False, default=8)
+    subparser.set_defaults(func=run_glimpse_cli)
+
     #subparser = subparsers.add_parser("pad_vcf")
     #subparser.add_argument("-v", "--vcf-file-name", required=True)
     #subparser.add_argument("-r", "--reference", required=True)

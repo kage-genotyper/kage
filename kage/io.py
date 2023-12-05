@@ -120,7 +120,6 @@ def write_vcf(variants: SimpleVcfEntry, string_genotypes: bnp.EncodedRaggedArray
         p = add_genotype_likelihoods
         # normalize genotype likelihoods so that they sum to 1
         p = p - scipy.special.logsumexp(p, axis=1)[:, np.newaxis]
-        logging.info("NORMALIZED: %s" % p)
 
         # probs are in loge, convert to minus log10 (?)
         genotype_likelihoods = p * np.log10(np.e)
@@ -142,9 +141,6 @@ def write_vcf(variants: SimpleVcfEntry, string_genotypes: bnp.EncodedRaggedArray
         sorted_gls = np.sort(genotype_likelihoods_matrix, axis=1)
         genotype_qualities = -scipy.special.logsumexp(sorted_gls[:, 0:2], axis=1).astype(int)  # sum of prob of two other genotypes
         #genotype_qualities = -(np.max(genotype_likelihoods_matrix, axis=1) - scipy.special.logsumexp(genotype_likelihoods_matrix, axis=1))
-        logging.info("GEnotype likelihoods")
-        logging.info(genotype_qualities)
-
         genotypes = [f"{genotype}:{gl}:{gq}" for genotype, gl, gq in zip(genotypes, gl_strings, map(str, genotype_qualities))]
 
     entry = VcfEntryWithSingleIndividualGenotypes(
