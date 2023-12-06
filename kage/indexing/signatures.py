@@ -220,7 +220,7 @@ class MultiAllelicSignatures:
         flat_signatures = ak.to_numpy(ak.ravel(self.signatures))
         scores = scorer[flat_signatures]
         mask = scores > threshold
-        logging.info(f"{np.sum(mask)}/{len(flat_signatures)} signatures removed because they had score above {threshold}")
+        logging.info(f"{np.sum(mask)}/{len(flat_signatures)} signatures removed because they had score above {threshold}.")
         self.filter(~mask)
 
 
@@ -809,7 +809,7 @@ class VariantWindowKmers2:
         n_alleles_per_variant = np.max(path_alleles, axis=0) + 1
         #logging.info("Total alleles: %d" % np.sum(n_alleles_per_variant))
         #logging.info("Max alleles on a variant: %d" % np.max(n_alleles_per_variant))
-        if np.max(n_alleles_per_variant) >= n_paths:
+        if np.max(n_alleles_per_variant) > n_paths:
             logging.warning("There are not enough paths to cover all alleles on variants. Results may be weird")
 
         #logging.info("Total signatures alleles: %d" % len(grouped_by_alleles))
@@ -1106,7 +1106,7 @@ def find_signatures_for_chunk(add_dummy_count_to_index, all_subpaths, chunk_inde
     #logging.info("Finding best signatures for variants took %.4f seconds" % (time.perf_counter() - t0))
     t0 = time.perf_counter()
     # Removing frequent signatures is not necessary, but will speed up mapping model since more signatures are pruned from paths
-    signatures.remove_too_frequent_signatures(scorer, 10000)
+    signatures.remove_too_frequent_signatures(scorer, 255)
     #logging.info("Removing frequent signatures took %.4f seconds" % (time.perf_counter() - t0))
     return signatures
 

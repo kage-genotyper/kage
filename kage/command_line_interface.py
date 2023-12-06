@@ -128,6 +128,7 @@ def genotype(args):
     from kage.io import write_vcf
     # new setup: Storing SimpleVcfEntry object in index, use this to write vcf
     logging.info("Writing vcf using Vcf entry to %s" % args.out_file_name)
+    out_file_name = args.out_file_name
     if args.glimpse is not None:
         out_file_name = Path(args.out_file_name).stem + "_no_imputation" + Path(args.out_file_name).suffix
 

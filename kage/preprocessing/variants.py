@@ -12,6 +12,7 @@ import logging
 from typing import List, Tuple, Union, Iterable
 from bionumpy.io.vcf_buffers import VCFBuffer
 from bionumpy.streams import NpDataclassStream
+from bionumpy.typing import SequenceID
 
 from kage.io import CustomVCFBuffer, SimpleVcfEntry
 from kage.util import log_memory_usage_now
@@ -28,7 +29,7 @@ class Variants:
     """
     Simple compact representation of variants. Indels are not padded.
     """
-    chromosome: str
+    chromosome: SequenceID
     position: int  # position is first ref position in ref sequence or first position after alt path starts (for indels)
     ref_seq: str  # position + len(ref_seq) will always give first ref base after the variant is finished
     alt_seq: str

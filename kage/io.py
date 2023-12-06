@@ -7,6 +7,7 @@ import numpy as np
 import scipy
 from bionumpy.bnpdataclass import bnpdataclass
 import npstructures as nps
+from bionumpy.typing import SequenceID
 from shared_memory_wrapper import to_file, from_file
 
 from kage.util import vcf_pl_and_gl_header_lines
@@ -38,7 +39,7 @@ class VCFBuffer(bnp.io.delimited_buffers.DelimitedBuffer):
 
 @bnpdataclass
 class VcfEntryWithSingleIndividualGenotypes:
-    chromosome: str
+    chromosome: SequenceID
     position: int
     id: str
     ref_seq: str
@@ -56,7 +57,7 @@ class VcfWithSingleIndividualBuffer(VCFBuffer):
 
 @bnpdataclass
 class VcfEntryWithInfo:
-    chromosome: str
+    chromosome: SequenceID
     position: int
     id: str
     ref_seq: str
@@ -73,7 +74,7 @@ class VcfWithInfoBuffer(VCFBuffer):
 
 @bnpdataclass
 class SimpleVcfEntry:
-    chromosome: str
+    chromosome: SequenceID
     position: int
     ref_seq: str
     alt_seq: str
@@ -224,7 +225,7 @@ def convert_biallelic_numeric_genotypes_to_multialellic_string_genotypes(n_allel
 
 @bnpdataclass
 class CustomVCFEntry:
-    chromosome: str
+    chromosome: SequenceID
     position: int
     id: str
     ref_seq: str
@@ -234,7 +235,7 @@ class CustomVCFEntry:
 
 @bnpdataclass
 class CustomVCFEntryWithInfo:
-    chromosome: str
+    chromosome: SequenceID
     position: int
     id: str
     ref_seq: str

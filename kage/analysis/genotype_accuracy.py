@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 import npstructures
 from bionumpy.bnpdataclass import bnpdataclass
+from bionumpy.typing import SequenceID
+
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix
 from kage.preprocessing.variants import Variants
 import tqdm
@@ -395,7 +397,7 @@ class GenotypeAccuracy:
 
 @dataclass
 class BiallelicVariant:
-    chromosome: str
+    chromosome: SequenceID
     position: int
     reference_sequence: str
     alt_sequences: str
@@ -512,7 +514,7 @@ class IndexedGenotypes2(IndexedGenotypes):
 
 @bnpdataclass
 class BiallelicVariants:
-    chromosome: str
+    chromosome: SequenceID
     position: int
     reference_sequence: str
     alt_sequences: str
