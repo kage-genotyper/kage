@@ -186,6 +186,7 @@ def make_index(
                                 minimum_overlap_with_variant=2, n_threads=n_threads)
 
     kmer_index = signatures.get_as_kmer_index(node_mapping=node_mapping, modulo=modulo, k=k)
+    logging.info("Kmer index contains %s kmers" % len(kmer_index.get_kmers()))
 
     logging.info("Creating count model")
     log_memory_usage_now("Before creating count model")

@@ -110,7 +110,6 @@ class PathKmers:
 
         return bnp.EncodedArray(np.concatenate(kmers_found), encoding)
 
-
     def prune(self, kmer_index, n_threads=4, modulo=2_000_000_033):
         """
         Prunes away kmers that are not in kmer index.
@@ -127,6 +126,7 @@ class PathKmers:
             for i, kmers in tqdm(enumerate(self.kmers), desc="Pruning kmers", total=self.n_paths):
                 pruned_kmers = self.prune_kmers(kmers, lookup)
                 new.append(pruned_kmers)
+                log_memory_usage_now("After pruning kmers %d" % i)
 
         else:
 
@@ -169,7 +169,7 @@ class PathKmers:
 
         logging.info("Time lookup %d kmers: %.5f" % (len(raw_kmers), time.perf_counter() - t_lookup))
         mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)
-        #logging.info(f"Kept {np.sum(mask)}/{len(raw_kmers)} kmers for path")
+        logging.info(f"Kept {np.sum(mask)}/{len(raw_kmers)} kmers for path")
         kmers = raw_kmers[is_in]
         shape = np.sum(mask, axis=1)
         pruned_kmers = bnp.EncodedRaggedArray(bnp.EncodedArray(kmers, encoding), shape)
@@ -280,7 +280,6 @@ class PathBasedMappingModelCreator(MappingModelCreator):
             all_kmers.append(self._path_kmers.get_for_haplotype(as_paths).raw().ravel().astype(np.uint64))
             #logging.info("Getting kmers took %.5f sec" % (time.perf_counter() - t0))
 
-        # todo for multiallelic: use variant_to_nodes
         t0 = time.perf_counter()
         if self._node_map is None:
             logging.info("No node map provided. Assuming biallelic and deciding node ids implicitly")
@@ -381,6 +380,7 @@ def get_haplotypes_as_paths_parallel(haplotype_matrix: SparseHaplotypeMatrix, pa
 
     t0 = time.perf_counter()
     results = ray.get(out)
+    ray.shutdown()
     logging.info("After get haplotypes as paths parallel")
     return results
 

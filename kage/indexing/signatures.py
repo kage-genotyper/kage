@@ -1066,6 +1066,7 @@ def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_cou
             all_signatures.append(signatures)
 
         all_signatures = ray.get(all_signatures)
+        ray.shutdown()
 
     logging.info("Finding signatures with %d threads took %.4f seconds" % (n_threads, time.perf_counter() - t0))
 
@@ -1082,7 +1083,7 @@ def find_signatures_for_chunk_wrapper(*params):  # wrapper for ray
 
 def find_signatures_for_chunk(add_dummy_count_to_index, all_subpaths, chunk_index, k, minimum_overlap_with_variant,
                               scorer, spacing):
-    log_memory_usage_now("Signature loop start")
+    #log_memory_usage_now("Signature loop start")
     subpaths = all_subpaths[chunk_index]
     t0 = time.perf_counter()
     variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(
@@ -1092,20 +1093,20 @@ def find_signatures_for_chunk(add_dummy_count_to_index, all_subpaths, chunk_inde
         only_pick_kmers_inside_big_alleles=True,
         minimum_overlap_with_variant=minimum_overlap_with_variant
     )
-    log_memory_usage_now("After variant window kmers")
-    logging.info("Making signature kmers from paths took %.4f seconds" % (time.perf_counter() - t0))
+    #log_memory_usage_now("After variant window kmers")
+    #logging.info("Making signature kmers from paths took %.4f seconds" % (time.perf_counter() - t0))
     t0 = time.perf_counter()
     variant_window_kmers2 = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers,
                                                                                  subpaths.variant_alleles.matrix, )
-    logging.info("Conversion took %.4f seconds" % (time.perf_counter() - t0))
-    log_memory_usage_now("After variant window kmers2")
+    #logging.info("Conversion took %.4f seconds" % (time.perf_counter() - t0))
+    #log_memory_usage_now("After variant window kmers2")
     t0 = time.perf_counter()
     signatures = MultiAllelicSignatureFinderV2(variant_window_kmers2, scorer=scorer, k=k,
                                                sv_min_size=50 // max(1, spacing)).run(add_dummy_count_to_index)
-    logging.info("Finding best signatures for variants took %.4f seconds" % (time.perf_counter() - t0))
+    #logging.info("Finding best signatures for variants took %.4f seconds" % (time.perf_counter() - t0))
     t0 = time.perf_counter()
     # Removing frequent signatures is not necessary, but will speed up mapping model since more signatures are pruned from paths
     signatures.remove_too_frequent_signatures(scorer, 10000)
-    logging.info("Removing frequent signatures took %.4f seconds" % (time.perf_counter() - t0))
+    #logging.info("Removing frequent signatures took %.4f seconds" % (time.perf_counter() - t0))
     return signatures
 
