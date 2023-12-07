@@ -65,7 +65,8 @@ def make_index(
        n_threads=16,
        vcf_no_genotypes=None,
        min_af_deletions_filter=0.1,
-       max_paths: int=100
+       max_paths: int=100,
+       no_helper_model=False
 ):
     """
     Makes all indexes and writes to an index bundle.
@@ -219,14 +220,13 @@ def make_index(
     refined_count_model = refine_sampling_model_noncli(count_model, variant_to_nodes, prior_empty_data=0.1)
 
     # Start seperate process for helper model
-    only_consider_variants_for_helper_model = get_variants_that_can_be_used_as_helper_variants(n_alleles_per_variant)
-    only_consider_variants_for_helper_model &= ~tricky_ref.tricky_variants
-    only_consider_variants_for_helper_model &= ~tricky_alt.tricky_variants
-
-    #has_perfect_model = get_variants_with_perfect_model(*refined_count_model)
-    #tricky_variants.add(TrickyVariants(~has_perfect_model))
-
-    helper_model_process, helper_model_result_name = make_helper_model_seperate_process(biallelic_haplotype_matrix,
+    if not no_helper_model:
+        only_consider_variants_for_helper_model = get_variants_that_can_be_used_as_helper_variants(n_alleles_per_variant)
+        only_consider_variants_for_helper_model &= ~tricky_ref.tricky_variants
+        only_consider_variants_for_helper_model &= ~tricky_alt.tricky_variants
+        #has_perfect_model = get_variants_with_perfect_model(*refined_count_model)
+        #tricky_variants.add(TrickyVariants(~has_perfect_model))
+        helper_model_process, helper_model_result_name = make_helper_model_seperate_process(biallelic_haplotype_matrix,
                                                                                         only_consider_variants_for_helper_model)
     del biallelic_haplotype_matrix
     logging.info("Converting to sparse model")
@@ -245,12 +245,13 @@ def make_index(
             "orig_count_model": count_model
         }
 
-    # helper model
-    #helper_model, combo_matrix = make_helper_model(biallelic_haplotype_matrix)
-    helper_model_process.join()
-    helper_model, combo_matrix = object_from_shared_memory(helper_model_result_name)
-    indexes["helper_variants"] = HelperVariants(helper_model)
-    indexes["combination_matrix"] = CombinationMatrix(combo_matrix)
+    if not no_helper_model:
+        # helper model
+        #helper_model, combo_matrix = make_helper_model(biallelic_haplotype_matrix)
+        helper_model_process.join()
+        helper_model, combo_matrix = object_from_shared_memory(helper_model_result_name)
+        indexes["helper_variants"] = HelperVariants(helper_model)
+        indexes["combination_matrix"] = CombinationMatrix(combo_matrix)
 
     index = IndexBundle(indexes)
     logging.info("Writing indexes to file")
@@ -294,10 +295,12 @@ def make_helper_model(biallelic_haplotype_matrix, variant_filter, write_to_resul
 
 def make_index_cli(args):
     r = make_index(args.reference, args.vcf, args.out_base_name,
-                      args.kmer_size, modulo=args.modulo,
-                      variant_window=args.variant_window,
+                    args.kmer_size, modulo=args.modulo,
+                    variant_window=args.variant_window,
                     vcf_no_genotypes=args.vcf_no_genotypes,
-                   min_af_deletions_filter=args.min_af_deletions_filter)
+                    min_af_deletions_filter=args.min_af_deletions_filter,
+                    no_helper_model=args.no_helper_model,
+                   )
     remove_shared_memory_in_session()
     return r
 

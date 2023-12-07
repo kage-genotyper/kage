@@ -1106,7 +1106,7 @@ def find_signatures_for_chunk(add_dummy_count_to_index, all_subpaths, chunk_inde
     #logging.info("Finding best signatures for variants took %.4f seconds" % (time.perf_counter() - t0))
     t0 = time.perf_counter()
     # Removing frequent signatures is not necessary, but will speed up mapping model since more signatures are pruned from paths
-    signatures.remove_too_frequent_signatures(scorer, 255)
+    signatures.remove_too_frequent_signatures(scorer, 254)
     #logging.info("Removing frequent signatures took %.4f seconds" % (time.perf_counter() - t0))
     return signatures
 
