@@ -103,7 +103,8 @@ def make_args_for_genotype_command(index_file_name, reads_file_name, out_file="t
                                "do_not_write_genotype_likelihoods",
                                "gpu",
                                "counts",
-                               "write_debug_data"])
+                               "write_debug_data",
+                               "glimpse"])
     args = Args(index_file_name, reads_file_name, "test_genotypes.vcf", kmer_size, average_coverage, True, 4,
-                False, False, False, 0, "sample", False, False, False, None, True)
+                False, False, False, 0, "sample", False, False, False, None, True, None)
     return args
