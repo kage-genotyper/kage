@@ -1058,7 +1058,7 @@ def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_cou
                                                    minimum_overlap_with_variant, scorer, spacing)
             all_signatures.append(signatures)
     else:
-        ray.init(num_cpus=n_threads)
+        ray.init(num_cpus=n_threads, ignore_reinit_error=True)
         all_subpaths = ray.put(all_subpaths)
         scorer = ray.put(scorer)
         for chunk_index in range(len(chunks)):

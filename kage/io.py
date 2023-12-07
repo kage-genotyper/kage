@@ -86,6 +86,13 @@ class SimpleVcfEntry:
     def from_file(cls, file_name):
         return cls(*from_file(file_name))
 
+    @classmethod
+    def from_vcf(cls, file_name: str):
+        chunks = []
+        for chunk in bnp.open(file_name):
+            chunks.append(SimpleVcfEntry(chunk.chromosome, chunk.position, chunk.ref_seq, chunk.alt_seq))
+        return np.concatenate(chunks)
+
 
 def write_multiallelic_vcf_with_biallelic_numeric_genotypes(variants: SimpleVcfEntry, numeric_genotypes: np.ndarray,
                                                             out_file_name: str, n_alleles_per_variant: np.ndarray,
@@ -167,7 +174,7 @@ def write_vcf(variants: SimpleVcfEntry, string_genotypes: bnp.EncodedRaggedArray
         f.write(entry)
 
 
-def create_vcf_header_with_sample_name(existing_vcf_header, sample_name, add_genotype_likelyhoods=False):
+def create_vcf_header_with_sample_name(existing_vcf_header, sample_name, add_genotype_likelyhoods=False) -> str:
     header_lines = existing_vcf_header.split("\n")
 
     if add_genotype_likelyhoods:

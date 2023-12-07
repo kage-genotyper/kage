@@ -43,6 +43,7 @@ from kage.glimpse.glimpse_wrapper import run_glimpse_cli
 from pathlib import Path
 import os
 from .glimpse.glimpse_wrapper import run_glimpse
+from kage.naive_genotyper import naive_genotyper_cli
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -509,6 +510,12 @@ def run_argument_parser(args):
     subparser.add_argument("-c", "--chromosomes", required=True, help="Comma-separated list of chromosomes")
     subparser.add_argument("-t", "--n-threads", type=int, required=False, default=8)
     subparser.set_defaults(func=run_glimpse_cli)
+
+    subparser = subparsers.add_parser("naive_genotyper", help="A baseline genotyper that does nothing")
+    subparser.add_argument("-p", "--population-vcf", required=True)
+    subparser.add_argument("-o", "--output-vcf", required=True)
+    subparser.set_defaults(func=naive_genotyper_cli)
+
 
     #subparser = subparsers.add_parser("pad_vcf")
     #subparser.add_argument("-v", "--vcf-file-name", required=True)
