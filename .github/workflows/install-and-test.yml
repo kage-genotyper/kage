@@ -26,5 +26,6 @@ jobs:
       run: |
         pip install -e .
         conda install -y pytest
+        conda install -c bioconda bcftools
         cd tests
         pytest
