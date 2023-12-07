@@ -60,15 +60,16 @@ Note:
 * KAGE puts data and arrays in shared memory to speed up computation. It automatically frees this memory when finished, but KAGE gets accidentally killed or stops before finishing, you might end up with allocated memory not being freed. You can free this memory by calling `kage free_memory`.
 
 ## KAGE works even better with GLIMPSE
-KAGE uses information from the population to improve accuracy, a bit similarily to imputation. However, the model used by KAGE is very simple. It works well for SNPs and indels, but for SVs, we have found that using GLIMPSE for the imputation-step works much better. To run KAGE with GLIMPSE instead of the builtin KAGE imputation, simpy add `--glimpse variants.vcf.gz` when running `kage genotype`. KAGE will automatically install GLIMPSE by downloading binaries and run GLIMPSE for you. One should expect some longer runtime, but not much.
+KAGE uses information from the population to improve accuracy, a bit similarily to imputation. However, the model used by KAGE is quite simple. It works well for SNPs and indels, but for SVs, we have found that using GLIMPSE for the imputation-step works much better. To run KAGE with GLIMPSE instead of the builtin KAGE imputation, simpy add `--glimpse variants.vcf.gz` when running `kage genotype`. KAGE will automatically install GLIMPSE by downloading binaries and run GLIMPSE for you. One should expect some longer runtime, but not much.
+
+Note: GLIMPSE requires that you have BCFTools installed.
 
 ### Prebuilt indexes
 
 You can find some prebuilt indexes here (coming soon):
 
+* Draft Human Pangenome (47 individuals, SVs and SNPs/indels)
 * 1000 genomes SNPs/indels, 2548 individuals
-* 1000 genomes SVs
-* 1000 genomes SNPs/indels + SVs
 
 
 ## Using KAGE with GPU-support (GKAGE)
@@ -78,8 +79,7 @@ As of version 0.1.11, KAGE supports GPU-acceleration for GPUs supporting the CUD
 1) Make sure you have [CUDA installed](https://developer.nvidia.com/cuda-downloads) and working.
 2) Install a [CuPy](https://docs.cupy.dev/en/stable/install.html) version that matches your CUDA installation.
 3) Install [Cucounter](https://github.com/jorgenwh/cucounter)
-4) Run kmer_mapper with `--gpu True` to tell kmer_mapper to use the GPU. If you want to save memory, you can also use a kmer index that does not have reverse complements. Kmer mapper will then compute the reverse complements from your reads. To this by specifying `-i kmer_index_only_variants_without_revcomp.npz`. For humans you can [use this index](https://zenodo.org/record/7582195/files/kmer_index_only_variants_without_revcomp.npz?download=1).
-5) Run `kage genotype` as normal (kage genotype is already very fast in CPU-mode and does not use GPU-acceleration now).
+4) Run kage with `--gpu True` to tell KAGE to use the GPU. 
 
 Note: GKAGE has been tested to work with GPUs with 4 GBs of RAM.
 
