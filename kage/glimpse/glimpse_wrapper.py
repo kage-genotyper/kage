@@ -13,7 +13,7 @@ import random
 from tempfile import TemporaryFile, NamedTemporaryFile
 from typing import List
 import bionumpy as bnp
-
+import numpy as np
 
 GLIMPSE_BINARIES = {
     "GLIMPSE_chunk_static": "https://github.com/odelaneau/GLIMPSE/releases/download/v1.1.1/GLIMPSE_chunk_static",
@@ -49,8 +49,10 @@ def make_glimps_chunks_for_chromosome(vcf_file_name: str, chromosome, out_dir: s
     subprocess.run(["glimpse_binaries/GLIMPSE_chunk_static",
                     "--input", vcf_file_name,
                     "--region", chromosome,
-                    "--window-size", "20000",
-                    "--buffer-size", "20000",
+                    #"--window-size", "20000",
+                    #"--buffer-size", "20000",
+                    "--window-count", "1000",
+                    "--buffer-count", "100",
                     "--output", out_dir + "/glimpse_chunks." + chromosome + ".txt"
                     ])
 
@@ -83,7 +85,7 @@ def remove_glimpse_results(out_dir: str):
     """
     Removes old glimpse results. Important to not mix old vcf files with new ones
     """
-    for file in glob.glob(out_dir + "/GLIMPSE-*.bcf"):
+    for file in glob.glob(out_dir + "/GLIMPSE*"):
         logging.info("Removing old file %s" % file)
         os.remove(file)
 
@@ -96,14 +98,14 @@ class GlimpseParams:
     output_region: str
 
 
-def run_glimpse_on_chunk(genotyped_vcf: str, reference_fasta: str, out_dir: str,
+def run_glimpse_on_chunk(genotyped_vcf: str, population_vcf: str, out_dir: str,
                          genetic_map: str, params: GlimpseParams):
     out_file_name = os.sep.join([out_dir, "GLIMPSE-" + params.chromosome + "." + params.id + ".bcf"])
     params = [
         "glimpse_binaries/GLIMPSE_phase_static",
         "--input-GL",
         "--input", genotyped_vcf,
-        "--reference", reference_fasta,
+        "--reference", population_vcf,
         #"--map", genetic_map,
         "--input-region", params.input_region,
         "--output-region", params.output_region,
@@ -119,11 +121,19 @@ def run_glimpse_on_chunk(genotyped_vcf: str, reference_fasta: str, out_dir: str,
 
 
 def run_glimpse(population_vcf: str, genotyped_vcf: str, out_file: str, genetic_map: str = "",
-                n_threads: int = 1, chromosomes = None):
+                n_threads: int = 1, chromosomes = None, glimpse_index_dir = None):
     out_path = os.path.dirname(out_file)
+    if out_path == "":
+        out_path = "./"
     setup_glimpse(out_path)
-    make_glimpse_chunks(population_vcf, out_path, n_threads=n_threads, chromosomes=chromosomes)
-    chromosomes = get_vcf_chromosomes(population_vcf) if chromosomes is None else chromosomes
+
+    if glimpse_index_dir is None:
+        logging.info("No GLIMPSE directory provided. Will create chunks (index)")
+        make_glimpse_chunks(population_vcf, out_path, n_threads=n_threads, chromosomes=chromosomes)
+        glimpse_index_dir = out_path
+        chromosomes = get_vcf_chromosomes(population_vcf) if chromosomes is None else chromosomes
+
+    assert chromosomes is not None
 
     if not genotyped_vcf.endswith(".gz"):
         logging.info("Bgzipping genotyped VCF")
@@ -135,16 +145,23 @@ def run_glimpse(population_vcf: str, genotyped_vcf: str, out_file: str, genetic_
     pool = multiprocessing.Pool(n_threads)
     created_files = defaultdict(list)
     for chromosome in chromosomes:
-        for line in open(out_path + "/glimpse_chunks." + chromosome + ".txt"):
+        arguments = []
+        for line in open(glimpse_index_dir + "/glimpse_chunks." + chromosome + ".txt"):
             params = line.split()
             params = GlimpseParams(*params[0:4])
-            # todo: pool.apply_async(run_glimpse_on_chunk, (genotyped_vcf, reference_fasta, out_path, genetic_map, params))
-            logging.info("Running on %s"  % params)
-            file = run_glimpse_on_chunk(genotyped_vcf, population_vcf, out_path, genetic_map, params)
-            created_files[chromosome].append(file)
+            arguments.append((genotyped_vcf, population_vcf, out_path, genetic_map, params))
 
-    #pool.close()
-    #pool.join()
+        for result in pool.starmap(run_glimpse_on_chunk, arguments):
+            created_files[chromosome].append(result)
+
+            #pool.apply_async(run_glimpse_on_chunk, (genotyped_vcf, population_vcf, out_path, genetic_map, params),
+            #                 callback=lambda file: created_files[chromosome].append(file))
+            #logging.info("Running on %s"  % params)
+            #file = run_glimpse_on_chunk(genotyped_vcf, population_vcf, out_path, genetic_map, params)
+            #created_files[chromosome].append(file)
+
+    pool.close()
+    pool.join()
 
     # ligate files on same chromosome
     joint_chromosome_files = []
@@ -161,7 +178,7 @@ def tabix_vcf(vcf_file_name: str):
 
 
 def bcftools_concat(vcf_files: List[str], out_file: str):
-    subprocess.run(["bcftools", "concat", "-o", out_file, "-O", "z"] + vcf_files)
+    subprocess.run(["bcftools", "concat", "-o", out_file] + vcf_files)
 
 
 def run_glimpse_ligate(chromosome: str, chromosome_bcf_files: List[str], out_dir: str):
@@ -189,3 +206,10 @@ def run_glimpse_ligate(chromosome: str, chromosome_bcf_files: List[str], out_dir
 
 def run_glimpse_cli(args):
     run_glimpse(args.population_vcf, args.genotyped_vcf, args.output_vcf, "", args.n_threads, args.chromosomes.split(","))
+
+
+def run_glimpse_index_cli(args):
+    variants = bnp.open(args.population_vcf).read()
+    chromosomes = list(np.unique(variants.chromosome.raw()).astype(str))
+    make_glimpse_chunks(args.population_vcf, args.output_dir, args.n_threads, chromosomes)
+

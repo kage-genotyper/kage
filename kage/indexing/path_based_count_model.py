@@ -255,8 +255,10 @@ class PathBasedMappingModelCreator(MappingModelCreator):
         self._path_kmers.prune(kmer_index, n_threads=16)
         self._node_map = node_map
         self._window = window
-        self._all_haplotypes_as_paths = get_haplotypes_as_paths_parallel(
-            self._haplotype_matrix, self._path_allele_matrix, self._window, n_threads=n_threads)
+        #self._all_haplotypes_as_paths = get_haplotypes_as_paths_parallel(
+        #    self._haplotype_matrix, self._path_allele_matrix, self._window, n_threads=n_threads)
+        self._all_haplotypes_as_paths = get_haplotypes_as_paths(
+            self._haplotype_matrix, self._path_allele_matrix, self._window)
 
     def _process_individual(self, i):
         t0 = time.perf_counter()
@@ -333,7 +335,7 @@ def get_haplotypes_as_paths(haplotype_matrix: SparseHaplotypeMatrix, path_allele
 
 @ray.remote
 def _get_single_haplotype_as_paths(path_signatures, haplotype_matrix, haplotype_id, max_window_size):
-    #log_memory_usage_now("_get_single_haplotype_as_paths_start")
+    log_memory_usage_now("_get_single_haplotype_as_paths_start")
     haplotype = haplotype_matrix.get_haplotype(haplotype_id)
 
     # try to match first with small window size, then bigger up to max window size
@@ -356,6 +358,7 @@ def _get_single_haplotype_as_paths(path_signatures, haplotype_matrix, haplotype_
         raise Exception("Haplotype did not get matches against paths on all variants. Too few paths? Try increasing "
                         "window size")
 
+    log_memory_usage_now("Single thread haplotype as paths ends")
     return HaplotypeAsPaths(matching_paths)
 
 
@@ -373,15 +376,16 @@ def get_haplotypes_as_paths_parallel(haplotype_matrix: SparseHaplotypeMatrix, pa
         np.append(path_allele_matrix, np.zeros((path_allele_matrix.shape[0], window_size - 1)), axis=1),
         window_size, axis=1)
 
+    t0 = time.perf_counter()
     path_signatures = ray.put(path_signatures)
 
     for haplotype in range(n_haplotypes):
         out.append(_get_single_haplotype_as_paths.remote(path_signatures, haplotype_matrix, haplotype, window_size))
 
-    t0 = time.perf_counter()
     results = ray.get(out)
     ray.shutdown()
-    logging.info("After get haplotypes as paths parallel")
+    logging.info("Getting haplotypes as paths parallel took %.5f sec" % (time.perf_counter() - t0))
+    log_memory_usage_now("After get haplotypes as paths parallel")
     return results
 
 

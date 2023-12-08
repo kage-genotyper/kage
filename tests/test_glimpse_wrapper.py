@@ -1,4 +1,5 @@
-from kage.glimpse.glimpse_wrapper import download_glimpse_binaries_if_not_exist, make_glimpse_chunks, run_glimpse
+from kage.glimpse.glimpse_wrapper import download_glimpse_binaries_if_not_exist, make_glimpse_chunks, run_glimpse, \
+    remove_glimpse_results
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
@@ -21,4 +22,4 @@ def test_run_full_glimpse():
 
 
 if __name__ == "__main__":
-    test_run_full_glimpse()
+    remove_glimpse_results("glimpse_test_output/")

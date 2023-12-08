@@ -39,7 +39,7 @@ from kage.benchmarking.vcf_preprocessing import preprocess_sv_vcf, get_cn0_ref_a
 from kage.analysis.genotype_accuracy import genotype_accuracy_cli
 from kage.benchmarking.vcf_preprocessing import filter_low_frequency_alleles_on_multiallelic_variants_cli
 from kage.indexing.main import MultiAllelicMap
-from kage.glimpse.glimpse_wrapper import run_glimpse_cli
+from kage.glimpse.glimpse_wrapper import run_glimpse_cli, run_glimpse_index_cli
 from pathlib import Path
 import os
 from .glimpse.glimpse_wrapper import run_glimpse
@@ -147,7 +147,8 @@ def genotype(args):
     if args.glimpse is not None:
         t0 = time.perf_counter()
         chromosomes = list(set([variant.chromosome.to_string() for variant in index.vcf_variants]))  # glimpse wrapper needs the unique chromosomes that we actually have variants for
-        run_glimpse(args.glimpse, out_file_name, args.out_file_name, n_threads=args.n_threads, chromosomes=chromosomes)
+        run_glimpse(args.glimpse, out_file_name, args.out_file_name, n_threads=args.n_threads,
+                    chromosomes=chromosomes, glimpse_index_dir=args.glimpse_chunks)
         logging.info("Running GLIMPSE took %.4f sec" % (time.perf_counter()-t0))
 
     close_shared_pool()
@@ -186,7 +187,11 @@ def run_argument_parser(args):
     subparser.add_argument("-B", "--do-not-write-genotype-likelihoods", required=False, type=bool, default=False, help="Set to True to not write genotype likelihoods to output vcf")
     subparser.add_argument("-d", "--debug", type=bool, default=False)
     subparser.add_argument("-D", "--write-debug-data", type=bool, default=False)
-    subparser.add_argument("-G", "--glimpse", default=None, help="If set to point to a population vcf, KAGE will use GLIMPSE to do imputation instead of KAGE's builtin simple imputation")
+    subparser.add_argument("-G", "--glimpse", default=None,
+                           help="If set, GLIMPSE will be used as imputation instead of KAGE's builtin method.")
+    subparser.add_argument("-c", "--glimpse-chunks", default=None,
+                           help="Can be set to a directory created by running kage glimpse_index. If not set, this index will be created.")
+
     subparser.set_defaults(func=genotype)
 
     subparser = subparsers.add_parser("analyse_variants")
@@ -511,9 +516,19 @@ def run_argument_parser(args):
     subparser.add_argument("-t", "--n-threads", type=int, required=False, default=8)
     subparser.set_defaults(func=run_glimpse_cli)
 
+    subparser = subparsers.add_parser("glimpse_index", help="Makes chunks necessary for running GLIMPSE")
+    subparser.add_argument("-p", "--population-vcf", required=True)
+    subparser.add_argument("-o", "--output-dir", required=True,
+                           help="Will write chunks to this directory")
+    subparser.add_argument("-t", "--n-threads", type=int, required=False, default=8)
+    subparser.set_defaults(func=run_glimpse_index_cli)
+
     subparser = subparsers.add_parser("naive_genotyper", help="A baseline genotyper that does nothing")
     subparser.add_argument("-p", "--population-vcf", required=True)
     subparser.add_argument("-o", "--output-vcf", required=True)
+    subparser.add_argument("-g", "--glimpse", required=False, type=bool, default=False)
+    subparser.add_argument("-c", "--glimpse-chunks", default=None,
+                           help="Can be set to a directory created by running kage glimpse_index. If not set, this index will be created.")
     subparser.set_defaults(func=naive_genotyper_cli)
 
 
