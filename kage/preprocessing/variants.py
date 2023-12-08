@@ -633,9 +633,13 @@ def get_filter_of_deletions_with_low_af_only_deletions_overlapping_other_variant
     #for i, variant in enumerate(chunk):
     #    n_variants_on_ref_mask[int(variant.position):int(variant.position)+variant_ref_sizes[i]] += 1
     large_variants = chunk[(chunk.ref_seq.shape[1] > 10) | (chunk.alt_seq.shape[1] > 10)]
+    filter = np.zeros(len(chunk), dtype=bool)
+    if len(large_variants) == 0:
+        # no large variants, no need to filter
+        return filter
+
     n_variants_on_ref_mask = VariantPadder.get_n_variants_on_ref(large_variants)
 
-    filter = np.zeros(len(chunk), dtype=bool)
     for deletion in np.nonzero(get_filter_of_deletions_with_low_af(chunk, min_af, min_size=20))[0]:
         if np.any(n_variants_on_ref_mask[
                   int(chunk.position[deletion]):int(chunk.position[deletion])+variant_ref_sizes[deletion]
