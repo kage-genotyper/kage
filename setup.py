@@ -1,7 +1,7 @@
 from setuptools import setup, Extension, find_packages
 
 setup(name='kage-genotyper',
-      version='0.2.3',
+      version='0.2.4',
       description='KAGE',
       long_description_content_type="text/markdown",
       url='http://github.com/ivargr/kage',
@@ -35,4 +35,5 @@ setup(name='kage-genotyper',
 rm -rf dist
 python3 setup.py sdist
 twine upload --skip-existing dist/*
+
 """
