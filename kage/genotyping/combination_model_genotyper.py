@@ -121,3 +121,14 @@ class CombinationModelGenotyper:
             variants[i].set_genotype(genotype, is_numeric=True)
 
         return self._predicted_genotypes, self._prob_correct
+
+
+def downscale_coverage(config, node_counts):
+    """
+    Downscales node counts and coverage. Used to not overestimate prob of genotypes when coverage is high.
+    """
+    factor = config.avg_coverage / 3
+    logging.info("Before scale: %s" % node_counts.node_counts)
+    node_counts.node_counts = np.round(node_counts.node_counts / factor)
+    logging.info("After scale: %s" % node_counts.node_counts)
+    config.avg_coverage = 3

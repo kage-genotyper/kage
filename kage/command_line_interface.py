@@ -1,8 +1,9 @@
 import logging
 import sys
-import platform
-from .util import vcf_pl_and_gl_header_lines, convert_string_genotypes_to_numeric_array, _write_genotype_debug_data, \
-    log_memory_usage_now
+
+from kage.genotyping.combination_model_genotyper import downscale_coverage
+
+from .util import convert_string_genotypes_to_numeric_array, _write_genotype_debug_data
 
 logging.basicConfig(
     stream=sys.stderr,
@@ -14,10 +15,8 @@ from kage.models.helper_index import create_helper_model
 from .configuration import GenotypingConfig
 from kage.models.mapping_model import sample_node_counts_from_population_cli, refine_sampling_model, make_sparse_count_model
 from shared_memory_wrapper import (
-    remove_shared_memory_in_session,
     get_shared_pool,
-    close_shared_pool, from_file,
-)
+    close_shared_pool, )
 from shared_memory_wrapper.shared_memory import remove_all_shared_memory
 from graph_kmer_index import KmerIndex, ReverseKmerIndex
 from kage.analysis.analysis import analyse_variants
@@ -29,13 +28,11 @@ from .indexing.index_bundle import IndexBundle
 from .genotyping.combination_model_genotyper import CombinationModelGenotyper
 from kmer_mapper.command_line_interface import map_bnp
 from argparse import Namespace
-from obgraph.numpy_variants import NumpyVariants
 from .indexing.sparse_haplotype_matrix import make_sparse_haplotype_matrix_cli
 from kage.indexing.main import make_index_cli
-import gc
 from .analysis.debugging import debug_cli
 from kage.io import create_vcf_header_with_sample_name, write_multiallelic_vcf_with_biallelic_numeric_genotypes
-from kage.benchmarking.vcf_preprocessing import preprocess_sv_vcf, get_cn0_ref_alt_sequences_from_vcf, filter_snps_indels_covered_by_svs_cli
+from kage.benchmarking.vcf_preprocessing import preprocess_sv_vcf, filter_snps_indels_covered_by_svs_cli
 from kage.analysis.genotype_accuracy import genotype_accuracy_cli
 from kage.benchmarking.vcf_preprocessing import filter_low_frequency_alleles_on_multiallelic_variants_cli
 from kage.indexing.main import MultiAllelicMap
@@ -100,13 +97,8 @@ def genotype(args):
 
     np.save(args.out_file_name + ".node_counts.npy", node_counts.node_counts)
 
-    if args.average_coverage > 3:
-        factor = args.average_coverage / 3
-        logging.info("Before scale: %s" % node_counts.node_counts)
-        node_counts.node_counts = np.round(node_counts.node_counts / factor)
-        logging.info("After scale: %s" % node_counts.node_counts)
-        config.avg_coverage = 3
-
+    if args.average_coverage > 3 and args.glimpse is not None:
+        downscale_coverage(config, node_counts)
 
     max_variant_id = len(index.variant_to_nodes.ref_nodes) - 1
     logging.info("Max variant id is assumed to be %d" % max_variant_id)
@@ -126,7 +118,6 @@ def genotype(args):
     if args.write_debug_data:
         _write_genotype_debug_data(genotypes, numpy_genotypes, args.out_file_name, index.variant_to_nodes, probs, count_probs)
 
-    from kage.io import write_vcf
     # new setup: Storing SimpleVcfEntry object in index, use this to write vcf
     logging.info("Writing vcf using Vcf entry to %s" % args.out_file_name)
     out_file_name = args.out_file_name
