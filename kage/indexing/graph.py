@@ -38,9 +38,26 @@ class GenomeBetweenVariants:
     @classmethod
     def from_reference_and_variant_intervals(cls, reference_sequences: bnp.datatypes.SequenceEntry,
                                              variant_intervals: bnp.datatypes.Interval):
-        chromosome_names = reference_sequences.name
-        chromosome_sequences = reference_sequences.sequence
-        chromosome_lengths = {name.to_string(): len(seq) for name, seq in zip(chromosome_names, chromosome_sequences)}
+        unique_chromosomes, index = np.unique(variant_intervals.chromosome.raw(), return_index=True)
+        ordered_chromosomes = variant_intervals.chromosome.raw()[np.sort(index)]  # in the order they come in the vcf
+        for chromosome in ordered_chromosomes:
+            assert chromosome in reference_sequences.name, ("There are variants in chromosome %s but this chromosome "
+                                                            "does not exist in reference. Make sure reference contains "
+                                                            "all chromosomes.") % chromosome
+
+        #chromosome_names = reference_sequences.name
+        chromosome_names = ordered_chromosomes
+        #chromosome_sequences = reference_sequences.sequence
+        # Get chromosome sequences in same order as variants in vcf
+        logging.info("Chromosome names found in vcf: %s" % ordered_chromosomes)
+        reference_indexes = np.array([np.where(reference_sequences.name == name)[0][0] for name in ordered_chromosomes])
+        logging.info("Order of chromosomes in reference: %s" % reference_indexes)
+        reference_sequences = reference_sequences[reference_indexes]
+        chromosome_sequences = reference_sequences.sequence  # [reference_sequences.sequence[np.where(chromosome_names==name)[0][0]] for name in chromosome_names]
+        assert len(chromosome_sequences) == len(chromosome_names)
+        chromosome_lengths = {name.decode(): len(seq) for name, seq in zip(chromosome_names, chromosome_sequences)}
+        logging.info("Chromosome lengths: %s" % chromosome_lengths)
+
         global_reference_sequence = np.concatenate(chromosome_sequences)
         global_reference_sequence = bnp.change_encoding(global_reference_sequence, bnp.encodings.ACGTnEncoding)
         global_offset = bnp.genomic_data.global_offset.GlobalOffset(chromosome_lengths)
@@ -60,6 +77,7 @@ class GenomeBetweenVariants:
                 print(" ---- ", w, " ---- ")
                 for i in range(w-3, w+3):
                     print(variant_intervals[i])
+                    print(global_starts[i], global_stops[i])
 
             raise Exception("")
 
