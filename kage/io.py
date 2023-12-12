@@ -1,4 +1,5 @@
 import logging
+import time
 from collections import defaultdict
 from typing import Optional
 
@@ -124,6 +125,7 @@ def write_vcf(variants: SimpleVcfEntry, string_genotypes: bnp.EncodedRaggedArray
     format = ["GT" for i in range(len(variants))]
 
     if add_genotype_likelihoods is not None:
+        t0 = time.perf_counter()
         logging.info("Writing genotype likelyhoods to file")
         p = add_genotype_likelihoods
         # normalize genotype likelihoods so that they sum to 1
@@ -142,14 +144,18 @@ def write_vcf(variants: SimpleVcfEntry, string_genotypes: bnp.EncodedRaggedArray
         #genotype_likelihoods[genotype_likelihoods == 0] = -0.0001
         gl_strings = (",".join(str(p) if p != 0 else "-0.00000000001" for p in genotype_likelihoods[i]) for i in range(len(variants)))
         format = ["GT:GL:GQ" for i in range(len(variants))]
+        logging.info("Processing genotype likelihoods took %.3f sec" % (time.perf_counter()-t0))
+        t0 = time.perf_counter()
 
         # genotype quality (probability that the call is incorrect)
         genotype_likelihoods_matrix = np.array(genotype_likelihoods)
         #genotype_qualities = (np.max(genotype_likelihoods_matrix, axis=1) - scipy.special.logsumexp(genotype_likelihoods_matrix, axis=1))
         sorted_gls = np.sort(genotype_likelihoods_matrix, axis=1)
         genotype_qualities = -scipy.special.logsumexp(sorted_gls[:, 0:2], axis=1).astype(int)  # sum of prob of two other genotypes
+        logging.info("Computing GLs took %.3f sec" % (time.perf_counter()-t0))
         #genotype_qualities = -(np.max(genotype_likelihoods_matrix, axis=1) - scipy.special.logsumexp(genotype_likelihoods_matrix, axis=1))
         genotypes = [f"{genotype}:{gl}:{gq}" for genotype, gl, gq in zip(genotypes, gl_strings, map(str, genotype_qualities))]
+        logging.info("Creating genotype strings took %.3f sec" % (time.perf_counter()-t0))
 
     entry = VcfEntryWithSingleIndividualGenotypes(
         variants.chromosome,

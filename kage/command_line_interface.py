@@ -100,12 +100,12 @@ def genotype(args):
 
     np.save(args.out_file_name + ".node_counts.npy", node_counts.node_counts)
 
-    if args.average_coverage > 5:
-        factor = args.average_coverage // 5
+    if args.average_coverage > 3:
+        factor = args.average_coverage / 3
         logging.info("Before scale: %s" % node_counts.node_counts)
         node_counts.node_counts = np.round(node_counts.node_counts / factor)
         logging.info("After scale: %s" % node_counts.node_counts)
-        config.avg_coverage = 5
+        config.avg_coverage = 3
 
 
     max_variant_id = len(index.variant_to_nodes.ref_nodes) - 1
@@ -131,7 +131,8 @@ def genotype(args):
     logging.info("Writing vcf using Vcf entry to %s" % args.out_file_name)
     out_file_name = args.out_file_name
     if args.glimpse is not None:
-        out_file_name = Path(args.out_file_name).stem + "_no_imputation" + Path(args.out_file_name).suffix
+        out_file_name = os.path.splitext(out_file_name)[0] + "_no_imputation" + Path(args.out_file_name).suffix
+        logging.info("Will use GLIMPSE. Writing original vcf to %s" % out_file_name)
 
 
     write_multiallelic_vcf_with_biallelic_numeric_genotypes(
@@ -479,6 +480,7 @@ def run_argument_parser(args):
     subparser.add_argument("-w", "--variant-window", required=False, type=int, default=7, help="Max neighbouring variants to consider when selecting kmers. Indexing increases with this number. 6 or 7 should work fine for most cases.")
     subparser.add_argument("-a", "--min-af-deletions-filter", required=False, type=float, default=0.1, help="Deletions with lower allele frequency than this will not be indexed, to avoid too many duplicate alleles. Normally this parameter does not need to be changed.")
     subparser.add_argument("-H", "--no-helper-model", required=False, type=bool, default=False, help="Set to True to not create a helper model")
+    subparser.add_argument("-t", "--n-threads", type=int, required=False, default=16)
     subparser.set_defaults(func=make_index_cli)
 
 

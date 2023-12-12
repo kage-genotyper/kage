@@ -300,6 +300,7 @@ def make_index_cli(args):
                     vcf_no_genotypes=args.vcf_no_genotypes,
                     min_af_deletions_filter=args.min_af_deletions_filter,
                     no_helper_model=args.no_helper_model,
+                    n_threads=args.n_threads,
                    )
     remove_shared_memory_in_session()
     return r
