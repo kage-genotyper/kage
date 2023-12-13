@@ -13,6 +13,7 @@ class GenotypingConfig:
     ignore_homo_ref: bool = False
     do_not_write_genotype_likelihoods: bool = False
     use_gpu: bool = False
+    only_impute_svs: bool = False
 
 
     @classmethod
@@ -27,5 +28,6 @@ class GenotypingConfig:
             args.sample_name_output,
             args.ignore_homo_ref,
             args.do_not_write_genotype_likelihoods,
-            args.gpu
+            args.gpu,
+            args.only_impute_svs,
         )

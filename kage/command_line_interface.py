@@ -25,7 +25,7 @@ from .node_counts import NodeCounts
 from obgraph.variant_to_nodes import VariantToNodes
 from .indexing.tricky_variants import find_variants_with_nonunique_kmers, find_tricky_variants
 from .indexing.index_bundle import IndexBundle
-from .genotyping.combination_model_genotyper import CombinationModelGenotyper
+from .genotyping.combination_model_genotyper import CombinationModelGenotyper, add_svs_to_tricky_variants, set_uniform_probs_for_svs
 from kmer_mapper.command_line_interface import map_bnp
 from argparse import Namespace
 from .indexing.sparse_haplotype_matrix import make_sparse_haplotype_matrix_cli
@@ -73,6 +73,8 @@ def genotype(args):
     t = time.perf_counter()
     index = IndexBundle.from_file(args.index_bundle).indexes
 
+    if args.only_impute_svs:
+        add_svs_to_tricky_variants(index)
 
 
     logging.debug("Reading indexes took %.3f sec" % (time.perf_counter()-t))
@@ -125,6 +127,9 @@ def genotype(args):
         out_file_name = os.path.splitext(out_file_name)[0] + "_no_imputation" + Path(args.out_file_name).suffix
         logging.info("Will use GLIMPSE. Writing original vcf to %s" % out_file_name)
 
+    if args.only_impute_svs:
+        # set all SV probs to uniform, meaning read information is ignored
+        set_uniform_probs_for_svs(index.vcf_variants, probs)
 
     write_multiallelic_vcf_with_biallelic_numeric_genotypes(
         index.vcf_variants, genotypes, out_file_name,
@@ -183,6 +188,7 @@ def run_argument_parser(args):
                            help="If set, GLIMPSE will be used as imputation instead of KAGE's builtin method.")
     subparser.add_argument("-c", "--glimpse-chunks", default=None,
                            help="Can be set to a directory created by running kage glimpse_index. If not set, this index will be created.")
+    subparser.add_argument("-S", "--only-impute-svs", type=bool, default=False, help="If set to True, KAGE will ignore kmers for SVs and only base SV calsl on imputation. Meant to be run with --glimpse ...")
 
     subparser.set_defaults(func=genotype)
 

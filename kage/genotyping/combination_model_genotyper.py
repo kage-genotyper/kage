@@ -11,6 +11,8 @@ from shared_memory_wrapper import object_from_shared_memory
 from kage.node_counts import NodeCounts
 from ..configuration import GenotypingConfig
 from ..util import log_memory_usage_now
+from kage.indexing.tricky_variants import TrickyVariants
+
 
 genotypes = ["0/0", "1/1", "0/1"]
 numeric_genotypes = [1, 2, 3]
@@ -132,3 +134,17 @@ def downscale_coverage(config, node_counts):
     node_counts.node_counts = np.round(node_counts.node_counts / factor)
     logging.info("After scale: %s" % node_counts.node_counts)
     config.avg_coverage = 3
+
+
+
+def add_svs_to_tricky_variants(index):
+    variants = index.vcf_variants
+    is_sv = (variants.ref_seq.shape[1] > 50) | (variants.alt_seq.shape[1] >= 50)
+    logging.info(f"Will ignore reads for {np.sum(is_sv)} SVs")
+    index.tricky_variants.add(TrickyVariants(is_sv))
+
+
+def set_uniform_probs_for_svs(variants, probs):
+    is_sv = (variants.ref_seq.shape[1] > 50) | (variants.alt_seq.shape[1] >= 50)
+    probs[is_sv, :] = np.log(1 / 3)
+    return probs
