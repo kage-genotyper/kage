@@ -153,7 +153,6 @@ def make_index(
 
     log_memory_usage_now("After graph")
 
-
     scorer = make_kmer_scorer_from_random_haplotypes(graph, haplotype_matrix, k, n_haplotypes=8, modulo=modulo * 40 + 11)
     assert np.all(scorer.values >= 0)
 
@@ -252,6 +251,7 @@ def make_index(
         helper_model, combo_matrix = object_from_shared_memory(helper_model_result_name)
         indexes["helper_variants"] = HelperVariants(helper_model)
         indexes["combination_matrix"] = CombinationMatrix(combo_matrix)
+
 
     index = IndexBundle(indexes)
     logging.info("Writing indexes to file")

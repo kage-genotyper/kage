@@ -136,7 +136,6 @@ def downscale_coverage(config, node_counts):
     config.avg_coverage = 3
 
 
-
 def add_svs_to_tricky_variants(index):
     variants = index.vcf_variants
     is_sv = (variants.ref_seq.shape[1] > 50) | (variants.alt_seq.shape[1] >= 50)
@@ -146,5 +145,6 @@ def add_svs_to_tricky_variants(index):
 
 def set_uniform_probs_for_svs(variants, probs):
     is_sv = (variants.ref_seq.shape[1] > 50) | (variants.alt_seq.shape[1] >= 50)
+    logging.info(f"Will set uniform probs for {np.sum(is_sv)} SVs")
     probs[is_sv, :] = np.log(1 / 3)
     return probs
