@@ -99,8 +99,8 @@ def genotype(args):
 
     np.save(args.out_file_name + ".node_counts.npy", node_counts.node_counts)
 
-    if args.average_coverage > 3:  #  and args.glimpse is not None:
-        downscale_coverage(config, node_counts)
+    if args.average_coverage > 3 and args.glimpse is not None:
+        downscale_coverage(config, node_counts, 3)
 
     max_variant_id = len(index.variant_to_nodes.ref_nodes) - 1
     logging.info("Max variant id is assumed to be %d" % max_variant_id)

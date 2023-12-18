@@ -319,7 +319,7 @@ def get_haplotypes_as_paths(haplotype_matrix: SparseHaplotypeMatrix, path_allele
         np.append(path_allele_matrix, np.zeros((path_allele_matrix.shape[0], window_size - 1)), axis=1),
         window_size, axis=1)
 
-    for i in range(haplotype_matrix.n_haplotypes):
+    for i in tqdm(range(haplotype_matrix.n_haplotypes)):
         haplotype = haplotype_matrix.get_haplotype(i)
 
         haplotype_signatures = sliding_window_view(np.append(haplotype, np.zeros(window_size-1)), window_size)
