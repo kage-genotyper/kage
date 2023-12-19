@@ -2,11 +2,9 @@
 ![example workflow](https://github.com/ivargr/kage/actions/workflows/install-and-test.yml/badge.svg)
 [![DOI](https://zenodo.org/badge/251419423.svg)](https://zenodo.org/badge/latestdoi/251419423)
 
-
-## Update November 20 2023
-* KAGE now has experimental support for genotyping structural variants. 
-* The indexing process has been rewritten and indexing is now much faster and requires less memory. There is now one single command for creating the indexes from an input vcf.
-* Various minor fixes for improved genotyping accuracy on SNPs and short indels.
+### Update December 2023
+* KAGE2 released, which adds support for structural variation genotyping. 
+* GLIMPSE can now be run directly through KAGE and is our recommended way of running KAGE (see section about running KAGE with GLIMPSE below). Our tests show that this gives much higher accuracy than just running KAGE, even for structural variation. 
 
 
 ## KAGE: *K*mer-based *A*lignment-free *G*raph G*e*notyper
@@ -36,10 +34,12 @@ You will need:
 * A reference genome in fasta format
 * A set of variants with genotypes of known individuals in vcf-format (`.vcf` or `.vcf.gz`)
 
-Variants can be biallelic or multiallelic and both SNPs/indels and structural variants are supported. Note however that all variants must have actual sequences in the ref and alt fields. Genotypes should be phased (e.g. `0|0`, `0|1` or `1|1`) and there should ideally be few missing genotypes (e.g. `.|.` or `.`). If there are structural variants present, KAGE will prioritize those, meaning that accuracy on SNPs and indels may be lower (especially for SNPs and indels that are covered by SVs). If your aim is to only genotype SNPs and indels, you should not not include SVs in your vcf.
+Variants should be biallelic (you can easily convert them to biallelic with `bcftools norm`). Structural variants are supported, but note however that all variants must have actual sequences in the ref and alt fields. 
+
+Genotypes should be phased (e.g. `0|0`, `0|1` or `1|1`) and there should ideally be few missing genotypes (e.g. `.|.` or `.`). If there are structural variants present, KAGE will prioritize those, meaning that accuracy on SNPs and indels may be lower (especially for SNPs and indels that are covered by SVs). If your aim is to only genotype SNPs and indels, you should not include SVs in your VCF.
 
 ### Step 1: Build an index of the variants you want to genotype
-Building an index is somewhat time consuming, but only needs to be done once for each set of variants you want to genotype. Indexing time scales approximately linearly with number of variants and the size of the reference genome. Creating an index for a human pangenome with 30 million variants and 2000-3000 individuals should finish in less than a day. It's always a good idea to start out with a smaller set of variants, e.g. a single chromosome first to see if things work as expected.
+Building an index is somewhat time consuming, but only needs to be done once for each set of variants you want to genotype. Indexing time scales approximately linearly with number of variants and the size of the reference genome. Creating and index of the Draft Human  Pangenome takes approximately a day. It's always a good idea to start out with a smaller set of variants, e.g. a single chromosome first to see if things work as expected. Feel free to ask us if you are having trouble making an index (we are happy to try to help making it for you) or if you are unsure whether KAGE will work on your data.
 
 ```bash
 kage index -r reference.fa -v variants.vcf.gz -o index -k 31
@@ -64,13 +64,6 @@ KAGE uses information from the population to improve accuracy, a bit similarily 
 
 Note: GLIMPSE requires that you have BCFTools installed.
 
-### Prebuilt indexes
-
-You can find some prebuilt indexes here (coming soon):
-
-* Draft Human Pangenome (47 individuals, SVs and SNPs/indels)
-* 1000 genomes SNPs/indels, 2548 individuals
-
 
 ## Using KAGE with GPU-support (GKAGE)
 
@@ -86,6 +79,7 @@ Note: GKAGE has been tested to work with GPUs with 4 GBs of RAM.
 
 ## Recent changes and future plans
 Recent changes:
+* KAGE2 released. Structural variation genotyping should now work well, and KAGE can be run with GLIMPSE directly.
 * November 20 2023: Indexing process rewritten and experimental support for structural variation.
 * January 30 2023: Release of GPU support (version 0.0.30).
 * October 7 2022: Minor update. Now using [BioNumPy](https://gitub.com/uio-bmi/bionumpy) do parse input files and hash kmers.
