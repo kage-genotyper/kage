@@ -41,6 +41,7 @@ from pathlib import Path
 import os
 from .glimpse.glimpse_wrapper import run_glimpse
 from kage.naive_genotyper import naive_genotyper_cli
+from kage.preprocessing.variants import convert_purebread_vcf
 
 np.random.seed(1)
 np.seterr(all="ignore")
@@ -529,6 +530,11 @@ def run_argument_parser(args):
     subparser.add_argument("-c", "--glimpse-chunks", default=None,
                            help="Can be set to a directory created by running kage glimpse_index. If not set, this index will be created.")
     subparser.set_defaults(func=naive_genotyper_cli)
+
+    subparser = subparsers.add_parser("convert_purebread_vcf")
+    subparser.add_argument("-v", "--vcf-file-name", required=True)
+    subparser.add_argument("-o", "--out-file-name", required=True)
+    subparser.set_defaults(func=lambda args: convert_purebread_vcf(args.vcf_file_name, args.out_file_name))
 
 
     #subparser = subparsers.add_parser("pad_vcf")

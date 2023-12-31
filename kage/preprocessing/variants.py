@@ -801,3 +801,27 @@ def get_af_from_info_string_in_vcf_chunk(chunk) -> np.ndarray:
     # use highest af
     afs = np.max(afs, axis=-1)
     return afs
+
+
+def convert_purebread_vcf(vcf_file_name: str, out_file_name: str):
+    purebread = bnp.open(vcf_file_name, buffer_type=bnp.io.vcf_buffers.VCFBuffer2).read_chunks()
+    out = bnp.open(out_file_name, "w", buffer_type=bnp.io.vcf_buffers.VCFBuffer2)
+
+    lookup = {"0": "0|0", "1": "1|1", ".": ".|."}
+    for i, chunk in enumerate(purebread):
+        logging.info(f"Converting chunk {i}")
+        g = chunk.genotype.raw()
+        try:
+            new = bnp.string_array.string_array([[lookup[genotype.decode("utf-8")] for genotype in row] for row in g])
+        except KeyError:
+            logging.info("Some genptypes not found in lookup")
+            print(chunk.genotype)
+            raise
+
+        chunk = bnp.replace(chunk, genotype=new)
+        out.write(chunk)
+
+    logging.info("Done converting")
+
+
+
