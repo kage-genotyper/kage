@@ -90,6 +90,7 @@ def make_index(
                                                                                           remove_indel_padding=False,
                                                                                           remove_sequence_from_low_af_deletions=min_af_deletions_filter)
 
+    variants.replace_ns()
     n_orig_variants_before_filtering = len(vcf_variants)
 
     # find variants with more alleles (use "variants" which are padded biallelic and look for variants starting

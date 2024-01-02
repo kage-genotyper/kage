@@ -18,7 +18,7 @@
 ##bcftools_viewVersion=1.4.1+htslib-1.4.1
 ##bcftools_viewCommand=view --samples-file data/sacCer3/medium/0.01/0.001/0/0.3/0.8/unfiltered_population.random_sample_number_1.txt -o data/sacCer3/medium/0.01/0.001/0/0.3/0.8/1/individual.vcf data/sacCer3/medium/0.01/0.001/0/0.3/0.8/unfiltered_population.vcf.gz; Date=Sun Oct 15 21:23:13 2023
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	simulated_1963
-chrI	500	simulated4	T	G	.	PASS	AF=0.8;AC=2;AN=2	GT	1|1
+chrI	500	simulated4	T	N	.	PASS	AF=0.8;AC=2;AN=2	GT	1|1
 chrI	842	simulated5	G	T	.	PASS	AF=0;AC=0;AN=2	GT	0|0
 chrI	949	simulated6	T	A	.	PASS	AF=0;AC=0;AN=2	GT	0|0
 chrI	971	simulated7	T	G	.	PASS	AF=0;AC=0;AN=2	GT	0|0
@@ -40,7 +40,7 @@ chrI	2056	simulated22	G	A	.	PASS	AF=0;AC=0;AN=2	GT	0|0
 chrI	2062	simulated23	C	T	.	PASS	AF=0;AC=0;AN=2	GT	0|0
 chrI	2182	simulated24	G	C	.	PASS	AF=0;AC=0;AN=2	GT	0|0
 chrI	2333	simulated25	T	C	.	PASS	AF=0;AC=0;AN=2	GT	0|0
-chrI	2363	simulated26	TCATTATCTCTATGGAGATGCTCTTGTTTCTGAACGAATCATAAATC	T	.	PASS	AF=0.8;AC=1;AN=2	GT	0|1
+chrI	2363	simulated26	TCANNATCTCTATGGAGATGCTCTTGTTTCTGAACGAATCATAAATC	T	.	PASS	AF=0.8;AC=1;AN=2	GT	0|1
 chrI	2491	simulated27	A	C	.	PASS	AF=0;AC=0;AN=2	GT	0|0
 chrI	2493	simulated28	G	A	.	PASS	AF=0;AC=0;AN=2	GT	0|0
 chrI	2497	simulated29	G	C	.	PASS	AF=0.8;AC=1;AN=2	GT	1|0

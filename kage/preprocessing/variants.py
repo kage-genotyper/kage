@@ -34,6 +34,16 @@ class Variants:
     ref_seq: str  # position + len(ref_seq) will always give first ref base after the variant is finished
     alt_seq: str
 
+    def replace_ns(self):
+        is_n_ref = self.ref_seq == "N"
+        if np.sum(is_n_ref) > 0:
+            logging.warning("Some variant alleles on the ref contains Ns. Will treat these as A to be able to compute kmers.")
+            self.ref_seq[is_n_ref] = "A"
+        is_n_alt = self.alt_seq == "N"
+        if np.sum(is_n_alt) > 0:
+            logging.warning("Some variant alleles on the alt contains Ns. Will treat these as A to be able to compute kmers.")
+            self.alt_seq[is_n_alt] = "A"
+
     def to_simple_vcf_entry_with_padded_indels(self, reference_genome: bnp.io.indexed_fasta.IndexedFasta):
         """
         Pads indels and adjusts positions (oposite of from_vcf_entry) and returns a SimpleVcfEntry object

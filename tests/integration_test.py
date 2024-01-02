@@ -1,30 +1,11 @@
-from collections import namedtuple
-import pytest
 from kage.analysis.genotype_accuracy import IndexedGenotypes2, GenotypeAccuracy
-from kage.simulation.simulation import run_genotyper_on_simualated_data
-from kage.genotyping.combination_model_genotyper import CombinationModelGenotyper
 import numpy as np
 np.seterr(all="ignore")
-import random
 from kage.indexing.main import make_index
 from kage.command_line_interface import genotype
 from kage.util import make_args_for_genotype_command
 
 
-@pytest.mark.skip(reason="outdated")
-def test_simple():
-    np.random.seed(1)
-    random.seed(1)
-
-    correct_rate = run_genotyper_on_simualated_data(CombinationModelGenotyper, n_variants=1000, n_individuals=2000,
-                                                    duplication_rate=0.03, average_coverage=15, coverage_std=0.5)
-
-    assert correct_rate >= 0.980, "Correct rate on trivial genotyping dropped" \
-                                  " below 0.980 and is %.5f. Something may be wrong." % correct_rate
-
-
-# too much memory for github actions?
-#@pytest.mark.skip
 def test_saccer3():
     """
     Tests full indexing and genotyping using CLI on a small sample
