@@ -126,7 +126,6 @@ class PathKmers:
             for i, kmers in tqdm(enumerate(self.kmers), desc="Pruning kmers", total=self.n_paths):
                 pruned_kmers = self.prune_kmers(kmers, lookup)
                 new.append(pruned_kmers)
-                log_memory_usage_now("After pruning kmers %d" % i)
 
         else:
 
@@ -167,9 +166,9 @@ class PathKmers:
                 logging.warning("Experimental with more than 1 thread. Probably not faster.")
                 is_in = parallel_kmer_index_has_kmers(raw_kmers, lookup)
 
-        logging.info("Time lookup %d kmers: %.5f" % (len(raw_kmers), time.perf_counter() - t_lookup))
+        #logging.info("Time lookup %d kmers: %.5f" % (len(raw_kmers), time.perf_counter() - t_lookup))
         mask = nps.RaggedArray(is_in, kmers.shape, dtype=bool)
-        logging.info(f"Kept {np.sum(mask)}/{len(raw_kmers)} kmers for path")
+        #logging.info(f"Kept {np.sum(mask)}/{len(raw_kmers)} kmers for path")
         kmers = raw_kmers[is_in]
         shape = np.sum(mask, axis=1)
         pruned_kmers = bnp.EncodedRaggedArray(bnp.EncodedArray(kmers, encoding), shape)

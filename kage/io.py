@@ -40,6 +40,9 @@ class VCFBuffer(bnp.io.delimited_buffers.DelimitedBuffer):
 
 @bnpdataclass
 class VcfEntryWithSingleIndividualGenotypes:
+    """
+    VCF entry with a single individual
+    """
     chromosome: SequenceID
     position: int
     id: str
@@ -70,7 +73,6 @@ class VcfEntryWithInfo:
 
 class VcfWithInfoBuffer(VCFBuffer):
     dataclass = VcfEntryWithInfo
-
 
 
 @bnpdataclass
@@ -283,6 +285,7 @@ class CustomVCFBuffer(bnp.io.delimited_buffers.DelimitedBuffer):
         return super().from_data(data)
 
 
-
 class CustomVCFBufferWithInfo(CustomVCFBuffer):
     dataclass = CustomVCFEntryWithInfo
+
+

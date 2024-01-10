@@ -331,7 +331,9 @@ class MultiAllelicSignatureFinderV2(SignatureFinder):
     def _score_signatures(self, add_dummy_count_to_index=-1):
         scores = self._kmers.score_kmers(self._scorer)
         t0 = time.perf_counter()
+        log_memory_usage_now("Before summing scores")
         window_scores = np.sum(scores, axis=2)  # or np.min?
+        log_memory_usage_now("After summing scores")
         #logging.info("Summing scores took %.4f sec" % (time.perf_counter() - t0))
         # add 1 in score to the last window, so that is preferred on a tie. Convert to RaggedArray to be able to add
         # hackish flatten and unflatten
@@ -805,7 +807,7 @@ class VariantWindowKmers2:
         grouped_by_alleles = ak.unflatten(grouped_by_window, n_per_allele)
 
         # group by variant
-        # todo: This is wrong if some alleles are not covered by paths. This assume every allele is covered by at least one path
+        # note: This is wrong if some alleles are not covered by paths. This assume every allele is covered by at least one path
         n_alleles_per_variant = np.max(path_alleles, axis=0) + 1
         #logging.info("Total alleles: %d" % np.sum(n_alleles_per_variant))
         #logging.info("Max alleles on a variant: %d" % np.max(n_alleles_per_variant))
@@ -981,12 +983,7 @@ class MatrixVariantWindowKmers:
         return ak.Array(new)
 
 
-
-def awkward_unravel_like(flat_array, like_array):
-    """ Utility function for unraveling a flattened ak.Array """
-
-
-def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_count_to_index=-1, spacing=0,
+def get_signatures(k: int, paths: Paths, scorer, chunk_size=1000, add_dummy_count_to_index=-1, spacing=0,
                    minimum_overlap_with_variant=1):
     """Wrapper function that finds multiallelic signatures from paths"""
     log_memory_usage_now("Before MatrixVariantWindowKmers")
@@ -1062,10 +1059,13 @@ def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_cou
         all_subpaths = ray.put(all_subpaths)
         scorer = ray.put(scorer)
         for chunk_index in range(len(chunks)):
-            signatures = find_signatures_for_chunk_wrapper.remote(add_dummy_count_to_index, all_subpaths, chunk_index, k, minimum_overlap_with_variant, scorer, spacing)
+            signatures = find_signatures_for_chunk_wrapper.remote(add_dummy_count_to_index, all_subpaths, chunk_index,
+                                                                  k, minimum_overlap_with_variant, scorer, spacing)
             all_signatures.append(signatures)
 
+        log_memory_usage_now("Before ray.get in get_signatures")
         all_signatures = ray.get(all_signatures)
+        log_memory_usage_now("After ray.get in get_signatures")
         ray.shutdown()
 
     logging.info("Finding signatures with %d threads took %.4f seconds" % (n_threads, time.perf_counter() - t0))

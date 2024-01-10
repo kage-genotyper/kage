@@ -430,6 +430,8 @@ def get_padded_variants_from_vcf(variants: 'VariantStream', reference_file_name,
     n_alleles_per_variant = []
 
     for chromosome, raw_chromosome_variants in variants.read_by_chromosome():  #bnp.groupby(variants, "chromosome"):
+        assert chromosome in sequences, ("Chromosome %s not found in reference genome. "
+                                         "Check that reference genome contains all variants in VCF.") % chromosome
         if also_return_original_variants:
             r = raw_chromosome_variants
             all_vcf_variants.append(SimpleVcfEntry(r.chromosome, r.position, r.ref_seq.copy(), r.alt_seq.copy()))

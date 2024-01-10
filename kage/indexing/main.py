@@ -179,9 +179,7 @@ def make_index(
 
     variant_to_nodes = node_mapping.get_variant_to_nodes()
 
-    signatures_chunk_size = 2000
-    if len(variants) > 1000000:
-        signatures_chunk_size = 4000
+    signatures_chunk_size = 500
 
     signatures = get_signatures(k, paths, scorer, chunk_size=signatures_chunk_size, spacing=0,
                                 minimum_overlap_with_variant=2, n_threads=n_threads)
