@@ -135,6 +135,10 @@ def write_vcf(variants: SimpleVcfEntry, string_genotypes: bnp.EncodedRaggedArray
 
         # probs are in loge, convert to minus log10 (?)
         genotype_likelihoods = p * np.log10(np.e)
+        # gls can maybe become positive due to rounding errors? Make sure they are never larger than 0
+        logging.info(f"{np.sum(genotype_likelihoods > 0)} gls positive")
+        genotype_likelihoods = np.minimum(-0, genotype_likelihoods)
+
         has_nan = np.where(np.any(np.isnan(genotype_likelihoods), axis=1))[0]
         if len(has_nan):
             for n in has_nan:
