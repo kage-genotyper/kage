@@ -71,7 +71,7 @@ As of version 0.1.11, KAGE supports GPU-acceleration for GPUs supporting the CUD
 
 1) Make sure you have [CUDA installed](https://developer.nvidia.com/cuda-downloads) and working. 
 2) Install a [CuPy](https://docs.cupy.dev/en/stable/install.html) version that matches your CUDA installation. You will need at least version 12.0 of the cupy pip package.
-3) Install [Cucounter](https://github.com/jorgenwh/cucounter).
+3) Install [Cucounter](https://github.com/jorgenwh/cucounter) (`pip install kage-cucounter`).
 4) Run kage with `--gpu True` to tell KAGE to use the GPU. 
 
 Note: GKAGE has been tested to work with GPUs with 4 GBs of RAM. Depending on the size of the index you have, you might need more GPU memory. Let us know if you run into any problems, there are some tricks that can be used to reduce memory usage.
