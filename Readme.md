@@ -15,7 +15,9 @@ As of version 0.1.11, KAGE also supports **GPU-acceleration** (referred to as **
 A manuscript describing the method [can be found here](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-022-02771-2).
 
 ## Installation
-KAGE requires Python 3, and can be installed using Pip: 
+KAGE requires Python 3 and is tested to work with version 3.8, 3.9, and 3.10. Currently, Python 3.11 and 3.12 does not work due to some dependencies not supporting it, but this will likely be fixed in the future.
+
+KAGE can be installed using Pip: 
 ```
 pip install kage-genotyper
 ```
