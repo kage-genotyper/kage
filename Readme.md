@@ -53,7 +53,7 @@ The above command will create an `index.npz` file.
 Genotyping with kage is extremely fast once you have an index:
 
 ```bash
-kage genotype -i index -r reads.fq.gz -t 16 --average-coverage 30 -k 31
+kage genotype -i index -r reads.fq.gz -t 16 --average-coverage 30 -k 31 -o genotypes.vcf
 ```
 
 Note:
