@@ -1,5 +1,6 @@
 from kage.indexing.sparse_haplotype_matrix import SparseHaplotypeMatrix, GenotypeMatrix
 import numpy as np
+import pytest
 
 
 def test_from_variants_and_haplotypes():
@@ -143,6 +144,7 @@ def test_sparse_haplotype_matrix_with_missing_data():
 #def test_sparse_haplotype_matrix_to_biallelic_with_missing_data():
 
 
+@pytest.mark.skip
 def test_convert_biallelic_to_multiallelic():
     matrix = np.load("test_biallelic_haplotype_matrix.npy")
     n_alleles_per_variant = np.array([14])

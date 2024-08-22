@@ -8,8 +8,8 @@ from kage.util import n_unique_values_per_column
 
 
 def test_multiallelic_paths():
-    alleles = [2, 3, 2, 4]
-    matrix = PathCreator.make_combination_matrix_multi_allele(alleles, window=3)
+    alleles = np.array([2, 3, 2, 4])
+    matrix = PathCreator.make_combination_matrix_multi_allele_v3(alleles, window=3)
     print(matrix.matrix)
     assert len(matrix) == 2**3
     assert matrix.shape[1] == 4

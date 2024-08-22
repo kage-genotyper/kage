@@ -136,7 +136,7 @@ def test_get_kmers_for_haplotype_multiallelic():
     )
 
     n_alleles = np.array([2, 3, 2, 2])
-    paths = PathCreator.make_combination_matrix_multi_allele(n_alleles, window=4)
+    paths = PathCreator.make_combination_matrix_multi_allele_v3(n_alleles, window=4)
     haplotype = np.array([0, 2, 1, 1])
     path_kmers = PathKmers.from_graph_and_paths(graph, paths, k=2)
     haplotype_as_paths = HaplotypeAsPaths.from_haplotype_and_path_alleles_multiallelic(

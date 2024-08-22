@@ -100,7 +100,8 @@ def test_multiallelic_signature_finder_on_three_following_snps():
     paths = PathCreator(graph,
                         window=window,  # bigger windows to get more paths when multiallelic
                         make_disc_backed=False,
-                        disc_backed_file_base_name="test.tmp").run(n_alleles_per_variant)
+                        disc_backed_file_base_name="test.tmp",
+                        use_new_allele_matrix=True).run(n_alleles_per_variant)
 
     kmers_to_avoid = ["tagggg", "ctgggg", "aagggg"]
     kmers_to_avoid = [sequence_to_kmer_hash(kmer) for kmer in kmers_to_avoid]
@@ -136,7 +137,8 @@ def test_multiallelic_signature_finder_special_case():
     paths = PathCreator(graph,
                         window=window,  # bigger windows to get more paths when multiallelic
                         make_disc_backed=False,
-                        disc_backed_file_base_name="test.tmp").run(n_alleles_per_variant)
+                        disc_backed_file_base_name="test.tmp",
+                        use_new_allele_matrix=True).run(n_alleles_per_variant)
 
     signatures = get_signatures(k, paths, scorer=DummyScorer2(), add_dummy_count_to_index=1)
     signatures.describe(k)
@@ -163,7 +165,8 @@ def test_that_ref_sequence_is_always_in_signature():
     paths = PathCreator(graph,
                         window=window,  # bigger windows to get more paths when multiallelic
                         make_disc_backed=False,
-                        disc_backed_file_base_name="test.tmp").run(n_alleles_per_variant)
+                        disc_backed_file_base_name="test.tmp",
+                        use_new_allele_matrix=True).run(n_alleles_per_variant)
 
     signatures = get_signatures(k, paths, scorer=DummyScorer2(), add_dummy_count_to_index=1)
     signatures.describe(k)
@@ -200,7 +203,8 @@ def test_integration_from_variants_to_signatures(bnp_reference_sequences, bnp_va
     paths = PathCreator(graph,
                         window=window,  # bigger windows to get more paths when multiallelic
                         make_disc_backed=False,
-                        disc_backed_file_base_name="test.tmp"
+                        disc_backed_file_base_name="test.tmp",
+                        use_new_allele_matrix=True
                         ).run(n_alleles_per_variant)
 
     print(paths.variant_alleles)
@@ -398,7 +402,8 @@ def test_signatures_on_graph_with_many_alleles_integration():
     paths = PathCreator(graph,
                         window=window,  # bigger windows to get more paths when multiallelic
                         make_disc_backed=False,
-                        disc_backed_file_base_name="test.tmp").run(n_alleles_per_variant)
+                        disc_backed_file_base_name="test.tmp",
+                        use_new_allele_matrix=True).run(n_alleles_per_variant)
 
     variant_window_kmers = MatrixVariantWindowKmers.from_paths_with_flexible_window_size(paths.paths, k)
     variant_window_kmers = VariantWindowKmers2.from_matrix_variant_window_kmers(variant_window_kmers,
