@@ -248,12 +248,16 @@ def filter_low_frequency_alleles_on_multiallelic_variants(vcf_file_name, min_all
     """
     chunks = bnp.open(vcf_file_name, buffer_type=VcfWithInfoBuffer).read_chunks()
     all_filters = []
+    logging.info("Grouping by chromosome")
     for chromosome, chromosome_chunk in bnp.groupby(chunks, "chromosome"):
+        logging.info(f"Filtering chromosome {chromosome}")
         filter = find_multiallelic_alleles_with_low_allele_frequency(chromosome_chunk, min_allele_frequency, only_deletions=only_deletions)
         logging.info(f"Removing {np.sum(filter)} variants on chromosome {chromosome}")
         all_filters.append(filter)
 
+    logging.info("Done creating filters")
     all_filters = np.concatenate(all_filters)
+    logging.info("Printing filtered vcf")
     print_filtered_vcf(all_filters, vcf_file_name)
 
 

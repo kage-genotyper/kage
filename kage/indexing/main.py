@@ -81,7 +81,8 @@ def make_index(
                                                                                         min_chunk_size=500_000_000,
                                                                                         sv_size_limit=50,
                                                                                         buffer_type=bnp.io.vcf_buffers.VCFBuffer,
-                                                                                        filter_using_other_vcf=vcf_no_genotypes)
+                                                                                        filter_using_other_vcf=vcf_no_genotypes,
+                                                                                        lazy=False)
 
     # convert variants to biallelic variants, keep track of how many alleles original variants had
     variants, vcf_variants, n_alleles_per_original_variant = get_padded_variants_from_vcf(variant_stream,
@@ -131,15 +132,17 @@ def make_index(
     logging.info("Making haplotype matrix")
     variant_stream = FilteredVariantStream.from_vcf_with_snps_indels_inside_svs_removed(vcf_file_name,
                                                                                         buffer_type=bnp.io.vcf_buffers.PhasedHaplotypeVCFMatrixBuffer,
-                                                                                        min_chunk_size=500_000_000,
+                                                                                        min_chunk_size=50_000_000,
                                                                                         sv_size_limit=50,
-                                                                                        filter_using_other_vcf=vcf_no_genotypes
+                                                                                        filter_using_other_vcf=vcf_no_genotypes,
+                                                                                        lazy=True
                                                                                         )
     log_memory_usage_now("Variant stream 1 done")
     variant_stream = FilteredVariantStream(variant_stream.read_chunks(), ~filter)
     log_memory_usage_now("Done variant stream")
 
     haplotype_matrix_original_vcf = SparseHaplotypeMatrix.from_vcf(variant_stream)
+    del variant_stream
     log_memory_usage_now("Made haplotype matrix orig vcf")
     logging.info("N variants in original haplotype matrix: %d" % haplotype_matrix_original_vcf.data.shape[0])
     # this haplotype matrix may be multiallelic, convert to biallelic which will match "variants"

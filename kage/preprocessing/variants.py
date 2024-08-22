@@ -430,11 +430,14 @@ def get_padded_variants_from_vcf(variants: 'VariantStream', reference_file_name,
     n_alleles_per_variant = []
 
     for chromosome, raw_chromosome_variants in variants.read_by_chromosome():  #bnp.groupby(variants, "chromosome"):
+        log_memory_usage_now("Chromosome %s" % chromosome)
         assert chromosome in sequences, ("Chromosome %s not found in reference genome. "
                                          "Check that reference genome contains all variants in VCF.") % chromosome
         if also_return_original_variants:
             r = raw_chromosome_variants
+            log_memory_usage_now("Before adding original variants")
             all_vcf_variants.append(SimpleVcfEntry(r.chromosome, r.position, r.ref_seq.copy(), r.alt_seq.copy()))
+            log_memory_usage_now("After adding original variants")
 
         if remove_sequence_from_low_af_deletions > 0:
             raw_chromosome_variants = remove_alt_and_ref_seq_on_deletions_with_low_af(raw_chromosome_variants, remove_sequence_from_low_af_deletions)
@@ -445,6 +448,7 @@ def get_padded_variants_from_vcf(variants: 'VariantStream', reference_file_name,
         logging.info("Padding variants on chromosome " + chromosome)
         logging.info("%d variants" % len(chromosome_variants))
 
+        log_memory_usage_now("Before padding")
         padded_variants = VariantPadder(chromosome_variants, sequences[chromosome]).run()
         log_memory_usage_now("After padding")
         all_variants.append(padded_variants)
@@ -550,9 +554,9 @@ class VariantStream:
         self._stream = stream
 
     @classmethod
-    def from_vcf(cls, vcf_file_name, buffer_type=VCFBuffer, min_chunk_size=50000000):
+    def from_vcf(cls, vcf_file_name, buffer_type=VCFBuffer, min_chunk_size=50000000, lazy=True):
         logging.info("Using buffer type %s" % buffer_type)
-        chunks = bnp.open(vcf_file_name, buffer_type=buffer_type).read_chunks(min_chunk_size)
+        chunks = bnp.open(vcf_file_name, buffer_type=buffer_type, lazy=lazy).read_chunks(min_chunk_size)
         return cls(chunks)
 
     def _read_chunks(self) -> Iterable:
@@ -589,10 +593,11 @@ class FilteredVariantStream(VariantStream):
     def from_vcf_with_snps_indels_inside_svs_removed(cls, vcf_file_name, sv_size_limit=50,
                                                      buffer_type=bnp.io.vcf_buffers.VCFBuffer,
                                                      min_chunk_size=10000000,
-                                                     filter_using_other_vcf=None):
+                                                     filter_using_other_vcf=None,
+                                                     lazy=True):
         to_keep = []
         vcf = filter_using_other_vcf if filter_using_other_vcf is not None else vcf_file_name
-        stream = VariantStream.from_vcf(vcf, buffer_type=CustomVCFBuffer)  # only need some simple VCFBuffer for filtering
+        stream = VariantStream.from_vcf(vcf, buffer_type=CustomVCFBuffer, lazy=lazy)  # only need some simple VCFBuffer for filtering
         #for chromosome, chunk in stream.read_by_chromosome():
         for chunk in stream.read_chunks():
             to_keep.append(~find_snps_indels_covered_by_svs(chunk, sv_size_limit=sv_size_limit, allow_approx=True))
@@ -600,7 +605,8 @@ class FilteredVariantStream(VariantStream):
         to_keep = np.concatenate(to_keep)
         logging.info(f"{np.sum(~to_keep)} snps/indels inside SVs filtered out")
         logging.info(f"{np.sum(to_keep)} variants kept")
-        return cls(VariantStream.from_vcf(vcf_file_name, buffer_type=buffer_type, min_chunk_size=min_chunk_size).raw(), to_keep)
+        return cls(VariantStream.from_vcf(vcf_file_name, buffer_type=buffer_type,
+                                          min_chunk_size=min_chunk_size, lazy=lazy).raw(), to_keep)
 
 
 class FilteredOnMaxAllelesVariantStream(VariantStream):
