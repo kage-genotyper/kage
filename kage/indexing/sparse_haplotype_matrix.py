@@ -69,7 +69,24 @@ class SparseHaplotypeMatrix:
             return row_indexes, allele_indexes
 
         row_indexes, allele_indexes = make_row_indexes(n_alt_alleles_per_variant)
-        allele_indexes_matrix = np.tile(allele_indexes, (self.n_haplotypes, 1)).T
+        allele_indexes = allele_indexes.astype(self.data.dtype)
+        #allele_indexes_matrix = np.tile(allele_indexes, (self.n_haplotypes, 1), ).T
+
+        @numba.jit(nopython=True)
+        def make_allele_indexes_matrix(allele_indexes, n_haplotypes):
+            # make with numba and for loops instead of np tile to save some memory
+            n_variants = len(allele_indexes)
+            n_haplotypes = n_haplotypes
+            allele_indexes_matrix = np.zeros((n_variants, n_haplotypes), dtype=np.uint16)
+            for i in range(n_variants):
+                for j in range(n_haplotypes):
+                    allele_indexes_matrix[i, j] = allele_indexes[i]
+            return allele_indexes_matrix
+
+        log_memory_usage_now("Before making allele indexes matrix")
+        allele_indexes_matrix = make_allele_indexes_matrix(allele_indexes, self.n_haplotypes)
+        log_memory_usage_now("After making allele indexes matrix")
+
         new_matrix = matrix[row_indexes, :]
         new_matrix = (new_matrix == allele_indexes_matrix)
         if self.data.dtype == np.uint8:
