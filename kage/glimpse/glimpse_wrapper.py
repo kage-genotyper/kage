@@ -45,16 +45,16 @@ def download_glimpse_binaries_if_not_exist():
             logging.info("Binary %s already exists, not downloading" % binary_name)
 
 
-def make_glimps_chunks_for_chromosome(vcf_file_name: str, chromosome, out_dir: str):
-    subprocess.run(["glimpse_binaries/GLIMPSE_chunk_static",
+def make_glimps_chunks_for_chromosome(vcf_file_name: str, chromosome, out_dir: str, glimpse_params="--window-count 1000 --buffer-count 100"):
+    all_params = ["glimpse_binaries/GLIMPSE_chunk_static",
                     "--input", vcf_file_name,
-                    "--region", chromosome,
-                    #"--window-size", "20000",
-                    #"--buffer-size", "20000",
-                    "--window-count", "1000",
-                    "--buffer-count", "100",
+                    "--region", chromosome] + \
+                 glimpse_params.split() \
+                 + [
                     "--output", out_dir + "/glimpse_chunks." + chromosome + ".txt"
-                    ])
+                    ]
+    logging.info("Running GLIMPSE chunk with params: %s" % all_params)
+    subprocess.run(all_params)
 
 
 def setup_glimpse(out_dir):
@@ -63,14 +63,14 @@ def setup_glimpse(out_dir):
     download_glimpse_binaries_if_not_exist()
 
 
-def make_glimpse_chunks(vcf_file_name: str, out_dir: str, n_threads: int = 1, chromosomes = None):
+def make_glimpse_chunks(vcf_file_name: str, out_dir: str, n_threads: int = 1, chromosomes = None, glimpse_params=None):
     setup_glimpse(out_dir)
     chromosomes = get_vcf_chromosomes(vcf_file_name) if chromosomes is None else chromosomes
 
     pool = multiprocessing.Pool(n_threads)
     for chromosome in chromosomes:
         logging.info("Running for chromosome %s" % chromosome)
-        pool.apply_async(make_glimps_chunks_for_chromosome, (vcf_file_name, chromosome, out_dir))
+        pool.apply_async(make_glimps_chunks_for_chromosome, (vcf_file_name, chromosome, out_dir, glimpse_params))
 
     pool.close()
     pool.join()
@@ -121,7 +121,7 @@ def run_glimpse_on_chunk(genotyped_vcf: str, population_vcf: str, out_dir: str,
 
 
 def run_glimpse(population_vcf: str, genotyped_vcf: str, out_file: str, genetic_map: str = "",
-                n_threads: int = 1, chromosomes = None, glimpse_index_dir = None):
+                n_threads: int = 1, chromosomes = None, glimpse_index_dir = None, glimpse_params=None):
     out_path = os.path.dirname(out_file)
     if out_path == "":
         out_path = "./"
@@ -129,7 +129,8 @@ def run_glimpse(population_vcf: str, genotyped_vcf: str, out_file: str, genetic_
 
     if glimpse_index_dir is None:
         logging.info("No GLIMPSE directory provided. Will create chunks (index)")
-        make_glimpse_chunks(population_vcf, out_path, n_threads=n_threads, chromosomes=chromosomes)
+        make_glimpse_chunks(population_vcf, out_path, n_threads=n_threads, chromosomes=chromosomes,
+                            glimpse_params=glimpse_params)
         glimpse_index_dir = out_path
         chromosomes = get_vcf_chromosomes(population_vcf) if chromosomes is None else chromosomes
 

@@ -77,11 +77,15 @@ def make_index(
     # n_alleles_per_variant lets us convert genotypes on variants (which are biallelic) to multiallelic where necessary
     if vcf_no_genotypes is None:
         vcf_no_genotypes = vcf_file_name
-    variant_stream = FilteredVariantStream.from_vcf_with_snps_indels_inside_svs_removed(vcf_file_name,
+    vcf_for_variant_stream = vcf_file_name
+    if vcf_no_genotypes is not None:
+        vcf_for_variant_stream = vcf_no_genotypes  # save memory by using the vcf with noe genotype info
+
+    variant_stream = FilteredVariantStream.from_vcf_with_snps_indels_inside_svs_removed(vcf_for_variant_stream,
                                                                                         min_chunk_size=500_000_000,
                                                                                         sv_size_limit=50,
                                                                                         buffer_type=bnp.io.vcf_buffers.VCFBuffer,
-                                                                                        filter_using_other_vcf=vcf_no_genotypes,
+                                                                                        _other_vcf=vcf_no_genotypes,
                                                                                         lazy=False)
 
     # convert variants to biallelic variants, keep track of how many alleles original variants had
@@ -117,7 +121,9 @@ def make_index(
     reference_sequences = bnp.open(reference_file_name).read()
     log_memory_usage_now("After reading reference genome")
     graph, node_mapping = make_multiallelic_graph(reference_sequences, variants)
+    n_nodes = len(variants) * 2
     del reference_sequences
+    del variants
     log_memory_usage_now("Made graph")
 
     if np.max(node_mapping.n_alleles_per_variant) >= 2**variant_window:
@@ -199,7 +205,7 @@ def make_index(
                                                  window=4,
                                                  max_count=20,
                                                  node_map=node_mapping,
-                                                 n_nodes=len(variants)*2,
+                                                 n_nodes=n_nodes,
                                                  n_threads=n_threads)
     count_model = model_creator.run()
 

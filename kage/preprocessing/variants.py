@@ -582,7 +582,6 @@ class FilteredVariantStream(VariantStream):
     def _read_chunks(self):
         prev = 0
         for chunk in self._stream:
-            logging.info(f"{len(chunk)}, {prev}, {prev+len(chunk)}")
             assert prev + len(chunk) <= len(self._to_keep)
             yield chunk[self._to_keep[prev:prev+len(chunk)]]
             prev += len(chunk)

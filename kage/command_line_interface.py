@@ -144,9 +144,14 @@ def genotype(args):
 
     if args.glimpse is not None:
         t0 = time.perf_counter()
-        chromosomes = list(set([variant.chromosome.to_string() for variant in index.vcf_variants]))  # glimpse wrapper needs the unique chromosomes that we actually have variants for
+        if args.glimpse_chromosomes is None:
+            chromosomes = list(set([variant.chromosome.to_string() for variant in index.vcf_variants]))  # glimpse wrapper needs the unique chromosomes that we actually have variants for
+        else:
+            chromosomes = args.glimpse_chromosomes.split(",")
+            logging.info(f"Only running GLIMPSE on these chromosomes: {chromosomes}")
+
         run_glimpse(args.glimpse, out_file_name, args.out_file_name, n_threads=args.n_threads,
-                    chromosomes=chromosomes, glimpse_index_dir=args.glimpse_chunks)
+                    chromosomes=chromosomes, glimpse_index_dir=args.glimpse_chunks, glimpse_params=args.glimpse_params)
         logging.info("Running GLIMPSE took %.4f sec" % (time.perf_counter()-t0))
 
     close_shared_pool()
@@ -190,6 +195,8 @@ def run_argument_parser(args):
     subparser.add_argument("-c", "--glimpse-chunks", default=None,
                            help="Can be set to a directory created by running kage glimpse_index. If not set, this index will be created.")
     subparser.add_argument("-S", "--only-impute-svs", type=bool, default=False, help="If set to True, KAGE will ignore kmers for SVs and only base SV calsl on imputation. Meant to be run with --glimpse ...")
+    subparser.add_argument("-C", "--glimpse-chromosomes", default=None, help="Can be set to a comma-separated list to only run glimpse on these chromosomes. Only relevant if used with --glimpse. Default will run on all chormosomes in your input vcf")
+    subparser.add_argument("-P", "--glimpse-params", default="--window-size 1000000 --window-count 1000 --buffer-size 250000 --buffer-count 250", help="Will be passed on to the GLIMPSE_chunk command. May be useful to try to change if GLIMPSE fails for some reason. Note that these params need to be enclose with quotes. Only relevant if used with --glimpse.")
 
     subparser.set_defaults(func=genotype)
 
