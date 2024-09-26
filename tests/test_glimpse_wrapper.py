@@ -22,4 +22,5 @@ def test_run_full_glimpse():
 
 
 if __name__ == "__main__":
-    remove_glimpse_results("glimpse_test_output/")
+    test_run_full_glimpse()
+    #remove_glimpse_results("glimpse_test_output/")

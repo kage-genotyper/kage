@@ -85,7 +85,7 @@ def make_index(
                                                                                         min_chunk_size=500_000_000,
                                                                                         sv_size_limit=50,
                                                                                         buffer_type=bnp.io.vcf_buffers.VCFBuffer,
-                                                                                        _other_vcf=vcf_no_genotypes,
+                                                                                        filter_using_other_vcf=vcf_no_genotypes,
                                                                                         lazy=False)
 
     # convert variants to biallelic variants, keep track of how many alleles original variants had
