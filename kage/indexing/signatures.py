@@ -1043,7 +1043,7 @@ def get_signatures(k: int, paths: Paths, scorer, chunk_size=10000, add_dummy_cou
     # To keep max memory usage low, create signatures for chunks of variants, concatenate in the end
     n_variants = paths.n_variants()
     chunks = interval_chunks(0, n_variants, n_variants//chunk_size+1)
-    logging.info("Will find signatures for %d chunks" % len(chunks))
+    logging.info(f"Will find signatures for {len(chunks)} chunks using {n_threads} threads")
     all_signatures = []
 
     all_subpaths = paths.chunk(chunks, padding=k)

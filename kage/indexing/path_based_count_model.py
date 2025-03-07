@@ -120,7 +120,7 @@ class PathKmers:
         # then prunes away kmers that are not in kmer_index
         lookup = kmer_index
         new = []
-        logging.info("Pruning")
+        logging.info("Pruning %d paths" % self.n_paths)
         t_start = time.perf_counter()
         if n_threads == 1 or True:
             for i, kmers in tqdm(enumerate(self.kmers), desc="Pruning kmers", total=self.n_paths):
@@ -128,7 +128,7 @@ class PathKmers:
                 new.append(pruned_kmers)
 
         else:
-
+            logging.info(f"Pruning kmers in parallel")
             lookup = ray.put(lookup)
             # chunk kmers to not read too many into memory at once
             while True:
@@ -254,10 +254,10 @@ class PathBasedMappingModelCreator(MappingModelCreator):
         self._path_kmers.prune(kmer_index, n_threads=16)
         self._node_map = node_map
         self._window = window
-        #self._all_haplotypes_as_paths = get_haplotypes_as_paths_parallel(
-        #    self._haplotype_matrix, self._path_allele_matrix, self._window, n_threads=n_threads)
-        self._all_haplotypes_as_paths = get_haplotypes_as_paths(
-            self._haplotype_matrix, self._path_allele_matrix, self._window)
+        self._all_haplotypes_as_paths = get_haplotypes_as_paths_parallel(
+            self._haplotype_matrix, self._path_allele_matrix, self._window, n_threads=n_threads)
+        #self._all_haplotypes_as_paths = get_haplotypes_as_paths(
+        #    self._haplotype_matrix, self._path_allele_matrix, self._window)
 
     def _process_individual(self, i):
         t0 = time.perf_counter()
@@ -318,15 +318,19 @@ def get_haplotypes_as_paths(haplotype_matrix: SparseHaplotypeMatrix, path_allele
         np.append(path_allele_matrix, np.zeros((path_allele_matrix.shape[0], window_size - 1)), axis=1),
         window_size, axis=1)
 
-    for i in tqdm(range(haplotype_matrix.n_haplotypes)):
+    for i in tqdm(range(haplotype_matrix.n_haplotypes), desc="Getting haplotypes as paths"):
+        t0 = time.perf_counter()
         haplotype = haplotype_matrix.get_haplotype(i)
+        logging.info(f"Getting haplotype {i} took %.5f sec" % (time.perf_counter() - t0))
 
+        t0 = time.perf_counter()
         haplotype_signatures = sliding_window_view(np.append(haplotype, np.zeros(window_size-1)), window_size)
         matching_paths = np.zeros(len(haplotype), dtype=np.uint16)
 
         for i in range(path_signatures.shape[0]):
             matching_paths[np.all(path_signatures[i] == haplotype_signatures, axis=1)] = i
 
+        logging.info(f"Matching took %.5f sec" % (time.perf_counter() - t0))
         out.append(HaplotypeAsPaths(matching_paths))
 
     logging.info("Getting all haplotypes as paths took %.5f sec" % (time.perf_counter() - t0))
@@ -334,6 +338,7 @@ def get_haplotypes_as_paths(haplotype_matrix: SparseHaplotypeMatrix, path_allele
 
 @ray.remote
 def _get_single_haplotype_as_paths(path_signatures, haplotype_matrix, haplotype_id, max_window_size):
+    t0 = time.perf_counter()
     log_memory_usage_now("_get_single_haplotype_as_paths_start")
     haplotype = haplotype_matrix.get_haplotype(haplotype_id)
 
@@ -358,6 +363,7 @@ def _get_single_haplotype_as_paths(path_signatures, haplotype_matrix, haplotype_
                         "window size")
 
     log_memory_usage_now("Single thread haplotype as paths ends")
+    logging.info("Getting haplotype as paths took %.5f sec" % (time.perf_counter() - t0))
     return HaplotypeAsPaths(matching_paths)
 
 
